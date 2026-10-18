@@ -88,14 +88,8 @@ export type CallUsage = {
 	wallS: number;
 };
 
-export type CallMeta = { label: string; usage: CallUsage };
-
 export function isId(value: unknown): value is string {
 	return typeof value === "string" && ID_PATTERN.test(value);
-}
-
-export function isRelevance(value: unknown): value is Relevance {
-	return value === "high" || value === "medium" || value === "low";
 }
 
 export function estimateTokens(text: string): number {

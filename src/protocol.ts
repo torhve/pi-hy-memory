@@ -249,31 +249,6 @@ export function overlap(a: string, b: string): number {
 }
 
 /**
- * Retrieval for the reconcile call: only bank entries the new drafts could
- * plausibly touch. This is what keeps the call cheap — the bank is never sent
- * whole, and it is also what makes UPDATE/DELETE possible at all.
- */
-export function candidates(bank: BankEntry[], drafts: Draft[], limit = 12): BankEntry[] {
-	const active = bank.filter((e) => e.status === "active");
-	const scored = active.map((entry) => {
-		let best = 0;
-		for (const draft of drafts) {
-			const score = Math.max(
-				overlap(`${entry.statement} ${entry.task}`, `${draft.statement} ${draft.task}`),
-				draft.keys.some((k) => entry.keys.includes(k) || entry.statement.toLowerCase().includes(k)) ? 0.5 : 0,
-			);
-			if (score > best) best = score;
-		}
-		return { entry, best };
-	});
-	return scored
-		.filter((s) => s.best >= 0.2)
-		.sort((a, b) => b.best - a.best)
-		.slice(0, limit)
-		.map((s) => s.entry);
-}
-
-/**
  * Per-draft candidate sets. The reconcile call sees the union, but an UPDATE is
  * accepted only when its target was retrieved for *that* draft — otherwise the
  * model is superseding an entry that merely happened to be on screen.

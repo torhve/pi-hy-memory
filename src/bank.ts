@@ -10,14 +10,10 @@
 
 import { createHash } from "node:crypto";
 import { relevanceOf } from "./protocol.js";
-import type { BankEntry, Draft, LedgerRecord, ReconcileOp } from "./types.js";
+import { type BankEntry, type Draft, estimateTokens, type LedgerRecord, type ReconcileOp } from "./types.js";
 
 export function newId(seed: string): string {
 	return createHash("sha256").update(seed).digest("hex").slice(0, 12);
-}
-
-export function estimateTokens(text: string): number {
-	return Math.max(1, Math.round(text.length / 4));
 }
 
 export function entryFromDraft(

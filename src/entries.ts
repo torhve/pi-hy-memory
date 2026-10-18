@@ -13,9 +13,7 @@
 import type { SessionEntry } from "@earendil-works/pi-coding-agent";
 import type { SerializedChunk } from "./serialize.js";
 
-export function estimateTokens(text: string): number {
-	return Math.round(text.length / 4);
-}
+import { estimateTokens } from "./types.js";
 
 function clock(timestamp: string | number | undefined): string {
 	const ms = typeof timestamp === "number" ? timestamp : timestamp ? Date.parse(timestamp) : Number.NaN;

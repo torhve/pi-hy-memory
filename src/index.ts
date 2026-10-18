@@ -16,28 +16,21 @@
 
 import { appendFileSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
-import { dirname, join } from "node:path";
+import { join } from "node:path";
 import { Type } from "@earendil-works/pi-ai";
 import type { ExtensionAPI, ExtensionContext, SessionEntry } from "@earendil-works/pi-coding-agent";
 
 import { enforceBudget, foldLedger } from "./bank.js";
 import { EXTRACT_RECORD, highestChunkSeq, nextChunkId } from "./chunks.js";
 import { type HyConfig, legacyKeys, SETTING_DEFAULTS } from "./config.js";
-import {
-	type ChunkBuild,
-	compactionWindow,
-	entryTokens,
-	estimateTokens,
-	renderEntry,
-	serializeEntries,
-} from "./entries.js";
+import { type ChunkBuild, compactionWindow, entryTokens, renderEntry, serializeEntries } from "./entries.js";
 import { nextFailoverState } from "./failover.js";
 import { createWriter, type Writer } from "./llm.js";
 import { writeChunk } from "./pipeline.js";
 import { renderMemory, summaryBudget } from "./render.js";
 import { pruneSessions } from "./state.js";
 import { createStatusBar } from "./status.js";
-import type { BankEntry, Draft, LedgerRecord } from "./types.js";
+import { type BankEntry, type Draft, estimateTokens, type LedgerRecord } from "./types.js";
 
 // Env override so experiments never mutate the live config of a running session.
 const CONFIG_FILE = process.env.PI_HY_MEMORY_CONFIG ?? join(os.homedir(), ".pi", "agent", "pi-hy-memory.json");
@@ -804,5 +797,4 @@ export default function piHyMemory(pi: ExtensionAPI): void {
 	});
 
 	audit("loaded", { config });
-	void dirname;
 }

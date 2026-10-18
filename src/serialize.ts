@@ -30,12 +30,3 @@ export function serializeChunk(userContent: string): SerializedChunk {
 	});
 	return { text, refs, entryCount: refs.length };
 }
-
-/** Reconstruct the source text for one entry id (used by recall). */
-export function entryText(userContent: string, id: string): string | undefined {
-	const label = `[Source entry id: ${id}]`;
-	const at = userContent.indexOf(label);
-	if (at < 0) return undefined;
-	const next = userContent.indexOf("[Source entry id: ", at + label.length);
-	return userContent.slice(at, next < 0 ? userContent.length : next).trim();
-}
