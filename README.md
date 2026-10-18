@@ -95,12 +95,15 @@ means either a double compaction or a summary rendered for the wrong boundary.
 The incumbents do own the decision, with three different schemes (DESIGN.md §
 "Compaction threshold — what the incumbents do"):
 
-| window | pi (`w − 16384`) | pi-observational-memory flat 81 000 | pi-observational-memory ratio 0.68 | pi-blackhole preset curve |
+| window | pi (`w − 16384`) | pi-observational-memory calibrated (`compactAfterTokens`, 81 000 default) | pi-observational-memory `ratio` mode, 0.68 | pi-blackhole preset curve |
 |---|---|---|---|---|
 | 40 960 | 24 576 | 81 000 *(can never fire)* | 27 852 | 36 522 (0.892) |
 | 168 000 | 151 616 | 81 000 | 114 240 | 129 666 (0.772) |
 | 262 144 | 245 760 | 81 000 | 178 257 | 183 500 (0.700) |
 | 1 048 576 | 1 032 192 | 81 000 | 713 031 | 419 430 (0.400) |
+
+81 000 is that extension's packaged default, not a tuned local value: `"calibrated"` is the
+default mode, so a flat cap is what you get until you switch to `"ratio"`.
 
 Our summary is bounded by the bank (12 k), not by history, so we do not inherit the
 "summarising 1 M tokens is expensive and lossy" problem that motivates pi-blackhole's

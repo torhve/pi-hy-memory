@@ -216,6 +216,14 @@ entries after the previous compaction's `firstKeptEntryId` — rather than pi's 
 | `compactAfterTokensMode` | `"calibrated"` | `"calibrated"` = the flat cap; `"ratio"` = fraction of the window |
 | `compactAfterTokensRatio` | 0.68 | used only in `"ratio"` mode |
 
+81 000 is the *package* default in `src/config.ts` (`DEFAULTS.compactAfterTokens`), and
+`"calibrated"` is the default mode, so an install that never touches these settings still
+compacts at a flat 81 000. The same number is what an extension writes into a user's
+`settings.json` block, which makes it look like a local choice; the knob most users actually
+change is the mode. Upstream states the trade-off in the same terms: the calibrated default
+"preserves the pre-PR #40 compaction metric for typical ~128K–200K context models" and
+"wastes most of the window" on a large-context one.
+
 ```js
 resolveCompactAfterTokens(cfg, window) =
   cfg.mode === "ratio" && window ? max(1, floor(window * cfg.ratio)) : cfg.compactAfterTokens
