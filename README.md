@@ -34,6 +34,11 @@ providers that populate their model list dynamically at startup.
 If that model is missing, the write fails with `writer model "…" is not in pi's model list`
 and lists the closest matches, so a typo is visible without digging through a log.
 
+A provider that discovers its models over the network registers them during its own startup,
+so its list is empty until its server answers. A write in that window fails with the same
+message; the watermark does not advance, so the next write retries and succeeds once the
+provider is up.
+
 ## Configuration
 
 `~/.pi/agent/pi-hy-memory.json` (all keys optional; defaults in `src/index.ts`):

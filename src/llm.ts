@@ -122,7 +122,8 @@ export async function resolveWriterModel(registry: ModelRegistry, spec: string):
 		`writer model "${spec}" is not in pi's model list.` +
 			(related.length > 0
 				? ` Closest matches: ${related.slice(0, 5).join(", ")}.`
-				: ` Known models: ${names.slice(0, 8).join(", ")}${names.length > 8 ? ", …" : ""}.`),
+				: ` Known models: ${names.slice(0, 8).join(", ")}${names.length > 8 ? ", …" : ""}.`) +
+			" A provider that discovers its models over the network registers none until its server answers, so this can be transient; the watermark does not advance and the next write retries.",
 	);
 }
 
