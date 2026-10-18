@@ -1,7 +1,7 @@
 /**
  * Proof-of-concept runner: replay real observer chunks through the write path.
  *
- *   npx tsx src/poc.ts [--chunks 482 484 486 503] [--pool 6000]
+ *   npx tsx dev/poc.ts [--chunks 482 484 486 503] [--pool 6000]
  *
  * Reads captured observer requests from a payload capture set, so the
  * chunk text is the exact payload the production observer saw — not a synthetic

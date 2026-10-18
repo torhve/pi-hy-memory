@@ -300,14 +300,16 @@ Per dense chunk (484/486/503 scale), from the harness:
 The extract call is the cost, and it is unavoidable for any writer model. The reconcile
 call is small because retrieval keeps the shown bank at ≤12 entries.
 
-## PoC status
+## Status
 
-`src/` is a working core: `serialize.ts`, `protocol.ts`, `bank.ts`, `pipeline.ts`,
-`render.ts`, `dev/poc.ts` (replays the four real captured observer chunks through the whole
-path) and `dev/export-judge.ts` (bank → judge result files). Run it with:
+`src/` is the full extension: the write path above, wired into pi in `src/index.ts`
+(`turn_end` trigger, `agent_before_settle` write wait, `session_before_compact` fold,
+`session_shutdown`, `pi.appendEntry`, the `hy_recall` tool, the `/hy` command, the
+footer bar). The harnesses in `dev/` replay the four real captured observer chunks
+through the same `writeChunk` path the extension uses. Run from the repository root:
 
 ```bash
-cd ~/.pi/agent/pi-hy-memory && npx tsx dev/poc.ts && npx tsx dev/export-judge.ts
+npx tsx dev/poc.ts && npx tsx dev/export-judge.ts
 ```
 
 Measured on the four captures, four sequential chunks building one bank:
@@ -363,10 +365,9 @@ Results and judge verdicts are in `RESULTS.md`.
 2. **UPDATE/DELETE behaviour at scale.** With 12 candidates shown, does the model still
    pick the right target once the bank has hundreds of entries? Retrieval quality becomes
    the limiting factor, not the model.
-3. **Retrieval is lexical.** `candidates()` uses token overlap. A real embedding index
+3. **Retrieval is lexical.** `candidatesPerDraft()` uses token overlap. A real embedding index
    (the upstream Hy-Memory harness uses one) would retrieve better; lexical is the honest
    starting point for a local-first extension.
-4. **Ledger integration with pi.** `src/index.ts` (turn_end trigger, `agent_settled`
-   compaction trigger, `session_before_compact` fold, `pi.appendEntry`, `pi.registerTool`)
-   is the next file to write; the PoC runner deliberately exercises the model protocol
-   first, because that is the part that failed before.
+4. **Compaction takeover at scale.** `dev/compact-test.py` exercises
+   `session_before_compact` in a real RPC session, but at n=1; sessions that compact
+   repeatedly with a live bank are not yet measured.
