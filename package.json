@@ -10,8 +10,17 @@
 		"llama.cpp",
 		"compaction"
 	],
-	"type": "module",
+	"author": "Tor Hveem",
 	"license": "MIT",
+	"homepage": "https://github.com/torhve/pi-hy-memory#readme",
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/torhve/pi-hy-memory.git"
+	},
+	"bugs": {
+		"url": "https://github.com/torhve/pi-hy-memory/issues"
+	},
+	"type": "module",
 	"files": [
 		"src",
 		"tools",
