@@ -3,10 +3,9 @@
  *
  * There is deliberately no HTTP client here. Pi's model registry already knows
  * the provider, the base URL, the credential, the context window and the
- * provider's quirks, including for models a provider extension registers
- * dynamically. Duplicating that meant scraping another extension's config file
- * and setting two environment variables, and it broke as soon as the model list
- * moved.
+ * provider's request quirks, including for models a provider registers
+ * dynamically at runtime. A second copy of that knowledge in this extension
+ * would drift from the one pi actually uses.
  *
  * Two things this file does own:
  *

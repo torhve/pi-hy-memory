@@ -86,10 +86,9 @@ Two model calls per chunk. No turn budget, no completion signal, no third agent.
 
 **The writer is a model, not an endpoint.** `src/llm.ts` resolves `provider/modelId` from pi's
 model registry and calls `registry.complete()`; provider registration, base URLs, credentials
-and request shapes stay pi's business. The only HTTP client left in the tree is
-`dev/raw-writer.ts`, used by the shell harnesses that have no session (and therefore no
-registry). This replaced an endpoint config that had to scrape another extension's file and
-that could not see models registered dynamically.
+and request shapes stay pi's business, including for models a provider registers dynamically at
+runtime. The extension therefore contains no HTTP client. The shell harnesses in `dev/` have no
+session and so no registry, and they use `dev/raw-writer.ts` for that reason alone.
 
 ## Protocol contracts
 

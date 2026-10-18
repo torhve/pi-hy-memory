@@ -32,8 +32,7 @@ providers that populate their model list dynamically at startup.
 ```
 
 If that model is missing, the write fails with `writer model "…" is not in pi's model list`
-and lists the closest matches, so the fix is visible without digging through a log. No
-environment variables, and no other extension's config file, are involved.
+and lists the closest matches, so a typo is visible without digging through a log.
 
 ## Configuration
 
