@@ -1,0 +1,45 @@
+{
+	"name": "pi-hy-memory",
+	"version": "0.1.0",
+	"description": "Pi memory extension designed around Hy-Memory-30B-A3B as a memory-bank writer: two single-shot JSON calls plus deterministic bank maintenance.",
+	"keywords": [
+		"pi-package",
+		"pi-extension",
+		"memory",
+		"llm",
+		"llama.cpp",
+		"compaction"
+	],
+	"type": "module",
+	"license": "MIT",
+	"files": [
+		"src",
+		"tools",
+		"README.md",
+		"DESIGN.md",
+		"RESULTS.md",
+		"LICENSE"
+	],
+	"scripts": {
+		"test": "for f in tools/*check.ts; do npx tsx \"$f\" || exit 1; done",
+		"lint": "biome check src tools dev",
+		"lint:fix": "biome check --write src tools dev",
+		"format": "biome format --write src tools dev",
+		"poc": "tsx dev/poc.ts",
+		"export:judge": "tsx dev/export-judge.ts",
+		"check": "npm run lint && npm run test && tsc -p tsconfig.json --noEmit"
+	},
+	"pi": {
+		"extensions": [
+			"./src/index.ts"
+		]
+	},
+	"peerDependencies": {
+		"@earendil-works/pi-ai": "*",
+		"@earendil-works/pi-coding-agent": "*"
+	},
+	"devDependencies": {
+		"@biomejs/biome": "^2.5.15",
+		"tsx": "^4.19.0"
+	}
+}

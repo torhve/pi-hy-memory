@@ -1,0 +1,105 @@
+/**
+ * Compaction rendering check.
+ *
+ * Pins two defects in `renderMemory`:
+ *
+ * 1. Budget violation. The rendered string could exceed `maxTokens` by a wide
+ *    margin (measured: 299 tokens against a 150-token budget) because a
+ *    weakest-fact replacement never adjusted the running total, and because the
+ *    header and the omission tail were not counted against the budget at all.
+ * 2. Rank misalignment. The weakest rendered fact was looked up by position in
+ *    `active`, so after any skipped entry the comparison used a different fact's
+ *    relevance — promoting a medium fact over a high one.
+ *
+ * Both only bite when the bank is near the pool cap, which is the normal state
+ * once `poolMaxTokens` is reached.
+ */
+
+import { renderMemory, summaryBudget } from "../src/render.js";
+
+const estimate = (s: string): number => Math.max(1, Math.round(s.length / 4));
+
+const fact = (id: string, relevance: string, chars: number, createdAt: string) =>
+	({
+		id,
+		createdAt,
+		status: "active",
+		relevance,
+		confidence: 1,
+		chunkId: "c",
+		task: "t",
+		statement: "x".repeat(chars),
+		keys: [],
+		sourceEntryIds: [],
+		tokenCount: Math.round(chars / 4),
+	}) as never;
+
+/** Header + tail overhead, measured through the module itself. */
+const tiny = renderMemory([fact("t", "high", 4, "2026-01-01T00:00:00Z")], 1_000_000);
+const overhead = estimate(tiny) - Math.round(`[t] (t) ${"x".repeat(4)}`.length / 4);
+
+let failures = 0;
+const check = (name: string, ok: boolean, detail = ""): void => {
+	if (!ok) failures++;
+	console.log(`${ok ? "ok  " : "FAIL"} ${name}${detail ? ` — ${detail}` : ""}`);
+};
+
+// (a) Everything fits: all facts present, chronological, no omission tail.
+const many = Array.from({ length: 50 }, (_, i) =>
+	fact(`f${i}`, "medium", 200, `2026-01-01T00:${String(i).padStart(2, "0")}:00Z`),
+);
+const wide = renderMemory(many, 12_000);
+check("fits under 12k", wide.includes("f49") && wide.includes("f0") && !wide.includes("not shown"));
+check("chronological order", wide.indexOf("[f0]") < wide.indexOf("[f49]"));
+check("respects 12k", estimate(wide) <= 12_000, `${estimate(wide)} tokens`);
+
+// (b) Over budget: the whole string stays within the cap and says how much it hid.
+const tight = renderMemory(many, 300);
+const hidden = Number(/(\d+) more facts? not shown/.exec(tight)?.[1] ?? -1);
+check("stays within 300", estimate(tight) <= 300, `${estimate(tight)} tokens`);
+check("reports what it hid", hidden >= 0, `hidden=${hidden}`);
+check(
+	"hidden count matches",
+	hidden === 50 - (tight.match(/^\[f\d+\]/gm) ?? []).length,
+	`hidden=${hidden} shown=${(tight.match(/^\[f\d+\]/gm) ?? []).length}`,
+);
+
+// (c) A high-relevance fact displaces a low-relevance one that is already rendered.
+const budget = overhead + 250;
+const promote = renderMemory(
+	[fact("a", "low", 400, "2026-01-01T00:00:00Z"), fact("b", "high", 800, "2026-01-01T00:01:00Z")],
+	budget,
+);
+check("promotes high over low", promote.includes("[b]") && !promote.includes("[a]"));
+check("promotion stays in budget", estimate(promote) <= budget, `${estimate(promote)}/${budget}`);
+
+// (d) After that displacement, a medium fact must not be weighed against the
+//     displaced low one (the misalignment): B is rank high and must survive.
+const mixed = renderMemory(
+	[
+		fact("a", "low", 400, "2026-01-01T00:00:00Z"),
+		fact("b", "high", 800, "2026-01-01T00:01:00Z"),
+		fact("c", "medium", 200, "2026-01-01T00:02:00Z"),
+	],
+	budget,
+);
+check("keeps high over later medium", mixed.includes("[b]") && !mixed.includes("[c]"));
+check("mixed case stays in budget", estimate(mixed) <= budget, `${estimate(mixed)}/${budget}`);
+
+// (e) A pool-full bank must still render completely: the pool counts fact text,
+//     the summary adds ~14 tokens per fact of id/task overhead (measured 1.19x),
+//     so rendering a full pool at the pool number silently drops the newest facts.
+const full = Array.from({ length: 161 }, (_, i) =>
+	fact(`g${i}`, "high", 288, new Date(Date.UTC(2026, 0, 1, 0, 0, i)).toISOString()),
+);
+const atPool = renderMemory(full, 12_000);
+const withSummaryBudget = renderMemory(full, summaryBudget(12_000, full));
+check("pool number truncates a full bank", atPool.includes("not shown"), `${estimate(atPool)} tokens`);
+check(
+	"summaryBudget renders it whole",
+	!withSummaryBudget.includes("not shown") && estimate(withSummaryBudget) <= summaryBudget(12_000, full),
+	`${estimate(withSummaryBudget)}/${summaryBudget(12_000, full)} tokens`,
+);
+
+console.log(failures === 0 ? "ok: render budget + promotion" : `${failures} failure(s)`);
+process.exit(failures === 0 ? 0 : 1);
