@@ -40,11 +40,19 @@ const SESSIONS_DIR = join(STATE_DIR, "sessions");
 
 const OPS_RECORD = "hy.ops";
 
-function loadConfig(): HyConfig {
+/**
+ * The config file is optional, but a *malformed* file is not: falling back to
+ * defaults in silence would run a different writer model than the one the user
+ * configured, with no warning anywhere. A missing file is simply "all
+ * defaults".
+ */
+export function loadConfigFile(path: string): { config: HyConfig; parseError: string | null } {
 	try {
-		return { ...SETTING_DEFAULTS, ...JSON.parse(readFileSync(CONFIG_FILE, "utf8")) };
-	} catch {
-		return { ...SETTING_DEFAULTS };
+		return { config: { ...SETTING_DEFAULTS, ...JSON.parse(readFileSync(path, "utf8")) }, parseError: null };
+	} catch (error) {
+		if ((error as NodeJS.ErrnoException)?.code === "ENOENT")
+			return { config: { ...SETTING_DEFAULTS }, parseError: null };
+		return { config: { ...SETTING_DEFAULTS }, parseError: String((error as Error)?.message ?? error) };
 	}
 }
 
@@ -121,7 +129,7 @@ function tokensSince(
 }
 
 export default function piHyMemory(pi: ExtensionAPI): void {
-	const config = loadConfig();
+	const { config, parseError: configParseError } = loadConfigFile(CONFIG_FILE);
 	const status = createStatusBar("hy");
 	let lastPending = 0;
 	let state: SessionState | null = null;
@@ -337,6 +345,10 @@ export default function piHyMemory(pi: ExtensionAPI): void {
 	};
 
 	pi.on("session_start", (_event, ctx) => {
+		if (configParseError) {
+			audit("config_parse_failed", { file: CONFIG_FILE, error: configParseError.slice(0, 200) });
+			warn(ctx, `config ${CONFIG_FILE} could not be parsed, using defaults: ${configParseError.slice(0, 160)}`);
+		}
 		// The writer is a model from pi's list now; an endpoint pair left in the
 		// config would otherwise be ignored in silence.
 		const legacy = legacyKeys(config as unknown as Record<string, unknown>);

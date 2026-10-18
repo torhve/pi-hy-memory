@@ -6,3 +6,4 @@ captures/
 dev/out/
 *.log
 .DS_Store
+.pi/
