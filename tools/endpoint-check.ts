@@ -136,6 +136,11 @@ check(
 );
 check("has an abort signal", opts.signal instanceof AbortSignal);
 check("usage mapped", out.usage.inTokens === 1234 && out.usage.outTokens === 56 && out.usage.wallS === 2);
+check(
+	"completion names the model that answered",
+	out.model.provider === "llama-swap" && out.model.id === "hy-memory-30b-a3b",
+	`${out.model.provider}/${out.model.id}`,
+);
 
 // 5. A provider failure that *resolves* must not look like a completion.
 const failed = registry([model("llama-swap", "m")], { fail: "HTTP 429 Too Many Requests" });

@@ -96,7 +96,7 @@ export function rawWriter(options: RawWriterOptions): Writer {
 				outTokens: data.usage?.completion_tokens ?? 0,
 				wallS: (Date.now() - started) / 1000,
 			};
-			return { content, usage };
+			return { content, usage, model: { provider: "raw", id: options.model } };
 		},
 	};
 }

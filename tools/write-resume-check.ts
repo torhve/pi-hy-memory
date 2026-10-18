@@ -61,13 +61,18 @@ const writer: Writer = {
 	async complete(_system, _user, label) {
 		if (label.startsWith("extract")) {
 			extractCalls++;
-			return { content: JSON.stringify(drafts), usage: { inTokens: 100, outTokens: 50, wallS: 0 } };
+			return {
+				content: JSON.stringify(drafts),
+				usage: { inTokens: 100, outTokens: 50, wallS: 0 },
+				model: { provider: "test", id: "fake" },
+			};
 		}
 		reconcileCalls++;
 		if (reconcileCalls === 1) throw new WriterError(`${label}: HTTP 504 Gateway Time-out`, 504);
 		return {
 			content: JSON.stringify({ ops: [{ action: "ADD", draft: 0 }] }),
 			usage: { inTokens: 200, outTokens: 30, wallS: 0 },
+			model: { provider: "test", id: "fake" },
 		};
 	},
 };

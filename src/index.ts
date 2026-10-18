@@ -372,6 +372,7 @@ export default function piHyMemory(pi: ExtensionAPI): void {
 		audit("write_start", {
 			sessionId,
 			chunkId,
+			writer: config.model,
 			chunkTokens: estimateTokens(chunk.text),
 			droppedEntries: chunk.droppedEntries,
 		});
@@ -457,6 +458,7 @@ export default function piHyMemory(pi: ExtensionAPI): void {
 						chunkId,
 						reason: result.failover,
 						endpoints: result.endpoints,
+						models: result.models,
 						primaryDownUntil: failoverState.primaryDownUntil
 							? new Date(failoverState.primaryDownUntil).toISOString()
 							: null,

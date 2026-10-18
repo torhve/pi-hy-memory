@@ -34,6 +34,8 @@ export type ChunkWrite = {
 	report: ApplyReport;
 	usage: { extract: CallUsage; reconcile: CallUsage };
 	endpoints: { extract: "primary" | "fallback"; reconcile: "primary" | "fallback" };
+	/** `provider/modelId` that actually answered each call ("resumed" for a reused extract). */
+	models: { extract: string; reconcile: string };
 	failover?: string;
 	/** Facts evicted because the bank exceeded poolMaxTokens. */
 	budgetDropped: { id: string; statement: string }[];
@@ -94,11 +96,15 @@ export async function writeChunk(
 
 	let extractEndpoint: "primary" | "fallback" = "primary";
 	let reconcileEndpoint: "primary" | "fallback" = "primary";
+	let extractModel = "";
+	let reconcileModel = "";
 	let failover: string | undefined;
 	let drafts: Draft[];
 	let rejected: { reason: string; draft: unknown }[];
 	let extractUsage: CallUsage;
 	if (options.resume) {
+		// The extract ran in an earlier attempt; its model was recorded then.
+		extractModel = "resumed";
 		drafts = options.resume.drafts;
 		rejected = options.resume.rejected;
 		extractUsage = options.resume.usage;
@@ -118,6 +124,7 @@ export async function writeChunk(
 			},
 		);
 		extractEndpoint = extract.endpoint;
+		extractModel = `${extract.model.provider}/${extract.model.id}`;
 		failover = extract.failed;
 		if (options.rawDir) writeFileSync(`${options.rawDir}/${chunkId}.extract.txt`, extract.content);
 		({ drafts, rejected } = stage("extract", chunkId, () => parseDrafts(extract.content, chunk.refs)));
@@ -169,6 +176,7 @@ export async function writeChunk(
 			},
 		);
 		reconcileEndpoint = raw.endpoint;
+		reconcileModel = `${raw.model.provider}/${raw.model.id}`;
 		failover = failover ?? raw.failed;
 		if (options.rawDir) writeFileSync(`${options.rawDir}/${chunkId}.reconcile.txt`, raw.content);
 		const parsed = stage("reconcile", chunkId, () =>
@@ -249,6 +257,7 @@ export async function writeChunk(
 		report,
 		usage: { extract: extractUsage, reconcile: reconcileUsage },
 		endpoints: { extract: extractEndpoint, reconcile: reconcileEndpoint },
+		models: { extract: extractModel, reconcile: reconcileModel },
 		failover,
 		budgetDropped: budget.dropped.map((e) => ({ id: e.id, statement: e.statement.slice(0, 160) })),
 		records,

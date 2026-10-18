@@ -26,7 +26,11 @@ const scripted = (name: string, outcomes: (string | WriterError)[], log: string[
 			const outcome = outcomes[Math.min(index++, outcomes.length - 1)];
 			log.push(name);
 			if (outcome instanceof Error) throw outcome;
-			return { content: outcome, usage: { inTokens: 1, outTokens: 1, wallS: 0 } };
+			return {
+				content: outcome,
+				usage: { inTokens: 1, outTokens: 1, wallS: 0 },
+				model: { provider: "test", id: name },
+			};
 		},
 	};
 };
@@ -107,6 +111,7 @@ const run = async (primary: Writer, fallback: Writer | null, options = {}) =>
 		preferFallback: true,
 	});
 	check("preferFallback skips the primary", out.endpoint === "fallback" && log.join() === "fallback");
+	check("fallback completion reports its own model", out.model.id === "fallback", out.model.id);
 }
 
 // 7. ... and if the fallback then fails, the primary is tried, without marking

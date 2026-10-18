@@ -29,9 +29,21 @@ import type { Api, AssistantMessage, Model } from "@earendil-works/pi-ai";
 import type { ModelRegistry } from "@earendil-works/pi-coding-agent";
 import type { CallUsage } from "./types.js";
 
+/** The model a completion came from, after name resolution. */
+export interface ModelRef {
+	provider: string;
+	id: string;
+}
+
 export interface Completion {
 	content: string;
 	usage: CallUsage;
+	/**
+	 * Resolution is dynamic and may differ per call (primary vs fallback, or a
+	 * provider that changed its model list mid-session), so the answer carries the
+	 * model rather than trusting the configured name.
+	 */
+	model: ModelRef;
 }
 
 export interface Writer {
@@ -155,7 +167,7 @@ export function createWriter(registry: ModelRegistry, options: WriterOptions): W
 						sessionId: label,
 					},
 				);
-				return interpret(message, label, started);
+				return { ...interpret(message, label, started), model: { provider: model.provider, id: model.id } };
 			} catch (error) {
 				if (error instanceof WriterError) throw error;
 				const text = String((error as Error)?.message ?? error);
@@ -168,7 +180,7 @@ export function createWriter(registry: ModelRegistry, options: WriterOptions): W
 	};
 }
 
-function interpret(message: AssistantMessage, label: string, started: number): Completion {
+function interpret(message: AssistantMessage, label: string, started: number): Omit<Completion, "model"> {
 	const text = message.content
 		.filter((block): block is { type: "text"; text: string } => block.type === "text")
 		.map((block) => block.text)
