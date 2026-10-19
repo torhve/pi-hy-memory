@@ -26,6 +26,14 @@ export type ChainInput = {
 	pendingExtract: boolean;
 	/** Consecutive failed writes; the writer is not healthy. */
 	failures: number;
+	/**
+	 * The attempt that just finished failed, whatever its class. A transport blip
+	 * resets `failures` (it says nothing about chunk size), but it still means the
+	 * writer is struggling right now, so the chain must not follow it: measured
+	 * 2026-10-19, chunk 069 failed with an endpoint error and 070 started one second
+	 * later, costing another full 20 000-token request.
+	 */
+	lastFailed: boolean;
 	/** Follow-ups already started since the last `turn_end`. */
 	chained: number;
 	pendingTokens: number;
@@ -41,6 +49,7 @@ export function shouldChainWrite(input: ChainInput): ChainDecision {
 	if (!input.sessionMatches) return { chain: false, reason: "session changed" };
 	if (input.inFlight) return { chain: false, reason: "write in flight" };
 	if (input.pendingExtract) return { chain: false, reason: "extract awaiting reconcile" };
+	if (input.lastFailed) return { chain: false, reason: "last attempt failed" };
 	if (input.failures > 0) return { chain: false, reason: "writer unhealthy" };
 	if (input.chained >= MAX_CHAIN) return { chain: false, reason: "chain limit" };
 	if (input.entryCount === 0) return { chain: false, reason: "nothing renderable" };

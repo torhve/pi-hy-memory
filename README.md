@@ -233,7 +233,7 @@ to break silently:
 |---|---|
 | `endpoint-check` | model resolution from pi's list (slashes in ids, late registration), the request we hand to `registry.complete()`, and the fact that a provider failure *resolves* with `stopReason: "error"` |
 | `fallback-check` | which failures move to the second model (429 retried first, 5xx/abort move, 400 does not) and `preferFallback` |
-| `chain-check` | a completed write chains another only on a healthy writer, with no persisted extract, and never past `MAX_CHAIN` |
+| `chain-check` | a completed write chains another only on a healthy writer and after a successful attempt, with no persisted extract, and never past `MAX_CHAIN` |
 | `session-off-check` | `/hy off` stops the trigger, survives a reload, is announced on resume, and `/hy on` drops the off window as a `hy.gap` |
 | `lost-cursor-check` | a rewound branch resumes from the furthest coverage the ledger still reaches, not from index 0 |
 | `failure-class-check` | chunk/output failures shrink the next chunk; transport, 5xx, 429 and auth do not |

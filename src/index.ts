@@ -138,6 +138,8 @@ export default function piHyMemory(pi: ExtensionAPI): void {
 	let lastPending = 0;
 	/** Follow-up writes started since the last turn_end; see src/chain.ts. */
 	let chained = 0;
+	/** Whether the write that just finished failed, for the chain gate. */
+	let lastAttemptFailed = false;
 	let state: SessionState | null = null;
 	let warned = false;
 
@@ -500,6 +502,7 @@ export default function piHyMemory(pi: ExtensionAPI): void {
 				live.cursorId = result.records.at(-1)?.coversUpToId ?? live.cursorId;
 				live.resumeFromId = undefined;
 				live.coverageDriftAudited = false;
+				lastAttemptFailed = false;
 				live.failures = 0;
 				// Only a primary answer clears the cooldown: a fallback-only write never
 				// tested the primary, and treating it as recovery made every write pay
@@ -594,6 +597,7 @@ export default function piHyMemory(pi: ExtensionAPI): void {
 					/* ctx is stale; the audit line is the record */
 				}
 			} catch (error) {
+				lastAttemptFailed = true;
 				const kind = failureClass(error);
 				// Only a chunk or output failure says anything about chunk size. An
 				// endpoint failure (transport, 5xx, 429) resets the shrink instead of
@@ -643,6 +647,7 @@ export default function piHyMemory(pi: ExtensionAPI): void {
 			inFlight: live.pending !== null,
 			pendingExtract: live.pendingExtract !== null,
 			failures: live.failures,
+			lastFailed: lastAttemptFailed,
 			chained,
 			pendingTokens: tokens,
 			triggerTokens: config.observeAfterTokens,
@@ -679,6 +684,7 @@ export default function piHyMemory(pi: ExtensionAPI): void {
 
 	pi.on("turn_end", (_event, ctx) => {
 		chained = 0;
+		lastAttemptFailed = false;
 		if (!sessionActive()) return;
 		if (!state) {
 			try {

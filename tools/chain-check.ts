@@ -29,6 +29,7 @@ const base: ChainInput = {
 	inFlight: false,
 	pendingExtract: false,
 	failures: 0,
+	lastFailed: false,
 	chained: 0,
 	pendingTokens: 20_000,
 	triggerTokens: 15_000,
@@ -49,6 +50,11 @@ check("session changed", reason({ sessionMatches: false }), "session changed");
 check("write in flight", reason({ inFlight: true }), "write in flight");
 check("extract awaiting reconcile", reason({ pendingExtract: true }), "extract awaiting reconcile");
 check("writer unhealthy", reason({ failures: 1 }), "writer unhealthy");
+// 2026-10-19: 069 failed with an endpoint error, which resets `failures`, and 070
+// started one second later — another full 20 000-token request against a writer
+// that had just failed. Whatever the class, the chain must not follow a failure.
+check("last attempt failed", reason({ lastFailed: true }), "last attempt failed");
+check("a failure beats a large window", decide({ lastFailed: true, pendingTokens: 500_000 }).chain, false);
 check("chain limit", reason({ chained: MAX_CHAIN }), "chain limit");
 check("nothing renderable", reason({ entryCount: 0 }), "nothing renderable");
 check("under trigger", reason({ pendingTokens: 14_999 }), "under trigger");

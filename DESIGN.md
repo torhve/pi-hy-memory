@@ -92,10 +92,13 @@ Two model calls per chunk. No turn budget, no completion signal, no third agent.
 early while a write is in flight, so a chunk that landed mid-turn left its backlog waiting
 for the next turn — measured on session `01a1510e`, ten minutes with the footer pinned at
 29k/15k after a failed write at 13:45 and no write until 13:55. The completion path now
-re-evaluates under a narrow policy (`src/chain.ts`): follow up only while `failures == 0`,
-never for a persisted extract (that window belongs to its retry path), and at most
-`MAX_CHAIN = 2` per turn, so an idle session drains a backlog without turning a failing
-writer into a retry loop.
+re-evaluates under a narrow policy (`src/chain.ts`): follow up only while `failures == 0`
+and never after the attempt that just failed, never for a persisted extract (that window
+belongs to its retry path), and at most `MAX_CHAIN = 2` per turn, so an idle session drains
+a backlog without turning a failing writer into a retry loop. The "last attempt failed" gate
+is separate from `failures` on purpose: an endpoint failure resets the budget shrink but still
+means the writer is struggling — measured 2026-10-19, chunk 069 failed and 070 started one
+second later, another full 20 000-token request.
 
 **Coverage is a position, not an id.** The watermark is stored as an entry id, and pi can move
 the leaf: a rewind, a resumed checkpoint, or a compaction that re-parents the branch leaves
