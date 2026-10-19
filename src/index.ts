@@ -26,6 +26,7 @@ import { EXTRACT_RECORD, highestChunkSeq, nextChunkId } from "./chunks.js";
 import { type HyConfig, legacyKeys, SETTING_DEFAULTS } from "./config.js";
 import { type ChunkBuild, compactionBoundary, entryTokens, renderEntry, serializeEntries } from "./entries.js";
 import { nextFailoverState } from "./failover.js";
+import { failureClass, shrinksChunk } from "./failures.js";
 import { createWriter, type Writer } from "./llm.js";
 import { writeChunk } from "./pipeline.js";
 import { renderMemory, summaryBudget } from "./render.js";
@@ -555,7 +556,13 @@ export default function piHyMemory(pi: ExtensionAPI): void {
 					/* ctx is stale; the audit line is the record */
 				}
 			} catch (error) {
-				if (state && state.sessionId === sessionId) state.failures++;
+				const kind = failureClass(error);
+				// Only a chunk or output failure says anything about chunk size. An
+				// endpoint failure (transport, 5xx, 429) resets the shrink instead of
+				// halving the budget for a problem the chunk did not cause.
+				if (state && state.sessionId === sessionId) {
+					state.failures = shrinksChunk(kind) ? state.failures + 1 : 0;
+				}
 				const resumed = Boolean(state?.pendingExtract);
 				status.failed(String((error as Error)?.message ?? error));
 				warn(ctx, `write failed: ${String((error as Error)?.message ?? error)}`);
@@ -563,6 +570,7 @@ export default function piHyMemory(pi: ExtensionAPI): void {
 					sessionId,
 					chunkId,
 					resumedExtract: resumed,
+					failureClass: kind,
 					failures: state?.failures ?? 0,
 					nextChunkBudget: chunkBudget(),
 					error: String((error as Error)?.message ?? error).slice(0, 400),

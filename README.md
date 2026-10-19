@@ -39,6 +39,10 @@ so its list is empty until its server answers. A write in that window fails with
 message; the watermark does not advance, so the next write retries and succeeds once the
 provider is up.
 
+Failures are classified, because only some of them say anything about chunk size. A timeout,
+a 413 or a context-length rejection halves the next chunk; unparseable output does too. A
+transport error, a 5xx, a 429 or an auth failure resets that shrink instead of applying it —
+the failover path already handles those, and a smaller chunk would not have helped.
 
 ## Configuration
 
@@ -187,6 +191,7 @@ to break silently:
 | `endpoint-check` | model resolution from pi's list (slashes in ids, late registration), the request we hand to `registry.complete()`, and the fact that a provider failure *resolves* with `stopReason: "error"` |
 | `fallback-check` | which failures move to the second model (429 retried first, 5xx/abort move, 400 does not) and `preferFallback` |
 | `chain-check` | a completed write chains another only on a healthy writer, with no persisted extract, and never past `MAX_CHAIN` |
+| `failure-class-check` | chunk/output failures shrink the next chunk; transport, 5xx, 429 and auth do not |
 | `failover-state-check` | the cooldown is cleared only by a **primary** answer |
 | `write-resume-check` | coverage contiguity, and not re-extracting after a failed reconcile |
 | `compaction-window-check` | compaction holds uncovered entries while that is affordable, accepts pi's cut when it is not, and sizes entries by their real text |

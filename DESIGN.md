@@ -97,6 +97,14 @@ never for a persisted extract (that window belongs to its retry path), and at mo
 `MAX_CHAIN = 2` per turn, so an idle session drains a backlog without turning a failing
 writer into a retry loop.
 
+**Failures are classified before they shrink the chunk.** `failures` halves the next
+chunk, which is right when the request is the problem and wrong when the endpoint is.
+`src/failures.ts` sorts a failure into `chunk` (timeout/abort, 413, context-length
+rejection), `output` (unparseable or empty completion) and `endpoint` (transport, 5xx, 429,
+auth); only the first two increment `failures`, and an endpoint failure resets it. Measured:
+write 059 failed with `extract …: terminated`, a dropped stream, and halving the budget made
+the next chunk leave 133 entries behind instead of 43.
+
 **The writer is a model, not an endpoint.** `src/llm.ts` resolves `provider/modelId` from pi's
 model registry and calls `registry.complete()`; provider registration, base URLs, credentials
 and request shapes stay pi's business, including for models a provider registers dynamically at
