@@ -71,6 +71,38 @@ the failover path already handles those, and a smaller chunk would not have help
 | `shutdownWaitMs` | `5000` | cap on how long `session_shutdown` waits for a write |
 | `statusBar` | `true` | footer bar: window fill, bank fill, spinner, `✓ +N ~M` |
 
+## Commands
+
+```
+/hy           status: session switch, bank size, cost so far
+/hy summary   the facts a compaction would render, as the model would read them
+/hy off       stop memory work for this session (remembered across reloads)
+/hy on        resume; the window accumulated while off is not remembered
+```
+
+`/hy off` exists because not every session earns its keep. A session that ends before the
+next compaction never uses the facts its writes paid for, and two model calls per chunk is
+real money on a short-lived session.
+
+While a session is off:
+
+- **writes stop.** The trigger returns before measuring, so nothing is spent. A write that
+  was already running is not aborted — it has been paid for — but no follow-up is chained.
+- **compaction still uses the bank**, when one exists. That summary is a string build with no
+  model call, so dropping it would make an off session strictly worse. With no bank (off from
+  the first turn) the hook returns nothing and pi summarises with its own model.
+- **`hy_recall` keeps working** on what the bank already holds. Nothing is deleted.
+- **the footer says `hy off`** and drops the pending bar: nothing will drain it, and a bar
+  pinned at 100 % reads as a stall rather than a choice.
+
+The switch is per session and durable (`state/sessions/<sessionId>.off`), so a reload or a
+session resumed tomorrow stays off, and `session_start` says so once instead of silently
+writing again. `/hy on` **discards** the window that accumulated while off — it moves the
+watermark to the newest entry and records a `hy.gap` with `reason: "disabled"` — because
+otherwise a session that was off for hours pays for the whole backlog in a burst of writes on
+re-enable. The config's `enabled: false` is the global kill switch and wins over `/hy on`;
+the command says so rather than pretending.
+
 ## Compaction: who decides when
 
 **pi decides.** The extension never triggers a compaction — it only supplies the summary
@@ -174,7 +206,8 @@ hy ▕███░░░░░▏ 6.2k/15k   ▕██░░░░░░▏ 1.4k
 First bar is the window that triggers the next write, second is the bank against
 `poolMaxTokens`. While a write runs the braille spinner names the stage — `extract`,
 `reconcile`, or `wait busy 15s` when backing off a 429 — and a finished write flashes
-`✓ +6 ~2` for five seconds. `✗ <reason>` replaces it on failure. Derived from
+`✓ +6 ~2` for five seconds. `✗ <reason>` replaces it on failure, and `hy off` replaces the
+whole first bar when the session switch is off. Derived from
 pi-blackhole's footer ([k0valik/pi-blackhole](https://github.com/k0valik/pi-blackhole)), adapted to the budgets this extension actually maintains.
 
 ## Checks
@@ -191,6 +224,7 @@ to break silently:
 | `endpoint-check` | model resolution from pi's list (slashes in ids, late registration), the request we hand to `registry.complete()`, and the fact that a provider failure *resolves* with `stopReason: "error"` |
 | `fallback-check` | which failures move to the second model (429 retried first, 5xx/abort move, 400 does not) and `preferFallback` |
 | `chain-check` | a completed write chains another only on a healthy writer, with no persisted extract, and never past `MAX_CHAIN` |
+| `session-off-check` | `/hy off` stops the trigger, survives a reload, is announced on resume, and `/hy on` drops the off window as a `hy.gap` |
 | `failure-class-check` | chunk/output failures shrink the next chunk; transport, 5xx, 429 and auth do not |
 | `failover-state-check` | the cooldown is cleared only by a **primary** answer |
 | `write-resume-check` | coverage contiguity, and not re-extracting after a failed reconcile |

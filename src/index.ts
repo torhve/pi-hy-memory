@@ -83,6 +83,8 @@ type SessionState = {
 	cursorId: string | undefined;
 	/** Set when a compaction gap dropped the cursor; coverage resumes at this entry. */
 	resumeFromId?: string;
+	/** Writing is on for this session; `/hy off` clears it, the marker file persists it. */
+	enabled: boolean;
 	chunkSeq: number;
 	/** Consecutive failed writes; shrinks the chunk so a retry can complete. */
 	failures: number;
@@ -207,6 +209,35 @@ export default function piHyMemory(pi: ExtensionAPI): void {
 	 */
 	const pendingExtractPath = (sessionId: string): string => join(SESSIONS_DIR, `${sessionId}.pending-extract.json`);
 
+	/**
+	 * `/hy off` is per session and durable: the marker survives a reload and a
+	 * resume, so a session the user disabled last week does not quietly start
+	 * writing again. The name matches the `<sessionId>.<kind>` pattern `pruneSessions`
+	 * already groups by, so retention needs no changes.
+	 */
+	const offMarkerPath = (sessionId: string): string => join(SESSIONS_DIR, `${sessionId}.off`);
+
+	const isOffForSession = (sessionId: string): boolean => {
+		try {
+			return readFileSync(offMarkerPath(sessionId), "utf8").trim().length > 0;
+		} catch {
+			return false;
+		}
+	};
+
+	const setSessionOff = (sessionId: string, off: boolean): void => {
+		try {
+			mkdirSync(SESSIONS_DIR, { recursive: true });
+			if (off) writeFileSync(offMarkerPath(sessionId), JSON.stringify({ at: new Date().toISOString() }));
+			else rmSync(offMarkerPath(sessionId), { force: true });
+		} catch {
+			/* the in-memory flag still applies for this run */
+		}
+	};
+
+	/** The one place that answers "may this session write?", config and switch together. */
+	const sessionActive = (): boolean => config.enabled && state?.enabled !== false;
+
 	function readPendingExtract(sessionId: string): PendingExtract | null {
 		try {
 			const saved = JSON.parse(readFileSync(pendingExtractPath(sessionId), "utf8")) as PendingExtract;
@@ -254,6 +285,7 @@ export default function piHyMemory(pi: ExtensionAPI): void {
 		}
 		status.snapshot({
 			pending,
+			off: !sessionActive(),
 			budget: config.observeAfterTokens,
 			bank: state.bank.filter((e) => e.status === "active").reduce((sum, e) => sum + (e.tokenCount ?? 0), 0),
 			pool: config.poolMaxTokens,
@@ -317,8 +349,10 @@ export default function piHyMemory(pi: ExtensionAPI): void {
 		}
 		const lastGap = [...effective].reverse().find((r) => r.type === "hy.gap");
 		chained = 0;
+		const offForSession = isOffForSession(sessionId);
 		state = {
 			sessionId,
+			enabled: !offForSession,
 			ledger: effective,
 			bank: folded,
 			cursorId: effective.at(-1)?.coversUpToId,
@@ -347,6 +381,7 @@ export default function piHyMemory(pi: ExtensionAPI): void {
 			sessionId,
 			records: effective.length,
 			active: state.bank.filter((e) => e.status === "active").length,
+			disabled: offForSession,
 		});
 
 		// Retention: per-session banks/ledgers accumulate forever otherwise. Runs
@@ -378,6 +413,18 @@ export default function piHyMemory(pi: ExtensionAPI): void {
 			if (config.statusBar !== false) {
 				status.attach(ctx.ui as never);
 				pushStatus(ctx.sessionManager.getBranch());
+			}
+			// A remembered "off" must announce itself: silence here is indistinguishable
+			// from a broken extension until the user notices whole sessions went by.
+			if (state && !state.enabled) {
+				try {
+					ctx.ui.notify(
+						"pi-hy-memory: off for this session (remembered from an earlier /hy off). /hy on resumes it.",
+						"warning",
+					);
+				} catch {
+					/* stale ctx; the audit line below is the record */
+				}
 			}
 		} catch (error) {
 			warn(ctx, `could not restore bank: ${String((error as Error)?.message ?? error)}`);
@@ -599,7 +646,7 @@ export default function piHyMemory(pi: ExtensionAPI): void {
 		const { pending, tokens } = tokensSince(branch, live.cursorId, live.resumeFromId);
 		const chunk = serializeEntries(pending, { maxTokens: chunkBudget(), maxEntryChars: config.maxEntryChars });
 		const decision = shouldChainWrite({
-			enabled: config.enabled,
+			enabled: sessionActive(),
 			sessionMatches: liveSession === sessionId && liveSession === live.sessionId,
 			inFlight: live.pending !== null,
 			pendingExtract: live.pendingExtract !== null,
@@ -640,7 +687,7 @@ export default function piHyMemory(pi: ExtensionAPI): void {
 
 	pi.on("turn_end", (_event, ctx) => {
 		chained = 0;
-		if (!config.enabled) return;
+		if (!sessionActive()) return;
 		if (!state) {
 			try {
 				reset(ctx);
@@ -899,27 +946,126 @@ export default function piHyMemory(pi: ExtensionAPI): void {
 		},
 	});
 
+	/**
+	 * `/hy on` discards the window accumulated while off. Otherwise a session that was
+	 * off for hours pays for its whole backlog in a burst of chained writes — exactly
+	 * the work the switch exists to avoid. Recorded as a gap so the ledger keeps
+	 * saying what was never read.
+	 */
+	const skipWhileOff = (ctx: ExtensionContext, live: SessionState): { entries: number; tokens: number } | null => {
+		let branch: SessionEntry[];
+		try {
+			branch = ctx.sessionManager.getBranch();
+		} catch {
+			return null;
+		}
+		const newest = branch.at(-1);
+		if (!newest) return null;
+		const { pending, tokens } = tokensSince(branch, live.cursorId, live.resumeFromId);
+		if (pending.length === 0) return null;
+		const gap: LedgerRecord = {
+			type: "hy.gap",
+			coversUpToId: newest.id,
+			fromId: newest.id,
+			entries: pending.length,
+			tokens,
+			reason: "disabled",
+			createdAt: new Date().toISOString(),
+		};
+		live.ledger.push(gap);
+		live.cursorId = newest.id;
+		live.resumeFromId = undefined;
+		mirror();
+		audit("skipped_while_off", { sessionId: live.sessionId, entries: pending.length, tokens });
+		return { entries: pending.length, tokens };
+	};
+
 	pi.registerCommand("hy", {
-		description: "pi-hy-memory status: [status] bank size and cost, [summary] the facts compaction would render",
+		description:
+			"pi-hy-memory: [status] bank size and cost, [summary] the facts a compaction renders, [off] stop memory work for this session, [on] resume it",
+		getArgumentCompletions: (prefix) =>
+			[
+				{ value: "status", label: "status", description: "bank size, cost so far, session switch" },
+				{ value: "summary", label: "summary", description: "the facts a compaction would render" },
+				{ value: "off", label: "off", description: "stop writing memory for this session (remembered)" },
+				{ value: "on", label: "on", description: "resume; the window accumulated while off is discarded" },
+			].filter((item) => item.value.startsWith(prefix.trim().toLowerCase())),
 		handler: async (args, ctx) => {
+			const arg = String(args ?? "")
+				.trim()
+				.toLowerCase();
 			if (!state) {
 				ctx.ui.notify("pi-hy-memory: no bank for this session.", "info");
 				return;
 			}
-			const active = state.bank.filter((e) => e.status === "active");
+			const live = state;
+
+			if (arg === "off" || arg === "disable") {
+				if (!config.enabled) {
+					ctx.ui.notify(
+						"pi-hy-memory: already off for every session in the config (`enabled: false`).",
+						"info",
+					);
+					return;
+				}
+				if (!live.enabled) {
+					ctx.ui.notify("pi-hy-memory: already off for this session.", "info");
+					return;
+				}
+				live.enabled = false;
+				setSessionOff(live.sessionId, true);
+				audit("disabled", {
+					sessionId: live.sessionId,
+					inFlight: live.pending !== null,
+					active: live.bank.filter((e) => e.status === "active").length,
+				});
+				pushStatus();
+				ctx.ui.notify(
+					`pi-hy-memory: off for this session (remembered). No new writes; the ${live.bank.filter((e) => e.status === "active").length} facts already in the bank stay available to recall and compaction.` +
+						(live.pending ? " The write already running will finish." : ""),
+					"info",
+				);
+				return;
+			}
+
+			if (arg === "on" || arg === "enable") {
+				if (!config.enabled) {
+					ctx.ui.notify(
+						"pi-hy-memory: the config disables it globally (`enabled: false`); edit the config to turn it on.",
+						"warning",
+					);
+					return;
+				}
+				if (live.enabled) {
+					ctx.ui.notify("pi-hy-memory: already on for this session.", "info");
+					return;
+				}
+				const skipped = skipWhileOff(ctx, live);
+				live.enabled = true;
+				setSessionOff(live.sessionId, false);
+				audit("enabled", {
+					sessionId: live.sessionId,
+					skippedEntries: skipped?.entries ?? 0,
+					skippedTokens: skipped?.tokens ?? 0,
+				});
+				pushStatus();
+				ctx.ui.notify(
+					`pi-hy-memory: on. Writing resumes from now; ${skipped?.entries ?? 0} entries (${skipped?.tokens ?? 0} tokens) that accumulated while off are not remembered.`,
+					"info",
+				);
+				return;
+			}
+
+			const active = live.bank.filter((e) => e.status === "active");
 			const tokens = active.reduce((sum, e) => sum + e.tokenCount, 0);
-			if (
-				String(args ?? "")
-					.trim()
-					.toLowerCase() === "summary"
-			) {
-				ctx.ui.notify(renderMemory(state.bank, summaryBudget(config.poolMaxTokens, state.bank)), "info");
+			if (arg === "summary") {
+				ctx.ui.notify(renderMemory(live.bank, summaryBudget(config.poolMaxTokens, live.bank)), "info");
 				return;
 			}
 			ctx.ui.notify(
-				`pi-hy-memory ${config.dryRun ? "(dry run) " : ""}· writer ${config.model} · ${active.length}/${state.bank.length} facts active · ${tokens} tokens · ` +
-					`${state.stats.writes} writes · +${state.stats.added} ~${state.stats.updated} -${state.stats.deleted} · ` +
-					`${state.stats.inTokens} in / ${state.stats.outTokens} out tok · ${state.stats.wallS.toFixed(0)}s · ${state.stats.compactions} compactions`,
+				`pi-hy-memory ${live.enabled ? "" : "OFF "}${config.dryRun ? "(dry run) " : ""}· writer ${config.model} · ${active.length}/${live.bank.length} facts active · ${tokens} tokens · ` +
+					`${live.stats.writes} writes · +${live.stats.added} ~${live.stats.updated} -${live.stats.deleted} · ` +
+					`${live.stats.inTokens} in / ${live.stats.outTokens} out tok · ${live.stats.wallS.toFixed(0)}s · ${live.stats.compactions} compactions`,
 				"info",
 			);
 		},

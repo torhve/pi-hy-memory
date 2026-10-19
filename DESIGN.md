@@ -97,6 +97,25 @@ never for a persisted extract (that window belongs to its retry path), and at mo
 `MAX_CHAIN = 2` per turn, so an idle session drains a backlog without turning a failing
 writer into a retry loop.
 
+**A session can be switched off, and the switch is durable.** Not every session earns its
+keep: one that ends before the next compaction never uses the facts its writes paid for, and
+each write is two model calls. `/hy off` therefore sets `state.enabled = false` and writes
+`state/sessions/<sessionId>.off`, which `reset()` reads, so a reload or a resumed session
+stays off and `session_start` audits `disabled: true` and says so once — a switch that
+silently flips back is worse than no switch.
+
+While off, only the expensive half stops: `sessionActive()` gates the `turn_end` trigger and
+the chain policy, and nothing else. The compaction hook still answers with the bank when one
+exists, because that summary is a free string build and dropping it would make an off session
+strictly worse; with no bank it already returns `undefined` and pi summarises with its own
+model. `hy_recall` keeps working. The footer renders `hy off` and drops the pending bar,
+because a bar that can never drain reads as a stall.
+
+`/hy on` **discards** what accumulated: it moves the watermark to the newest branch entry and
+writes a `hy.gap { reason: "disabled" }` — the same record compaction uses for a cut it could
+not avoid — so the ledger still says which entries were never read, and no catch-up burst is
+paid on re-enable. The config's `enabled: false` stays the global kill switch and wins.
+
 **Failures are classified before they shrink the chunk.** `failures` halves the next
 chunk, which is right when the request is the problem and wrong when the endpoint is.
 `src/failures.ts` sorts a failure into `chunk` (timeout/abort, 413, context-length

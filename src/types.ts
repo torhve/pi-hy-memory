@@ -90,7 +90,8 @@ export type LedgerRecord =
 			/** How many entries fell between the two, and their estimated size. */
 			entries: number;
 			tokens: number;
-			reason: "compaction";
+			/** "compaction": pi cut past the watermark. "disabled": this session was off. */
+			reason: "compaction" | "disabled";
 			createdAt: string;
 	  };
 

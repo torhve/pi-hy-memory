@@ -37,6 +37,8 @@ export type StatusSnapshot = {
 	bank: number;
 	/** poolMaxTokens: the bank budget. */
 	pool: number;
+	/** Turned off for this session: no write will drain the window. */
+	off?: boolean;
 	stage?: "extract" | "reconcile" | "waiting";
 	detail?: string;
 };
@@ -109,6 +111,12 @@ export function createStatusBar(key = "hy"): StatusBar {
 
 	const render = (): string => {
 		if (!values.budget && !values.bank) return "";
+		if (values.off) {
+			// No pending bar: while this session is off nothing will drain it, and a bar
+			// pinned at 100 % reads as a stall rather than a choice.
+			const bank = `${bar(fg, values.bank, values.pool)} ${fg("muted", `${compact(values.bank)}/${compact(values.pool)}`)}`;
+			return `${fg("muted", "hy off")}  ${bank}`;
+		}
 		const parts: string[] = [
 			`${fg("success", "hy")} ${bar(fg, values.pending, values.budget)} ${fg("muted", `${compact(values.pending)}/${compact(values.budget)}`)}`,
 			`${bar(fg, values.bank, values.pool)} ${fg("muted", `${compact(values.bank)}/${compact(values.pool)}`)}`,
