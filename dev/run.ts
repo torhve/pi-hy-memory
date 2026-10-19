@@ -213,34 +213,51 @@ async function main(): Promise<void> {
 		let coverage: { zeroCandidateDrafts: number; noCandidateDrafts: number; shownUnion: number } | undefined =
 			resumeRecord ? candidateCoverage(bank, resumeRecord.drafts as unknown as Draft[]) : undefined;
 		let extractOnDisk = false;
-		let write: Awaited<ReturnType<typeof writeChunk>>;
-		try {
-			write = await writeChunk(writer, bank, chunkId, chunk, {
-				poolMaxTokens: pool,
-				rawDir: join(outDir, "raw"),
-				resume: resumeRecord
-					? {
-							drafts: resumeRecord.drafts as Draft[],
-							rejected: [],
-							usage: resumeRecord.usage,
-							refs: capture.refs,
-							coversUpToId: resumeRecord.coversUpToId,
-						}
-					: undefined,
-				onExtract: (record) => {
-					// Persist before reconcile can fail: a crash resumes from these drafts.
-					appendFileSync(ledgerPath, `${JSON.stringify(record)}\n`);
-					extractOnDisk = true;
-					coverage = candidateCoverage(
-						bank,
-						record.drafts.map((d) => d as unknown as Draft),
-					);
-				},
-			});
-		} catch (error) {
-			console.error(`${chunkId}: FAILED ${String((error as Error)?.message ?? error)}`);
-			continue;
+		let persistedExtract: (LedgerRecord & { type: "hy.extract" }) | undefined;
+		let write: Awaited<ReturnType<typeof writeChunk>> | undefined;
+		const attempts = 3;
+		for (let attempt = 1; attempt <= attempts; attempt++) {
+			const resumeFrom = persistedExtract ?? resumeRecord;
+			try {
+				write = await writeChunk(writer, bank, chunkId, chunk, {
+					poolMaxTokens: pool,
+					rawDir: join(outDir, "raw"),
+					resume: resumeFrom
+						? {
+								drafts: resumeFrom.drafts as Draft[],
+								rejected: [],
+								usage: resumeFrom.usage,
+								refs: capture.refs,
+								coversUpToId: resumeFrom.coversUpToId,
+							}
+						: undefined,
+					onExtract: (record) => {
+						// Persist before reconcile can fail: a crash resumes from these drafts.
+						appendFileSync(ledgerPath, `${JSON.stringify(record)}\n`);
+						extractOnDisk = true;
+						persistedExtract = record;
+						coverage = candidateCoverage(
+							bank,
+							record.drafts.map((d) => d as unknown as Draft),
+						);
+					},
+				});
+				break;
+			} catch (error) {
+				const message = String((error as Error)?.message ?? error);
+				// A failed extract leaves nothing persisted; only a completed extract
+				// (this attempt or an earlier one) makes a retry cheap.
+				if (attempt >= attempts || !(persistedExtract || resumeRecord)) {
+					console.error(`${chunkId}: FAILED ${message}`);
+					write = undefined;
+					break;
+				}
+				console.error(
+					`${chunkId}: attempt ${attempt} failed (${message}); retrying from the persisted extract`,
+				);
+			}
 		}
+		if (!write) continue;
 		// The extract record is already on disk (persisted at onExtract, or carried
 		// from the resumed attempt); appending it again would duplicate the chunk.
 		const newRecords = write.records.filter((r) => !(r.type === "hy.extract" && (resumeRecord || extractOnDisk)));
