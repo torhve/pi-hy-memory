@@ -24,7 +24,16 @@ import { enforceBudget, foldLedger } from "./bank.js";
 import { shouldChainWrite } from "./chain.js";
 import { EXTRACT_RECORD, highestChunkSeq, nextChunkId } from "./chunks.js";
 import { type HyConfig, legacyKeys, SETTING_DEFAULTS } from "./config.js";
-import { type ChunkBuild, compactionBoundary, entryTokens, renderEntry, serializeEntries } from "./entries.js";
+import {
+	type ChunkBuild,
+	compactionBoundary,
+	coverageWindow,
+	entryTokens,
+	renderEntry,
+	resumeAfterLostCursor,
+	serializeEntries,
+	type Window,
+} from "./entries.js";
 import { nextFailoverState } from "./failover.js";
 import { failureClass, shrinksChunk } from "./failures.js";
 import { createWriter, type Writer } from "./llm.js";
@@ -85,6 +94,8 @@ type SessionState = {
 	resumeFromId?: string;
 	/** Writing is on for this session; `/hy off` clears it, the marker file persists it. */
 	enabled: boolean;
+	/** `coverage_drift` is audited once per episode, not every turn. */
+	coverageDriftAudited?: boolean;
 	chunkSeq: number;
 	/** Consecutive failed writes; shrinks the chunk so a retry can complete. */
 	failures: number;
@@ -119,27 +130,6 @@ function ledgerFromSession(entries: SessionEntry[]): LedgerRecord[] {
 			records.push(data);
 	}
 	return records;
-}
-
-function tokensSince(
-	entries: SessionEntry[],
-	cursorId: string | undefined,
-	/** Where coverage resumes when the compaction gap dropped the cursor itself. */
-	resumeFromId?: string,
-): { pending: SessionEntry[]; tokens: number } {
-	let start = 0;
-	if (cursorId) {
-		const at = entries.findIndex((e) => e.id === cursorId);
-		if (at >= 0) start = at + 1;
-		else if (resumeFromId) {
-			// The gap record's fromId is the first entry that survived the cut, and it
-			// is uncovered: start there rather than re-reading the whole branch.
-			const resumed = entries.findIndex((e) => e.id === resumeFromId);
-			if (resumed >= 0) start = resumed;
-		}
-	}
-	const pending = entries.slice(start);
-	return { pending, tokens: pending.reduce((sum, e) => sum + entryTokens(e), 0) };
 }
 
 export default function piHyMemory(pi: ExtensionAPI): void {
@@ -277,7 +267,7 @@ export default function piHyMemory(pi: ExtensionAPI): void {
 		let pending = lastPending;
 		if (entries) {
 			try {
-				pending = tokensSince(entries, state.cursorId, state.resumeFromId).tokens;
+				pending = coverageWindow(entries, state.ledger, state.cursorId, state.resumeFromId).tokens;
 			} catch {
 				pending = 0;
 			}
@@ -509,6 +499,7 @@ export default function piHyMemory(pi: ExtensionAPI): void {
 				}
 				live.cursorId = result.records.at(-1)?.coversUpToId ?? live.cursorId;
 				live.resumeFromId = undefined;
+				live.coverageDriftAudited = false;
 				live.failures = 0;
 				// Only a primary answer clears the cooldown: a fallback-only write never
 				// tested the primary, and treating it as recovery made every write pay
@@ -643,7 +634,8 @@ export default function piHyMemory(pi: ExtensionAPI): void {
 		} catch {
 			return; // session replaced; the next turn_end re-reads it
 		}
-		const { pending, tokens } = tokensSince(branch, live.cursorId, live.resumeFromId);
+		const window = coverageWindow(branch, live.ledger, live.cursorId, live.resumeFromId);
+		const { pending, tokens } = window;
 		const chunk = serializeEntries(pending, { maxTokens: chunkBudget(), maxEntryChars: config.maxEntryChars });
 		const decision = shouldChainWrite({
 			enabled: sessionActive(),
@@ -727,7 +719,19 @@ export default function piHyMemory(pi: ExtensionAPI): void {
 			return;
 		}
 
-		const { pending, tokens } = tokensSince(branch, live.cursorId, live.resumeFromId);
+		const window = coverageWindow(branch, live.ledger, live.cursorId, live.resumeFromId);
+		const { pending, tokens } = window;
+		if (window.drift && !live.coverageDriftAudited) {
+			live.coverageDriftAudited = true;
+			live.cursorId = window.drift.to;
+			audit("coverage_drift", {
+				sessionId,
+				from: window.drift.from,
+				to: window.drift.to,
+				entries: pending.length,
+				tokens,
+			});
+		}
 		if (pending.length === 0 || tokens < config.observeAfterTokens) return;
 
 		const chunk = serializeEntries(pending, { maxTokens: chunkBudget(), maxEntryChars: config.maxEntryChars });
@@ -961,7 +965,7 @@ export default function piHyMemory(pi: ExtensionAPI): void {
 		}
 		const newest = branch.at(-1);
 		if (!newest) return null;
-		const { pending, tokens } = tokensSince(branch, live.cursorId, live.resumeFromId);
+		const { pending, tokens } = coverageWindow(branch, live.ledger, live.cursorId, live.resumeFromId);
 		if (pending.length === 0) return null;
 		const gap: LedgerRecord = {
 			type: "hy.gap",

@@ -97,6 +97,24 @@ never for a persisted extract (that window belongs to its retry path), and at mo
 `MAX_CHAIN = 2` per turn, so an idle session drains a backlog without turning a failing
 writer into a retry loop.
 
+**Coverage is a position, not an id.** The watermark is stored as an entry id, and pi can move
+the leaf: a rewind, a resumed checkpoint, or a compaction that re-parents the branch leaves
+that id in the session file but off the current chain. Two failures followed from treating the
+newest record's id as the coverage point:
+
+1. The id vanished, `tokensSince` fell back to index 0, and the entire session became
+   "pending" — measured on `01a1510e` at **431 329 tokens across 3 617 entries**, so writes
+   began re-extracting history the bank already held.
+2. The records written after the rewind advanced the watermark *backwards* (chunk 065 →
+   index 93, 066 → index 232) while chunk 062 had already covered index 3423.
+
+Coverage is monotone along the branch, so the window starts after the furthest position any
+ledger record still reaches (`coverageWindow`), which fixes both at once: on the real session
+it turned a 353 507-token window into **19 406 tokens / 193 entries**, audited as
+`coverage_drift { from, to }`. When no record lands in the branch, the newest writer record
+is the proxy, then the last compaction entry — never index 0, which is what made the whole
+history pending.
+
 **A session can be switched off, and the switch is durable.** Not every session earns its
 keep: one that ends before the next compaction never uses the facts its writes paid for, and
 each write is two model calls. `/hy off` therefore sets `state.enabled = false` and writes

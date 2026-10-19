@@ -39,6 +39,16 @@ so its list is empty until its server answers. A write in that window fails with
 message; the watermark does not advance, so the next write retries and succeeds once the
 provider is up.
 
+**The watermark survives a rewind.** pi can move the leaf — a rewind, a resumed checkpoint, or
+a compaction that re-parents the branch — which leaves the write watermark as an id that is no
+longer on the current chain. Falling back to the start of the session then made the whole
+history "pending": measured once at **431 329 tokens across 3 617 entries**, re-extracting
+facts the bank already held, which is what a burst of writes from an idle-looking session was.
+Coverage is monotone in the branch, so the window now starts after the **furthest** position
+any ledger record still reaches — which also repairs a watermark that drifted backwards after
+such a rewind. If no record lands in the branch, the newest writer record is used, then the
+last compaction, and the reset is audited as `coverage_drift`.
+
 Failures are classified, because only some of them say anything about chunk size. A timeout,
 a 413 or a context-length rejection halves the next chunk; unparseable output does too. A
 transport error, a 5xx, a 429 or an auth failure resets that shrink instead of applying it —
@@ -225,6 +235,7 @@ to break silently:
 | `fallback-check` | which failures move to the second model (429 retried first, 5xx/abort move, 400 does not) and `preferFallback` |
 | `chain-check` | a completed write chains another only on a healthy writer, with no persisted extract, and never past `MAX_CHAIN` |
 | `session-off-check` | `/hy off` stops the trigger, survives a reload, is announced on resume, and `/hy on` drops the off window as a `hy.gap` |
+| `lost-cursor-check` | a rewound branch resumes from the furthest coverage the ledger still reaches, not from index 0 |
 | `failure-class-check` | chunk/output failures shrink the next chunk; transport, 5xx, 429 and auth do not |
 | `failover-state-check` | the cooldown is cleared only by a **primary** answer |
 | `write-resume-check` | coverage contiguity, and not re-extracting after a failed reconcile |

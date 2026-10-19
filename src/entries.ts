@@ -235,3 +235,97 @@ export function entryTokens(entry: SessionEntry): number {
 	const rendered = renderEntry(entry, Number.POSITIVE_INFINITY);
 	return rendered ? estimateTokens(rendered) : 0;
 }
+
+/**
+ * Where coverage resumes when the watermark is no longer in the branch.
+ *
+ * A watermark is an entry id, and pi can move the leaf: a rewind, a resumed
+ * checkpoint or a compaction that re-parents the branch leaves the old id in the
+ * session file but off the current chain. Measured on session 01a1510e
+ * (2026-10-19): write 064 covered up to `369f8228`, the user rewound to an earlier
+ * point, and the next trigger could not find the id. Falling back to index 0 made
+ * the whole 3 617-entry session "pending" — 431 329 tokens, re-extracting history
+ * the bank already held, one 20 000-token chunk per write.
+ *
+ * Our own ledger records are the reliable proxy: a write appends `hy.extract` and
+ * `hy.ops` right after the entries it covered, so the newest record in the branch
+ * marks where coverage ended. Failing that, the newest compaction entry does: pi
+ * summarised everything before it, so re-reading that prefix is pointless.
+ */
+export function resumeAfterLostCursor(entries: SessionEntry[]): {
+	index: number;
+	from: "record" | "compaction" | "none";
+} {
+	for (let i = entries.length - 1; i >= 0; i--) {
+		const entry = entries[i] as { type?: string; customType?: string };
+		if (entry.type === "custom" && (entry.customType === "hy.extract" || entry.customType === "hy.ops"))
+			return { index: i + 1, from: "record" };
+	}
+	for (let i = entries.length - 1; i >= 0; i--) {
+		if ((entries[i] as { type?: string }).type === "compaction") return { index: i + 1, from: "compaction" };
+	}
+	return { index: 0, from: "none" };
+}
+
+/**
+ * The window that would be written next, and the coverage it starts from.
+ *
+ * The watermark is a single entry id, which is wrong after pi moves the leaf
+ * (rewind, resumed checkpoint, a compaction that re-parents the branch): the id is
+ * still in the session file but off the chain, and the next trigger used to fall
+ * back to index 0 and call the whole session pending. Measured on session
+ * 01a1510e (2026-10-19): write 064's cursor went off-chain, the window became
+ * 431 329 tokens across 3 617 entries, and writes began re-extracting history the
+ * bank already held.
+ *
+ * Worse, the records written after that rewind advanced the watermark backwards
+ * (chunk 065 covered index 93, 066 index 232) while the ledger still held coverage
+ * up to index 3423. Coverage is monotone in the branch, so the window starts after
+ * the furthest position any ledger record still reaches — not after the newest
+ * record's id.
+ */
+export type Window = { pending: SessionEntry[]; tokens: number; drift?: { from?: string; to: string } };
+
+export function coverageWindow(
+	entries: SessionEntry[],
+	ledger: { coversUpToId?: string }[],
+	cursorId: string | undefined,
+	resumeFromId: string | undefined,
+): Window {
+	const index = new Map(entries.map((e, i) => [e.id, i]));
+	const sliceFrom = (start: number): Window => {
+		const pending = entries.slice(start);
+		return { pending, tokens: pending.reduce((sum, e) => sum + entryTokens(e), 0) };
+	};
+
+	const cursorIndex = cursorId === undefined ? undefined : index.get(cursorId);
+	if (cursorIndex !== undefined) {
+		let furthest = cursorIndex;
+		for (const record of ledger) {
+			const at = record.coversUpToId === undefined ? undefined : index.get(record.coversUpToId);
+			if (at !== undefined && at > furthest) furthest = at;
+		}
+		const window = sliceFrom(furthest + 1);
+		return furthest > cursorIndex ? { ...window, drift: { from: cursorId, to: entries[furthest].id } } : window;
+	}
+
+	// A compaction gap says exactly where coverage resumes: honour it before older
+	// records, which would otherwise re-read the range the gap recorded as lost.
+	const resumed = resumeFromId === undefined ? undefined : index.get(resumeFromId);
+	if (resumed !== undefined) return sliceFrom(resumed);
+
+	if (cursorId !== undefined) {
+		let furthest = -1;
+		for (const record of ledger) {
+			const at = record.coversUpToId === undefined ? undefined : index.get(record.coversUpToId);
+			if (at !== undefined && at > furthest) furthest = at;
+		}
+		if (furthest >= 0) return { ...sliceFrom(furthest + 1), drift: { from: cursorId, to: entries[furthest].id } };
+		return {
+			...sliceFrom(resumeAfterLostCursor(entries).index),
+			drift: { from: cursorId, to: "resumed after lost cursor" },
+		};
+	}
+
+	return sliceFrom(0);
+}
