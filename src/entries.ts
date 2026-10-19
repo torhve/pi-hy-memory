@@ -221,7 +221,17 @@ export function compactionWindow(
 	}
 	return { firstKeptIndex, used };
 }
+/**
+ * Size of an entry, unclipped.
+ *
+ * Sizing decisions (the trigger window, `keepRecentTokens`, the footer) have to
+ * track what pi counts against the context window, and pi counts the real entry.
+ * Rendering with a clip here underestimated a tool-heavy branch by ~1.5x: the
+ * pending window measured 74 060 tokens while the same entries were 108 520, so
+ * `observeAfterTokens` fired ~22 000 real tokens in. Clipping belongs to
+ * serialization, where it is a deliberate limit on what the writer is sent.
+ */
 export function entryTokens(entry: SessionEntry): number {
-	const rendered = renderEntry(entry, 4000);
+	const rendered = renderEntry(entry, Number.POSITIVE_INFINITY);
 	return rendered ? estimateTokens(rendered) : 0;
 }

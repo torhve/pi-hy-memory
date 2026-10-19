@@ -9,7 +9,7 @@
  */
 import type { SessionEntry } from "@earendil-works/pi-coding-agent";
 
-import { compactionBoundary, compactionWindow, entryTokens } from "../src/entries.js";
+import { compactionBoundary, compactionWindow, entryTokens, serializeEntries } from "../src/entries.js";
 
 /** A user message whose rendered form is ~`tokens` tokens (4 chars/token). */
 function message(id: string, tokens: number): SessionEntry {
@@ -156,6 +156,16 @@ function assertTight(name: string, entries: SessionEntry[], firstKeptIndex: numb
 	});
 	check("missing cursor never claims a gap", choice.boundary, "cursor");
 	check("missing cursor keeps no gap record", choice.gap, undefined);
+}
+
+// 10) Sizing must not inherit the serialization clip. A large tool result is a
+//     few thousand real tokens for the window, but only maxEntryChars in a chunk;
+//     conflating the two is what made observeAfterTokens fire ~22 000 tokens in.
+{
+	const big = toolResult("big", 7500); // ~30 000 chars
+	check("sizing counts the whole entry", entryTokens(big) > 7000, true);
+	const chunk = serializeEntries([big], { maxTokens: 100000, maxEntryChars: 1000 });
+	check("the chunk still clips it", chunk.chars < 1200, true);
 }
 
 console.log(failures === 0 ? "ok: compaction window" : `${failures} failure(s)`);
