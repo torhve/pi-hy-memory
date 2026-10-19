@@ -9,7 +9,7 @@
  */
 import type { SessionEntry } from "@earendil-works/pi-coding-agent";
 
-import { compactionWindow, entryTokens } from "../src/entries.js";
+import { compactionBoundary, compactionWindow, entryTokens } from "../src/entries.js";
 
 /** A user message whose rendered form is ~`tokens` tokens (4 chars/token). */
 function message(id: string, tokens: number): SessionEntry {
@@ -99,6 +99,63 @@ function assertTight(name: string, entries: SessionEntry[], firstKeptIndex: numb
 	const entries = [message("a", 100), message("b", 100)];
 	const { firstKeptIndex } = compactionWindow(entries, "a", 100000);
 	check("everything fits", firstKeptIndex, 0);
+}
+
+// 7) A backlog larger than one chunk must not turn compaction into a no-op.
+//    Reproduces session 01a1510e (2026-10-19): the watermark sat 255 entries
+//    behind, the safe window kept ~104 000 real tokens, and pi re-compacted six
+//    times in 37 seconds because the context stayed over its threshold.
+{
+	const entries: SessionEntry[] = [];
+	for (let i = 0; i < 400; i++) entries.push(i % 2 === 0 ? message(`m${i}`, 200) : toolResult(`t${i}`, 200));
+	// Watermark at 100, pi wants to cut at 300: 200 uncovered entries at risk.
+	const choice = compactionBoundary(entries, {
+		cursorId: "m100",
+		keepRecentTokens: 600,
+		proposedId: "m300",
+		maxUncoveredTokens: 5000,
+	});
+	check("large backlog accepts pi's cut", choice.boundary, "proposed");
+	check("large backlog keeps pi's boundary", entries[choice.firstKeptIndex].id, "m300");
+	check(
+		"large backlog reports the gap",
+		{ from: choice.gap?.fromId, after: choice.gap?.toId },
+		{ from: "m300", after: "m100" },
+	);
+	check("large backlog gap counts dropped entries", choice.gap?.entries, 200);
+	// The point of the switch: the tail pi keeps is smaller than the safe window
+	// would have kept, so the post-compaction context can fall below the threshold.
+	check("proposed keeps less than the safe window", choice.used < compactionWindow(entries, "m100", 600).used, true);
+}
+
+// 8) A small backlog is still worth holding: nothing is dropped for a few entries.
+{
+	const entries: SessionEntry[] = [];
+	for (let i = 0; i < 400; i++) entries.push(message(`m${i}`, 200));
+	const choice = compactionBoundary(entries, {
+		cursorId: "m295",
+		keepRecentTokens: 600,
+		proposedId: "m300",
+		maxUncoveredTokens: 5000,
+	});
+	check("small backlog keeps the cursor", choice.boundary, "cursor");
+	check("small backlog drops nothing", choice.gap, undefined);
+	check("small backlog clamps to the watermark", entries[choice.firstKeptIndex].id, "m295");
+}
+
+// 9) No watermark in the branch: the safe walk stands, since covered and
+//    uncovered cannot be told apart.
+{
+	const entries: SessionEntry[] = [];
+	for (let i = 0; i < 400; i++) entries.push(message(`m${i}`, 200));
+	const choice = compactionBoundary(entries, {
+		cursorId: "gone",
+		keepRecentTokens: 600,
+		proposedId: "m300",
+		maxUncoveredTokens: 0,
+	});
+	check("missing cursor never claims a gap", choice.boundary, "cursor");
+	check("missing cursor keeps no gap record", choice.gap, undefined);
 }
 
 console.log(failures === 0 ? "ok: compaction window" : `${failures} failure(s)`);

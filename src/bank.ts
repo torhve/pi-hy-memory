@@ -144,6 +144,9 @@ export function foldLedger(records: LedgerRecord[]): BankEntry[] {
 	let pending: { chunkId: string; drafts: (Draft & { sourceEntryIds: string[] })[] } | undefined;
 
 	for (const record of records) {
+		// A gap records lost coverage; it contributes no facts and must not be read
+		// as an ops record (it has none).
+		if (record.type === "hy.gap") continue;
 		if (record.type === "hy.extract") {
 			pending = { chunkId: record.chunkId, drafts: record.drafts };
 			continue;

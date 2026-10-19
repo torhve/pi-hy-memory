@@ -80,6 +80,18 @@ export type LedgerRecord =
 			rejectedOps?: { reason: string; draft?: number; target?: string }[];
 			downgradedOps?: { reason: string; draft?: number; target?: string }[];
 			usage: CallUsage;
+	  }
+	| {
+			type: "hy.gap";
+			/** Coverage as it stood: the watermark that was in play when the cut happened. */
+			coversUpToId: string;
+			/** First entry still in the branch after the cut; coverage resumes here. */
+			fromId: string;
+			/** How many entries fell between the two, and their estimated size. */
+			entries: number;
+			tokens: number;
+			reason: "compaction";
+			createdAt: string;
 	  };
 
 export type CallUsage = {

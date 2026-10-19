@@ -51,7 +51,7 @@ provider is up.
 | `maxChunkTokens` | `24000` | chunk budget per write. Note: estimated at chars/4, and code-heavy chunks tokenise at ~1.4–1.5× that, so a 20 000 budget is ~30 000 real prompt tokens |
 | `maxEntryChars` | `3000` | per-entry truncation inside a chunk, so one huge tool output cannot consume the whole budget |
 | `poolMaxTokens` | `6000` | cap on the *active* bank (the *second* footer bar); see DESIGN.md § "What happens when the bank fills". ~72 tokens per fact, and the rendered summary is ~1.2× the cap |
-| `keepRecentTokens` | `6000` | raw entries kept verbatim by a compaction, clamped so nothing the writer has not seen is dropped |
+| `keepRecentTokens` | `6000` | raw entries kept verbatim by a compaction. The cut is clamped back to the write watermark so nothing unread is dropped, but only by up to `maxChunkTokens`; a larger backlog is lost and recorded as a gap (see "Compaction: who decides when") |
 | `candidateLimit` | `12` | bank entries shown to the reconcile call |
 | `model` | `hy-memory-30b-a3b` | writer model from **your pi model list**: `provider/modelId`, or a bare id |
 | `maxTokens` | `8000` | output cap per call |
@@ -73,6 +73,16 @@ through `session_before_compact` (`renderMemory(bank, poolMaxTokens)`), sets
 `firstKeptEntryId` itself (so this extension's `keepRecentTokens` wins over pi's
 `compaction.keepRecentTokens`), and logs the event. If the bank is empty it returns
 nothing and pi summarises with its own model.
+
+That cut is pi's, with one adjustment: it is clamped back to the write watermark so
+entries the writer has not read yet are not dropped from the branch. The clamp is
+bounded by `maxChunkTokens` — one chunk's worth of backlog is worth holding, more is
+not. Past that the extension accepts pi's boundary, because the alternative is worse:
+on a slow writer the watermark fell 255 entries (~104 000 real tokens) behind, the kept
+tail stayed above pi's threshold, and pi compacted six times in 37 seconds without ever
+getting under it. When the clamp gives way, coverage is recorded as a `hy.gap` ledger
+record naming the range that was lost, so no later reader believes those entries were
+seen.
 
 pi's trigger is `contextTokens > contextWindow − compaction.reserveTokens`, default
 `reserveTokens: 16384`, plus a manual `/compact` and one compact-and-retry on overflow.
@@ -155,7 +165,8 @@ to break silently:
 | `fallback-check` | which failures move to the second model (429 retried first, 5xx/abort move, 400 does not) and `preferFallback` |
 | `failover-state-check` | the cooldown is cleared only by a **primary** answer |
 | `write-resume-check` | coverage contiguity, and not re-extracting after a failed reconcile |
-| `compaction-window-check` | compaction never drops entries the writer has not covered |
+| `compaction-window-check` | compaction holds uncovered entries while that is affordable, accepts pi's cut when it is not, and sizes entries by their real text |
+| `compaction-hook-check` | the hook uses pi's `firstKeptEntryId` and real `tokensBefore`, and a `hy.gap` record reaches the mirrored ledger when the clamp gives way |
 | `ops-guard-check`, `subject-guard-check` | wrong-target and wrong-subject UPDATEs |
 | `redact-check` | credential redaction without damaging identifiers |
 | `budget-check`, `reload-budget-check` | pool eviction order, reload semantics, summary budget |

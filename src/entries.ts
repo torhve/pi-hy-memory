@@ -119,19 +119,79 @@ export function serializeEntries(
 	return { text, refs, entryCount: kept.length, droppedEntries: dropped, chars: text.length };
 }
 
+export type CompactionBoundary = {
+	firstKeptIndex: number;
+	used: number;
+	/** "cursor": the safe window. "proposed": pi's cut, accepted to let compaction work. */
+	boundary: "cursor" | "proposed";
+	gap?: { fromId: string; toId: string; entries: number; tokens: number };
+};
+
 /**
- * Which entries survive a compaction.
+ * Where a compaction should cut, given pi's own proposal.
  *
- * The backward walk alone can drop entries the writer has never seen: measured
- * on session 01a14a46, compaction kept from index 328 while the last write's
- * watermark was index 315, so 12 entries (4 substantive tool results) were
- * removed from the branch before any chunk ever covered them — the bank never
- * learned them and the live context no longer contained them.
+ * `compactionWindow` alone keeps every entry the writer has not covered, which is
+ * safe but can make compaction a no-op: measured on session 01a1510e (2026-10-19),
+ * the watermark sat 255 entries / ~104 000 real tokens behind a slow writer, so the
+ * kept tail plus the summary stayed above pi's threshold and pi compacted six times
+ * in 37 seconds, rendering the same 47 KB summary each time.
  *
- * So the window is clamped to the watermark entry itself. Keeping the cursor in
- * the branch has a second effect: `tokensSince` still finds it, so the next
- * write covers exactly the entries after it instead of re-scanning the branch
- * from index 0.
+ * So the clamp is bounded: when holding the uncovered backlog would cost more than
+ * one chunk's worth, pi's boundary wins and the lost range is reported as a gap. The
+ * caller writes that gap to the ledger, which is what stops the writer from claiming
+ * coverage it never had.
+ */
+export function compactionBoundary(
+	entries: SessionEntry[],
+	options: {
+		cursorId?: string;
+		keepRecentTokens: number;
+		/** pi's own cut point, from `preparation.firstKeptEntryId`. */
+		proposedId?: string;
+		/** How much uncovered backlog is worth holding back; one chunk by default. */
+		maxUncoveredTokens: number;
+	},
+): CompactionBoundary {
+	const safe = compactionWindow(entries, options.cursorId, options.keepRecentTokens);
+	const cursorIndex = options.cursorId ? entries.findIndex((e) => e.id === options.cursorId) : -1;
+	const proposedIndex = options.proposedId ? entries.findIndex((e) => e.id === options.proposedId) : -1;
+	// Without a watermark in the branch there is no way to tell covered from
+	// uncovered, so the safe window stands.
+	if (cursorIndex < 0 || proposedIndex <= safe.firstKeptIndex) {
+		return { ...safe, boundary: "cursor" };
+	}
+
+	let atRisk = 0;
+	for (let i = safe.firstKeptIndex; i < proposedIndex; i++) atRisk += entryTokens(entries[i]);
+	if (atRisk <= options.maxUncoveredTokens) return { ...safe, boundary: "cursor" };
+
+	let used = 0;
+	for (let i = proposedIndex; i < entries.length; i++) used += entryTokens(entries[i]);
+	return {
+		firstKeptIndex: proposedIndex,
+		used,
+		boundary: "proposed",
+		gap: {
+			fromId: entries[proposedIndex].id,
+			toId: entries[safe.firstKeptIndex].id,
+			entries: proposedIndex - safe.firstKeptIndex,
+			tokens: atRisk,
+		},
+	};
+}
+
+/**
+ * The safe cut: the backward walk, clamped to the watermark.
+ *
+ * The backward walk alone can drop entries the writer has never seen: measured on
+ * session 01a14a46, compaction kept from index 328 while the last write's watermark
+ * was index 315, so 12 entries (4 substantive tool results) were removed from the
+ * branch before any chunk ever covered them — the bank never learned them and the
+ * live context no longer contained them.
+ *
+ * Keeping the cursor in the branch has a second effect: `tokensSince` still finds
+ * it, so the next write covers exactly the entries after it instead of re-scanning
+ * the branch from index 0.
  */
 export function compactionWindow(
 	entries: SessionEntry[],
@@ -161,7 +221,6 @@ export function compactionWindow(
 	}
 	return { firstKeptIndex, used };
 }
-
 export function entryTokens(entry: SessionEntry): number {
 	const rendered = renderEntry(entry, 4000);
 	return rendered ? estimateTokens(rendered) : 0;

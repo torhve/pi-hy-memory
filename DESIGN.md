@@ -43,7 +43,7 @@ replayed against the captured production payloads).
 | V3 component | here | why |
 |---|---|---|
 | append-only ledger as source of truth (`om.observations.recorded` …) | `hy.extract`, `hy.ops` records | crash-safe, replayable, no live object to corrupt. |
-| `coversUpToId` progress watermark | same field on both record types | decouples "what has been seen" from "what is provenance". |
+| `coversUpToId` progress watermark | same field on both record types, plus `hy.gap` when a compaction cut past it | decouples "what has been seen" from "what is provenance", and keeps a lost range visible instead of silently covered. |
 | deterministic compaction fold + render, no model call | identical | this is V3's best idea: compaction becomes a string build. |
 | `recall` tool keyed by 12-hex id | identical | memory stays evidence-backed. |
 | supersede/tombstone semantics (drops never delete history) | `status: active \| superseded` + `supersedes` / `supersededBy` | the model's DELETE/UPDATE needs a non-destructive home. |
