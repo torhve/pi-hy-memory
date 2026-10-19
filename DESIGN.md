@@ -185,12 +185,35 @@ the footer bar or the summary above the current cap (`tools/reload-budget-check.
 **The summary budget adds the real prefixes to the pool.** `enforceBudget` counts fact text (`tokenCount`);
 a rendered line adds `[id] (task) `, measured at +14.2 tokens per fact on a 91-fact
 session (7 953 rendered / 6 659 counted = 1.19x). Rendering a full pool at the pool number
-truncates the newest facts for overhead the pool never counted. A constant multiplier
+drops facts for overhead the pool never counted. A constant multiplier
 would break again as soon as task labels run long, so `summaryBudget(poolMaxTokens, bank)`
 sums the actual `[id] (task) ` prefixes for this bank (+630 tokens for 60 facts in
 `tools/reload-budget-check.ts`), and `renderMemory` reports what it omitted instead of
 truncating silently. Measured on the real banks: 12 000 tokens of bank ≈ 161 facts ≈
 14 300 summary tokens ≈ 8.5 % of a 168 000 window.
+
+**Admission order decides which facts survive the summary.** Facts are admitted
+newest-first: a higher-relevance fact displaces a lower one, and at equal relevance the
+newer one wins — the same rule `enforceBudget` uses. Chronological admission did the
+opposite, because equal ranks never displace each other, so the *first* N facts were kept
+and the newest were dropped; on session `01a1510e` (2026-10-19) the single omitted fact was
+the newest in the bank, from the final write, while the summary header tells the model that
+the later of two conflicting lines is the current state. Lines are printed chronologically
+afterwards, so the newest fact is the last line read. Omission is still a bin-packing skip
+(a fact too large for the remaining budget is passed over, not fatal), and what was omitted
+is counted in the tail and reachable through `hy_recall`.
+
+**Relevance is derived, and it saturates.** `relevanceOf(confidence, refs)` maps
+`confidence ≥ 0.8` to `high`, so the tiers are only as informative as the confidence the
+extract prompt asks for. It asks for explicitness ("how sure you are that the fact is
+explicitly established"), having already told the model to extract only what the chunk
+explicitly establishes, so the answer is almost always `1.0`: 965 of 996 facts across the
+sessions measured here are `high`, and this session is 163 of 166 at `1.0`, with 3 at
+`0.9`. The one session with `medium` facts (`01a14a46`, 31 at `0.5`) shows the model can
+grade, it is simply not asked to grade importance. Consequences: the ranking collapses to
+`createdAt`, so the pool behaves as "the newest `poolMaxTokens / 72` facts", and the
+`medium`/`low` tiers are dead weight until a second, orthogonal judgement (how long the
+fact stays true, not how sure we are of it) is added to the extract schema and measured.
 
 ### Retention
 

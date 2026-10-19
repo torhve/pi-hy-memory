@@ -101,5 +101,39 @@ check(
 	`${estimate(withSummaryBudget)}/${summaryBudget(12_000, full)} tokens`,
 );
 
+// (f) Equal relevance, over budget: the newest facts survive and the oldest are
+//     omitted. Before this, chronological admission kept the first N — the oldest —
+//     while the header promises that the later line is the current state. Measured
+//     on session 01a1510e: the one omitted fact was the newest in the bank.
+const sameRank = Array.from({ length: 20 }, (_, i) =>
+	fact(`s${i}`, "high", 400, new Date(Date.UTC(2026, 0, 1, 0, 1, i)).toISOString()),
+);
+const tightSame = renderMemory(sameRank, overhead + 1_200);
+check("newest survives at equal rank", tightSame.includes("[s19]"));
+check("oldest is the one omitted", !tightSame.includes("[s0]"), tightSame.match(/^\[s\d+\]/m)?.[0]);
+check(
+	"equal-rank omission count",
+	Number(/(\d+) more facts? not shown/.exec(tightSame)?.[1] ?? -1) ===
+		20 - (tightSame.match(/^\[s\d+\]/gm) ?? []).length,
+);
+check(
+	"printing stays chronological",
+	tightSame.indexOf("[s19]") > tightSame.indexOf(tightSame.match(/^\[s\d+\]/m)?.[0] ?? ""),
+);
+
+// (g) Relevance still dominates recency: an older high fact displaces a newer low
+//     one. The budget is measured, not guessed: header + tail + room for exactly one
+//     ~104-token fact (+30 covers the margin between "rendered size" and "budget",
+//     since the header and tail reserve are always subtracted).
+const oneFact = estimate(renderMemory([fact("probe", "low", 400, "2026-01-01T00:00:00Z")], 1_000_000));
+const rankBeatsRecency = renderMemory(
+	[fact("old-high", "high", 400, "2026-01-01T00:00:00Z"), fact("new-low", "low", 400, "2026-01-01T00:09:00Z")],
+	oneFact + 30,
+);
+check(
+	"older high outranks newer low",
+	rankBeatsRecency.includes("[old-high]") && !rankBeatsRecency.includes("[new-low]"),
+);
+
 console.log(failures === 0 ? "ok: render budget + promotion" : `${failures} failure(s)`);
 process.exit(failures === 0 ? 0 : 1);

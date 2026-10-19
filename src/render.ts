@@ -37,9 +37,17 @@ const TAIL = (omitted: number): string =>
 	`\n\n${omitted} more fact${omitted === 1 ? "" : "s"} not shown (budget); use the recall tool to read them.`;
 
 export function renderMemory(bank: BankEntry[], maxTokens = 4000): string {
+	// Newest first while admitting lines, chronological when printing them.
+	//
+	// The header tells the model that the later of two conflicting lines is the
+	// current state, so under budget pressure the later line has to be the one that
+	// survives. Admitting in chronological order did the opposite: equal ranks never
+	// displace each other, so the first N facts were kept and the newest were
+	// dropped. Measured on session 01a1510e (2026-10-19) the single omitted fact was
+	// the newest in the bank, from the most recent write.
 	const active = bank
 		.filter((e) => e.status === "active")
-		.sort((a, b) => (a.createdAt < b.createdAt ? -1 : a.createdAt > b.createdAt ? 1 : 0));
+		.sort((a, b) => (a.createdAt > b.createdAt ? -1 : a.createdAt < b.createdAt ? 1 : 0));
 	if (active.length === 0) return "";
 
 	const rank = (e: BankEntry): number => (e.relevance === "high" ? 3 : e.relevance === "medium" ? 2 : 1);
@@ -47,7 +55,7 @@ export function renderMemory(bank: BankEntry[], maxTokens = 4000): string {
 	// the lines array with the position in `active`, which misaligns as soon as one
 	// entry is skipped: it then promoted against the wrong fact's relevance and
 	// never adjusted `used`, so a 150-token budget could render 299 tokens.
-	const lines: { text: string; rank: number; cost: number }[] = [];
+	const lines: { text: string; rank: number; cost: number; createdAt: string }[] = [];
 	// Header and omission tail are part of the same summary, so both come out of
 	// the budget; otherwise `maxTokens` is a cap on the fact lines only and the
 	// rendered string can exceed it.
@@ -59,21 +67,33 @@ export function renderMemory(bank: BankEntry[], maxTokens = 4000): string {
 		const cost = Math.max(1, Math.round(line.length / 4));
 		const r = rank(entry);
 		if (used + cost <= budget) {
-			lines.push({ text: line, rank: r, cost });
+			lines.push({ text: line, rank: r, cost, createdAt: entry.createdAt });
 			used += cost;
 			continue;
 		}
 		// Budget pressure: displace the weakest fact already rendered, if this one
-		// outranks it and the swap still fits.
+		// outranks it and the swap still fits. Strictly outranks: at equal rank the
+		// rendered line is the newer one, and newer wins. Among equally weak lines
+		// the oldest goes, so a mixed-relevance bank keeps its most recent state.
 		let weakest = 0;
-		for (let i = 1; i < lines.length; i++) if (lines[i].rank < lines[weakest].rank) weakest = i;
+		for (let i = 1; i < lines.length; i++) {
+			if (lines[i].rank < lines[weakest].rank) weakest = i;
+			else if (lines[i].rank === lines[weakest].rank && lines[i].createdAt < lines[weakest].createdAt)
+				weakest = i;
+		}
 		if (lines.length > 0 && lines[weakest].rank < r && used - lines[weakest].cost + cost <= budget) {
 			used += cost - lines[weakest].cost;
-			lines[weakest] = { text: line, rank: r, cost };
+			lines[weakest] = { text: line, rank: r, cost, createdAt: entry.createdAt };
 		}
 	}
 	const omitted = active.length - lines.length;
-	const body = lines.map((l) => l.text).join("\n");
+	// Print chronologically, so the model reads the story in order and the newest
+	// fact is the last line it sees. Admission order above is only about who wins
+	// the budget.
+	const body = [...lines]
+		.sort((a, b) => (a.createdAt < b.createdAt ? -1 : a.createdAt > b.createdAt ? 1 : 0))
+		.map((l) => l.text)
+		.join("\n");
 	const tail = omitted > 0 ? TAIL(omitted) : "";
 	return `${HEADER}\n${body}${tail}`;
 }

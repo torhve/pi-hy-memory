@@ -120,6 +120,25 @@ The incumbents do own the decision, with three different schemes (DESIGN.md §
 81 000 is that extension's packaged default, not a tuned local value: `"calibrated"` is the
 default mode, so a flat cap is what you get until you switch to `"ratio"`.
 
+### What the summary contains when the pool is full
+
+The summary is capped at `poolMaxTokens` plus the real `[id] (task) ` prefixes
+(`summaryBudget`). When it does not all fit, facts are admitted **newest first**: a
+higher-relevance fact displaces a lower one, and at equal relevance the newer fact wins —
+the same rule the pool cap uses. Lines are printed chronologically afterwards, so the
+newest fact is the last line the model reads, and the omission tail says how many were
+hidden (each is reachable with `hy_recall <id>`).
+
+`relevance` is not a model judgement: it is derived from `confidence` in code
+(`≥0.8` high, `≥0.5` medium, else low), and the extract prompt only asks how sure the
+writer is that a fact is explicit — which, having been told to extract only explicit
+facts, it answers `1.0` almost always (965 of 996 facts across the sessions measured here;
+163 of 166 at `1.0` in the session this was measured on). So the ordering is effectively
+**recency**, and the pool behaves as "the newest ~`poolMaxTokens / 72` facts", with the
+`medium`/`low` tiers unused. That is why admission order matters enough to be pinned by
+`tools/render-check.ts`: with chronological admission the *newest* fact was the one being
+dropped.
+
 Our summary is bounded by the bank (12 k), not by history, so we do not inherit the
 "summarising 1 M tokens is expensive and lossy" problem that motivates pi-blackhole's
 shrinking curve. On a very large window, compacting *late* is cheaper for us, which is
@@ -170,7 +189,7 @@ to break silently:
 | `ops-guard-check`, `subject-guard-check` | wrong-target and wrong-subject UPDATEs |
 | `redact-check` | credential redaction without damaging identifiers |
 | `budget-check`, `reload-budget-check` | pool eviction order, reload semantics, summary budget |
-| `render-check` | compaction summary budget and omission reporting |
+| `render-check` | compaction summary budget, omission reporting, and newest-first admission (relevance first, then recency) |
 | `prune-check` | retention deletes old sessions and nothing else |
 | `config-docs-check` | every setting in the code is in the table above, with the same default |
 | `status-check` | footer rendering, including a stale context |
