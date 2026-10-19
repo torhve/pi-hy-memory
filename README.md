@@ -123,13 +123,16 @@ nothing and pi summarises with its own model.
 
 That cut is pi's, with one adjustment: it is clamped back to the write watermark so
 entries the writer has not read yet are not dropped from the branch. The clamp is
-bounded by `maxChunkTokens` — one chunk's worth of backlog is worth holding, more is
-not. Past that the extension accepts pi's boundary, because the alternative is worse:
-on a slow writer the watermark fell 255 entries (~104 000 real tokens) behind, the kept
-tail stayed above pi's threshold, and pi compacted six times in 37 seconds without ever
-getting under it. When the clamp gives way, coverage is recorded as a `hy.gap` ledger
-record naming the range that was lost, so no later reader believes those entries were
-seen.
+bounded by `maxChunkTokens` — one chunk's worth of backlog is worth holding, more is not.
+
+Past that bound the extension **hands the compaction back to pi** (`return undefined`):
+pi's own summariser compresses the unread entries into prose, which is what would happen
+without this extension, instead of the entries disappearing from the live context unread.
+The audit line is `compact_deferred { entries, tokens }`. This is the case a writer outage
+creates — measured on 2026-10-19, a 36-minute 502 storm left 477 unread entries and the
+older behaviour dropped 53 459 tokens of history that no chunk had ever read. The
+extension renders a summary for free; when it cannot do that faithfully, paying pi's model
+call is the cheaper mistake.
 
 pi's trigger is `contextTokens > contextWindow − compaction.reserveTokens`, default
 `reserveTokens: 16384`, plus a manual `/compact` and one compact-and-retry on overflow.

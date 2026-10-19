@@ -264,6 +264,18 @@ sums the actual `[id] (task) ` prefixes for this bank (+630 tokens for 60 facts 
 truncating silently. Measured on the real banks: 12 000 tokens of bank ≈ 161 facts ≈
 14 300 summary tokens ≈ 8.5 % of a 168 000 window.
 
+**When it cannot be faithful, compaction goes back to pi.** Our summary replaces pi's
+model call, and the boundary can only *hold back* a bounded backlog (`maxChunkTokens`).
+Past that bound the old code accepted pi's cut and recorded a `hy.gap`, which was the wrong
+trade: the entries were gone from the live context and no chunk had ever read them. Measured
+on `01a1510e` (2026-10-19), a 36-minute writer outage (502 from the proxy) left 477 unread
+entries, the boundary took pi's cut, and **53 459 tokens of history were dropped unread**.
+The hook now returns `undefined` in that case, so pi summarises the prefix with its own
+model — information compressed into prose rather than lost, exactly as it would be without
+the extension — and audits `compact_deferred { entries, tokens }`. A free summary is worth
+having only while it is faithful; when it is not, one model call is the cheaper mistake.
+`hy.gap` remains for the `/hy off` switch, where discarding the off window is the point.
+
 **Admission order decides which facts survive the summary.** Facts are admitted
 newest-first: a higher-relevance fact displaces a lower one, and at equal relevance the
 newer one wins — the same rule `enforceBudget` uses. Chronological admission did the

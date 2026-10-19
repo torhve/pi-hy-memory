@@ -124,7 +124,8 @@ export type CompactionBoundary = {
 	used: number;
 	/** "cursor": the safe window. "proposed": pi's cut, accepted to let compaction work. */
 	boundary: "cursor" | "proposed";
-	gap?: { fromId: string; toId: string; entries: number; tokens: number };
+	/** Set when honouring the summary here would drop entries the writer never read. */
+	wouldDrop?: { fromId: string; toId: string; entries: number; tokens: number };
 };
 
 /**
@@ -171,7 +172,7 @@ export function compactionBoundary(
 		firstKeptIndex: proposedIndex,
 		used,
 		boundary: "proposed",
-		gap: {
+		wouldDrop: {
 			fromId: entries[proposedIndex].id,
 			toId: entries[safe.firstKeptIndex].id,
 			entries: proposedIndex - safe.firstKeptIndex,

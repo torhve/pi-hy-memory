@@ -8,9 +8,8 @@
  *   - pi's own cut (`preparation.firstKeptEntryId`) is what the boundary is
  *     measured against, and its real `tokensBefore` is what gets returned and
  *     audited, not our clipped estimate;
- *   - when the clamp gives way, a `hy.gap` record reaches the mirrored ledger,
- *     so a later reload resumes coverage at the right entry instead of claiming
- *     the lost range.
+ *   - when honouring our summary would drop entries the writer never read, the
+ *     hook returns nothing and lets pi summarise them, rather than losing them.
  *
  * Both were silent failure modes: a wrong field name would leave the old
  * behaviour intact while the unit tests stayed green.
@@ -115,13 +114,24 @@ const compact = (ctx: unknown, branch: unknown[], firstKeptEntryId: string, toke
 		ctx,
 	) as { compaction: { firstKeptEntryId: string; tokensBefore: number } } | undefined;
 
-const ledgerPath = (sessionId: string) =>
-	join(process.env.PI_HY_MEMORY_STATE as string, "sessions", `${sessionId}.ledger.jsonl`);
-const readLedger = (sessionId: string) =>
-	readFileSync(ledgerPath(sessionId), "utf8")
+const readAudit = (): Record<string, unknown>[] =>
+	readFileSync(join(process.env.PI_HY_MEMORY_STATE as string, "audit.ndjson"), "utf8")
 		.split("\n")
 		.filter(Boolean)
 		.map((line) => JSON.parse(line) as Record<string, unknown>);
+
+const ledgerPath = (sessionId: string) =>
+	join(process.env.PI_HY_MEMORY_STATE as string, "sessions", `${sessionId}.ledger.jsonl`);
+const readLedger = (sessionId: string): Record<string, unknown>[] => {
+	try {
+		return readFileSync(ledgerPath(sessionId), "utf8")
+			.split("\n")
+			.filter(Boolean)
+			.map((line) => JSON.parse(line) as Record<string, unknown>);
+	} catch {
+		return [];
+	}
+};
 
 piHyMemory(pi as never);
 check(
@@ -130,21 +140,25 @@ check(
 	[true, true],
 );
 
-// 1. A backlog worth more than one chunk: pi's cut wins, and the loss is recorded.
+// 1. A backlog worth more than one chunk: defer to pi's own summariser.
 {
 	const sessionId = "01234567";
 	const branch = branchWith(400); // ~80 000 estimated tokens pending
 	const ctx = start(sessionId, branch);
 	const proposed = "p367"; // pi keeps its own ~6 000-token tail
 	const out = compact(ctx, branch, proposed, 98765);
-	check("pi's boundary is used", out?.compaction.firstKeptEntryId, proposed);
-	check("pi's real tokensBefore is returned", out?.compaction.tokensBefore, 98765);
+	check("a shrinking window is not claimed", out, undefined);
 
-	const gap = readLedger(sessionId).at(-1) as Record<string, unknown>;
-	check("gap lands in the mirrored ledger", gap?.type, "hy.gap");
-	check("gap names where coverage resumes", gap?.fromId, proposed);
-	check("gap keeps the old watermark", gap?.coversUpToId, "e-src-1");
-	check("gap counts the dropped entries", gap?.entries, 370);
+	const deferred = readAudit()
+		.filter((r) => r.event === "compact_deferred")
+		.at(-1) as Record<string, unknown>;
+	check("deferral is audited", deferred?.event, "compact_deferred");
+	check("deferral counts the unread entries", deferred?.entries, 370);
+	check(
+		"deferral keeps no ledger gap",
+		readLedger(sessionId).some((r) => r.type === "hy.gap"),
+		false,
+	);
 }
 
 // 2. A small backlog is still held: nothing is dropped for a few entries, and no

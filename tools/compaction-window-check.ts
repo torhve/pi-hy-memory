@@ -101,10 +101,10 @@ function assertTight(name: string, entries: SessionEntry[], firstKeptIndex: numb
 	check("everything fits", firstKeptIndex, 0);
 }
 
-// 7) A backlog larger than one chunk must not turn compaction into a no-op.
-//    Reproduces session 01a1510e (2026-10-19): the watermark sat 255 entries
-//    behind, the safe window kept ~104 000 real tokens, and pi re-compacted six
-//    times in 37 seconds because the context stayed over its threshold.
+// 7) A backlog larger than one chunk: the boundary reports what honouring our
+//    summary would drop, and the hook defers to pi's own summariser instead of
+//    losing it. Reproduces session 01a1510e (2026-10-19), where a writer outage
+//    left 477 unread entries and the old behaviour dropped 53 459 tokens.
 {
 	const entries: SessionEntry[] = [];
 	for (let i = 0; i < 400; i++) entries.push(i % 2 === 0 ? message(`m${i}`, 200) : toolResult(`t${i}`, 200));
@@ -119,10 +119,10 @@ function assertTight(name: string, entries: SessionEntry[], firstKeptIndex: numb
 	check("large backlog keeps pi's boundary", entries[choice.firstKeptIndex].id, "m300");
 	check(
 		"large backlog reports the gap",
-		{ from: choice.gap?.fromId, after: choice.gap?.toId },
+		{ from: choice.wouldDrop?.fromId, after: choice.wouldDrop?.toId },
 		{ from: "m300", after: "m100" },
 	);
-	check("large backlog gap counts dropped entries", choice.gap?.entries, 200);
+	check("large backlog gap counts dropped entries", choice.wouldDrop?.entries, 200);
 	// The point of the switch: the tail pi keeps is smaller than the safe window
 	// would have kept, so the post-compaction context can fall below the threshold.
 	check("proposed keeps less than the safe window", choice.used < compactionWindow(entries, "m100", 600).used, true);
@@ -139,7 +139,7 @@ function assertTight(name: string, entries: SessionEntry[], firstKeptIndex: numb
 		maxUncoveredTokens: 5000,
 	});
 	check("small backlog keeps the cursor", choice.boundary, "cursor");
-	check("small backlog drops nothing", choice.gap, undefined);
+	check("small backlog drops nothing", choice.wouldDrop, undefined);
 	check("small backlog clamps to the watermark", entries[choice.firstKeptIndex].id, "m295");
 }
 
@@ -155,7 +155,7 @@ function assertTight(name: string, entries: SessionEntry[], firstKeptIndex: numb
 		maxUncoveredTokens: 0,
 	});
 	check("missing cursor never claims a gap", choice.boundary, "cursor");
-	check("missing cursor keeps no gap record", choice.gap, undefined);
+	check("missing cursor keeps no gap record", choice.wouldDrop, undefined);
 }
 
 // 10) Sizing must not inherit the serialization clip. A large tool result is a

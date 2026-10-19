@@ -773,9 +773,6 @@ export default function piHyMemory(pi: ExtensionAPI): void {
 		const active = state.bank.filter((e) => e.status === "active");
 		if (active.length === 0) return undefined;
 
-		const summary = renderMemory(state.bank, summaryBudget(config.poolMaxTokens, state.bank));
-		if (!summary.trim()) return undefined;
-
 		const entries = event.branchEntries;
 		// pi's own cut point and its real token count: the boundary is only worth
 		// keeping if holding the backlog does not defeat the compaction entirely.
@@ -785,32 +782,32 @@ export default function piHyMemory(pi: ExtensionAPI): void {
 			proposedId: event.preparation?.firstKeptEntryId,
 			maxUncoveredTokens: config.maxChunkTokens,
 		});
-		const firstKeptIndex = choice.firstKeptIndex;
-		if (choice.gap) {
-			// Coverage jumps: the entries between the old watermark and pi's cut were
-			// dropped from the branch before any chunk read them. The ledger says so,
-			// so no later reader believes they were covered.
-			const gap: LedgerRecord = {
-				type: "hy.gap",
-				coversUpToId: choice.gap.toId,
-				fromId: choice.gap.fromId,
-				entries: choice.gap.entries,
-				tokens: choice.gap.tokens,
-				reason: "compaction",
-				createdAt: new Date().toISOString(),
-			};
-			state.ledger.push(gap);
-			state.resumeFromId = choice.gap.fromId;
-			audit("compaction_gap", {
+
+		// Hand back to pi when honouring our summary would drop entries the writer has
+		// never read. Our boundary can only *keep* a bounded backlog, and the entries
+		// past that bound are gone from the live context for good; pi's own summariser
+		// compresses them into prose instead, which is what would happen without this
+		// extension. Measured on session 01a1510e (2026-10-19): a 36-minute writer
+		// outage left 477 unread entries, the boundary took pi's cut, and 53 459 tokens
+		// of history were dropped unread — exactly what a fallback would have saved.
+		if (choice.wouldDrop) {
+			audit("compact_deferred", {
 				sessionId: state.sessionId,
-				entries: choice.gap.entries,
-				tokens: choice.gap.tokens,
-				from: choice.gap.fromId,
-				after: choice.gap.toId,
+				reason: event.reason,
+				entries: choice.wouldDrop.entries,
+				tokens: choice.wouldDrop.tokens,
+				facts: active.length,
 			});
+			void ctx;
+			return undefined;
 		}
-		// Prefer pi's count: ours clips each entry at maxEntryChars, so it undercounts
-		// the real context by ~1.5x on tool-heavy sessions.
+
+		const summary = renderMemory(state.bank, summaryBudget(config.poolMaxTokens, state.bank));
+		if (!summary.trim()) return undefined;
+
+		const firstKeptIndex = choice.firstKeptIndex;
+		// Prefer pi's count: ours renders unclipped text, which is the stored branch
+		// rather than the request pi builds.
 		const estimate = entries.reduce((sum, e) => sum + entryTokens(e), 0);
 		const tokensBefore = event.preparation?.tokensBefore ?? estimate;
 		state.stats.compactions++;
