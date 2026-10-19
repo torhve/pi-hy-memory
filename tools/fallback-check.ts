@@ -104,6 +104,21 @@ const run = async (primary: Writer, fallback: Writer | null, options = {}) =>
 	check("a 400 stops the write", threw && log.join() === "primary", log.join());
 }
 
+// 5b. A 429 storm must not spend the call budget asleep. With 5 retries and a
+// 15 s base wait that used to be 465 s before the fallback was tried at all
+// (session 01a15110, 2026-10-18: two concurrent sessions, one model slot).
+{
+	const log: string[] = [];
+	const busy = new WriterError("extract hy-test: HTTP 429 concurrency_limit", 429);
+	const out = await run(scripted("primary", [busy], log), scripted("fallback", ["ok"], log), {
+		busyRetries: 5,
+		busyBackoffMs: 20,
+		busyBudgetMs: 50,
+	});
+	// 20 ms fits, the next 40 ms would exceed the budget: two attempts, then the fallback.
+	check("busy budget bounds the wait", out.endpoint === "fallback" && log.join() === "primary,primary,fallback");
+}
+
 // 6. `preferFallback` skips a primary already known to be down.
 {
 	const log: string[] = [];

@@ -252,6 +252,10 @@ export async function completeWithFallback(
 		preferFallback?: boolean;
 		busyRetries?: number;
 		busyBackoffMs?: number;
+		/** Total time worth spending asleep on 429s before the fallback is used. */
+		busyBudgetMs?: number;
+		/** Cap on a single wait, so one retry cannot own the budget. */
+		busyMaxWaitMs?: number;
 		signal?: AbortSignal;
 		/** Progress notices for the footer (waiting for a busy slot, failover). */
 		onNotice?: (message: string) => void;
@@ -267,18 +271,28 @@ export async function completeWithFallback(
 		}
 	}
 
+	// Waiting is only worth it while the slot may free soon. Left unbounded, a 429
+	// storm spends the call budget asleep: 5 retries at a 15 s base wait 465 s
+	// before the fallback is even tried (measured on session 01a15110, 2026-10-18).
 	const retries = options.busyRetries ?? 3;
 	const backoff = options.busyBackoffMs ?? 4000;
+	const budget = options.busyBudgetMs ?? 120_000;
+	const maxWait = options.busyMaxWaitMs ?? 60_000;
+	let spent = 0;
 	let primaryError: unknown;
 	for (let attemptIndex = 0; ; attemptIndex++) {
 		try {
 			return { ...(await primary.complete(system, user, label, options.signal)), endpoint: "primary" };
 		} catch (error) {
 			if (isBusyError(error) && attemptIndex < retries) {
-				const waitMs = backoff * 2 ** attemptIndex;
-				options.onNotice?.(`busy ${Math.round(waitMs / 1000)}s`);
-				await new Promise((resolve) => setTimeout(resolve, waitMs));
-				continue;
+				const waitMs = Math.min(backoff * 2 ** attemptIndex, maxWait);
+				if (spent + waitMs <= budget) {
+					spent += waitMs;
+					options.onNotice?.(`busy ${Math.round(waitMs / 1000)}s`);
+					await new Promise((resolve) => setTimeout(resolve, waitMs));
+					continue;
+				}
+				options.onNotice?.("busy budget spent");
 			}
 			primaryError = error;
 			if (!fallback || !isFailoverError(error)) throw error;

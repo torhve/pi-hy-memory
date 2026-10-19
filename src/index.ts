@@ -401,6 +401,9 @@ export default function piHyMemory(pi: ExtensionAPI): void {
 					preferFallback: (state?.primaryDownUntil ?? 0) > Date.now(),
 					busyRetries: config.busyRetries,
 					busyBackoffMs: config.busyBackoffMs,
+					// A quarter of the call budget: enough for a slot to free, not enough
+					// to spend the whole write asleep.
+					busyBudgetMs: Math.max(1, Math.round((config.timeoutMs ?? 480_000) / 4)),
 					onStage: (stage, detail) => status.stage(stage, detail),
 					resume: resume
 						? {

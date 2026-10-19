@@ -60,7 +60,7 @@ provider is up.
 | `extraBody` | `{}` | extra request fields, merged last (`samplingParams` in pi-ai terms) |
 | `fallback` | `false` | `{model, maxTokens?, timeoutMs?}` — a second model id, used when the primary is unavailable |
 | `fallbackCooldownS` | `300` | stay on the fallback this long after a failover (cleared only by a **primary** answer) |
-| `busyRetries` / `busyBackoffMs` | `3` / `4000` | 429 handling: llama-swap rejects a concurrent request to a single-slot model *instantly* instead of queueing |
+| `busyRetries` / `busyBackoffMs` | `3` / `4000` | 429 handling: llama-swap rejects a concurrent request to a single-slot model *instantly* instead of queueing. Waits double, capped at 60 s each and at a quarter of `timeoutMs` in total; after that the fallback is used instead of sleeping through the write |
 | `pruneAfterDays` | `30` | delete per-session state older than this; `0` disables. The 10 newest sessions and the running one are always kept |
 | `waitForWriteOnSettle` | `true` | block the end of a turn on an in-flight write |
 | `shutdownWaitMs` | `5000` | cap on how long `session_shutdown` waits for a write |

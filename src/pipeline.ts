@@ -87,6 +87,8 @@ export async function writeChunk(
 		/** 429 handling: how many times to wait for a single-slot endpoint. */
 		busyRetries?: number;
 		busyBackoffMs?: number;
+		busyBudgetMs?: number;
+		busyMaxWaitMs?: number;
 		/** Footer progress: which call is running right now. */
 		onStage?: (stage: "extract" | "reconcile" | "waiting", detail?: string) => void;
 	} = {},
@@ -120,6 +122,8 @@ export async function writeChunk(
 				preferFallback: options.preferFallback,
 				busyRetries: options.busyRetries,
 				busyBackoffMs: options.busyBackoffMs,
+				busyBudgetMs: options.busyBudgetMs,
+				busyMaxWaitMs: options.busyMaxWaitMs,
 				onNotice: (message) => options.onStage?.("waiting", message),
 			},
 		);
@@ -172,6 +176,8 @@ export async function writeChunk(
 				preferFallback: extractEndpoint === "fallback",
 				busyRetries: options.busyRetries,
 				busyBackoffMs: options.busyBackoffMs,
+				busyBudgetMs: options.busyBudgetMs,
+				busyMaxWaitMs: options.busyMaxWaitMs,
 				onNotice: (message) => options.onStage?.("waiting", message),
 			},
 		);
