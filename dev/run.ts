@@ -1,0 +1,285 @@
+/**
+ * Corpus runner with named run ids and chunk-level resume.
+ *
+ *   npx tsx dev/run.ts --run <runId> [--corpus dev/corpus.json] [--pool 12000] [--model <id>]
+ *
+ * Writer route resolution, in order:
+ *   1. POC_ORIGIN / POC_KEY / POC_MODEL (same convention as poc.ts);
+ *   2. otherwise look the model up in ~/.pi/agent/models.json by id or
+ *      `provider/modelId`, so the baseline can target the live remote route
+ *      without endpoints ever being written into this repo.
+ *
+ * Resume: `ledger.jsonl` is appended the moment the extract record exists and
+ * again when the ops record lands. On restart:
+ *   - a chunk with both records is skipped entirely;
+ *   - a chunk with only its extract record resumes from the stored drafts — the
+ *     20 k-token extract is not re-paid;
+ *   - metrics.json is rewritten after every chunk, so a killed run keeps its
+ *     partial numbers.
+ *
+ * Metrics schema: see dev/metrics.md. Candidate coverage is recomputed with the
+ * exact `src/protocol.ts` selection the pipeline uses, evaluated in `onExtract`
+ * while the bank is still pre-apply.
+ */
+
+import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { homedir } from "node:os";
+import { join } from "node:path";
+import { pathToFileURL } from "node:url";
+import { foldLedger } from "../src/bank.js";
+import { writeChunk } from "../src/pipeline.js";
+import { candidatesPerDraft } from "../src/protocol.js";
+import { renderMemory } from "../src/render.js";
+import type { SerializedChunk } from "../src/serialize.js";
+import type { BankEntry, Draft, LedgerRecord } from "../src/types.js";
+import { rawWriter } from "./raw-writer.js";
+
+type Row = Record<string, any>;
+
+function arg(flag: string, fallback: string): string {
+	const at = process.argv.indexOf(flag);
+	return at >= 0 && process.argv[at + 1] ? process.argv[at + 1] : fallback;
+}
+
+function numArg(flag: string, fallback: number): number {
+	const at = process.argv.indexOf(flag);
+	return at >= 0 ? Number(process.argv[at + 1]) : fallback;
+}
+
+/** Look a model up in pi's model store: bare id or `provider/modelId`. */
+/** Resolve the writer route: models.json first, then llama-swap instances (models there are registered dynamically at startup, e.g. `remote/hy-memory-30b-a3b`). */
+export async function resolveRoute(modelSpec: string): Promise<{ origin: string; apiKey?: string; model: string }> {
+	const store = JSON.parse(readFileSync(join(homedir(), ".pi", "agent", "models.json"), "utf8")) as {
+		providers: Record<string, { baseUrl?: string; apiKey?: string; models?: { id: string }[] }>;
+	};
+	const [wantProvider, wantId] = modelSpec.includes("/") ? modelSpec.split(/\/(.*)/s) : [undefined, modelSpec];
+	for (const [providerId, provider] of Object.entries(store.providers ?? {})) {
+		if (wantProvider && providerId !== wantProvider) continue;
+		for (const model of provider.models ?? []) {
+			if (model.id === wantId && provider.baseUrl) {
+				return { origin: provider.baseUrl, apiKey: provider.apiKey, model: model.id };
+			}
+		}
+	}
+	const cfgPath = join(homedir(), ".pi", "agent", "pi-llama-swap.json");
+	if (existsSync(cfgPath)) {
+		const cfg = JSON.parse(readFileSync(cfgPath, "utf8")) as {
+			instances: { id: string; origin: string; port?: number; apiKey?: string }[];
+		};
+		for (const instance of cfg.instances ?? []) {
+			const url = `${instance.origin.replace(/\/+$/, "")}${instance.port && instance.port !== 443 && instance.port !== 80 ? `:${instance.port}` : ""}`;
+			try {
+				const res = await fetch(`${url}/v1/models`, {
+					headers: instance.apiKey ? { Authorization: `Bearer ${instance.apiKey}` } : {},
+					signal: AbortSignal.timeout(10_000),
+				});
+				if (!res.ok) continue;
+				const data = (await res.json()) as { data?: { id: string }[] };
+				if ((data.data ?? []).some((m) => m.id === modelSpec)) {
+					return { origin: url, apiKey: instance.apiKey, model: modelSpec };
+				}
+			} catch {
+				/* instance unreachable; try the next */
+			}
+		}
+	}
+	throw new Error(`model "${modelSpec}" not found in models.json or any llama-swap instance`);
+}
+
+function bankStats(bank: BankEntry[]): { active: number; tokens: number } {
+	const active = bank.filter((e) => e.status === "active");
+	return { active: active.length, tokens: active.reduce((s, e) => s + e.tokenCount, 0) };
+}
+
+/** The same candidate selection `writeChunk` performs (default per-draft limit 8, shown cap 12). */
+function candidateCoverage(bank: BankEntry[], drafts: Draft[]): { zeroCandidateDrafts: number; shownUnion: number } {
+	const active = bank.filter((e) => e.status === "active");
+	if (active.length === 0) return { zeroCandidateDrafts: 0, shownUnion: 0 };
+	const perDraft = candidatesPerDraft(bank, drafts, 8);
+	const union = new Map<string, BankEntry>();
+	for (const list of perDraft.values()) for (const e of list) if (!union.has(e.id)) union.set(e.id, e);
+	const shown = new Set([...union.values()].slice(0, 12).map((e) => e.id));
+	let starved = 0;
+	for (const list of perDraft.values()) if (!list.some((e) => shown.has(e.id))) starved++;
+	return { zeroCandidateDrafts: starved, shownUnion: shown.size };
+}
+
+async function main(): Promise<void> {
+	const runId = arg("--run", "");
+	if (!runId) throw new Error("--run <runId> is required");
+	const corpusPath = arg("--corpus", new URL("./corpus.json", import.meta.url).pathname);
+	const capturesDir = new URL("../captures-dev/", import.meta.url).pathname;
+	const outDir = new URL(`../out/${runId}/`, import.meta.url).pathname;
+	const pool = numArg("--pool", 12000);
+	const modelSpec = process.env.POC_MODEL ?? "remote/hy-memory-30b-a3b";
+	const route = process.env.POC_ORIGIN
+		? { origin: process.env.POC_ORIGIN, apiKey: process.env.POC_KEY, model: process.env.POC_MODEL ?? modelSpec }
+		: await resolveRoute(modelSpec);
+
+	if (process.argv.includes("--probe")) {
+		console.log(`route ok: model=${route.model} origin=${route.origin}`);
+		return;
+	}
+
+	const corpus = (JSON.parse(readFileSync(corpusPath, "utf8")).chunks ?? []) as { path: string; category?: string }[];
+	if (corpus.length === 0) throw new Error(`corpus is empty: ${corpusPath}`);
+
+	const writer = rawWriter({
+		origin: route.origin,
+		apiKey: route.apiKey,
+		model: route.model,
+		maxTokens: 8000,
+		chatTemplateKwargs: { reasoning_effort: "no_think" },
+		timeoutMs: 600_000,
+	});
+
+	mkdirSync(join(outDir, "raw"), { recursive: true });
+	const ledgerPath = join(outDir, "ledger.jsonl");
+	const metricsPath = join(outDir, "metrics.json");
+
+	// Rebuild state from whatever this run already persisted.
+	const ledger: LedgerRecord[] = existsSync(ledgerPath)
+		? readFileSync(ledgerPath, "utf8")
+				.split("\n")
+				.filter((l) => l.trim())
+				.map((l) => JSON.parse(l) as LedgerRecord)
+		: [];
+	const bank: BankEntry[] = foldLedger(ledger);
+	const extractOf = new Map<string, Extract<LedgerRecord, { type: "hy.extract" }>>();
+	const doneChunk = new Set<string>();
+	for (const r of ledger) {
+		if (r.type === "hy.extract") extractOf.set(r.chunkId, r);
+		if (r.type === "hy.ops") doneChunk.add(r.chunkId);
+	}
+	const metrics: { runId: string; model: string; pool: number; chunks: Row[] } = {
+		runId,
+		model: route.model,
+		pool,
+		chunks: [],
+	};
+	// Recompute chunk metrics already in the ledger from the ledger itself.
+	for (const r of ledger)
+		if (r.type === "hy.ops" && extractOf.has(r.chunkId))
+			metrics.chunks.push(summarize(extractOf.get(r.chunkId)!, r));
+
+	console.log(`run=${runId} model=${route.model} origin=${route.origin} temp=0 kwargs=no_think timeout=600s`);
+	console.log(
+		`corpus=${corpus.length} chunks, ledger has ${doneChunk.size} complete, ${extractOf.size - doneChunk.size} resumable`,
+	);
+
+	for (const item of corpus) {
+		const capture = JSON.parse(readFileSync(join(capturesDir, item.path), "utf8")) as Row;
+		const chunkId: string = capture.chunkId;
+		if (doneChunk.has(chunkId)) {
+			console.log(`skip ${chunkId} (already in ledger)`);
+			continue;
+		}
+		const chunk: SerializedChunk = { text: capture.text, refs: capture.refs, entryCount: capture.entryCount };
+		const resumeRecord = extractOf.get(chunkId);
+		const before = bankStats(bank);
+		const started = Date.now();
+		let coverage: { zeroCandidateDrafts: number; shownUnion: number } | undefined = resumeRecord
+			? candidateCoverage(bank, resumeRecord.drafts as unknown as Draft[])
+			: undefined;
+		let extractOnDisk = false;
+		let write: Awaited<ReturnType<typeof writeChunk>>;
+		try {
+			write = await writeChunk(writer, bank, chunkId, chunk, {
+				poolMaxTokens: pool,
+				rawDir: join(outDir, "raw"),
+				resume: resumeRecord
+					? {
+							drafts: resumeRecord.drafts as Draft[],
+							rejected: [],
+							usage: resumeRecord.usage,
+							refs: capture.refs,
+							coversUpToId: resumeRecord.coversUpToId,
+						}
+					: undefined,
+				onExtract: (record) => {
+					// Persist before reconcile can fail: a crash resumes from these drafts.
+					appendFileSync(ledgerPath, `${JSON.stringify(record)}\n`);
+					extractOnDisk = true;
+					coverage = candidateCoverage(
+						bank,
+						record.drafts.map((d) => d as unknown as Draft),
+					);
+				},
+			});
+		} catch (error) {
+			console.error(`${chunkId}: FAILED ${String((error as Error)?.message ?? error)}`);
+			continue;
+		}
+		// The extract record is already on disk (persisted at onExtract, or carried
+		// from the resumed attempt); appending it again would duplicate the chunk.
+		const newRecords = write.records.filter((r) => !(r.type === "hy.extract" && (resumeRecord || extractOnDisk)));
+		for (const r of newRecords) appendFileSync(ledgerPath, `${JSON.stringify(r)}\n`);
+		ledger.push(...write.records);
+
+		const after = bankStats(bank);
+		const row: Row = {
+			chunkId,
+			category: item.category ?? null,
+			resumed: Boolean(resumeRecord),
+			entryCount: write.entryCount,
+			drafts: write.drafts.length,
+			rejectedDrafts: write.rejectedDrafts.map((r) => r.reason),
+			candidateCoverage: coverage ?? { zeroCandidateDrafts: -1, shownUnion: write.seen.length },
+			ops: {
+				ADD: write.ops.filter((o) => o.action === "ADD").length,
+				UPDATE: write.ops.filter((o) => o.action === "UPDATE").length,
+				DELETE: write.ops.filter((o) => o.action === "DELETE").length,
+			},
+			rejectedOps: write.rejectedOps.map((r) => r.reason),
+			downgradedOps: write.downgraded.map((r) => r.reason),
+			omittedDrafts: write.report.omitted,
+			budgetDropped: write.budgetDropped.length,
+			bankBefore: before,
+			bankAfter: after,
+			bankGrowthRatio: Number(((after.tokens - before.tokens) / capture.estimateChunkTokens).toFixed(3)),
+			confidence: write.drafts.map((d) => d.confidence),
+			usage: {
+				extract: write.usage.extract,
+				reconcile: write.usage.reconcile,
+				wallTotalS: Number(((Date.now() - started) / 1000).toFixed(1)),
+			},
+		};
+		metrics.chunks.push(row);
+		writeFileSync(metricsPath, `${JSON.stringify(metrics, null, 2)}\n`);
+		console.log(
+			`${chunkId}: drafts ${row.drafts} (rejected ${row.rejectedDrafts.length}) | ADD ${row.ops.ADD} UPDATE ${row.ops.UPDATE} DELETE ${row.ops.DELETE} | starved drafts ${row.candidateCoverage.zeroCandidateDrafts} | bank ${before.active}->${after.active} (${after.tokens} tok, growth ${row.bankGrowthRatio}) | wall ${row.usage.wallTotalS}s${resumeRecord ? " [resumed]" : ""}`,
+		);
+	}
+
+	writeFileSync(join(outDir, "bank.json"), `${JSON.stringify(bank, null, 1)}\n`);
+	writeFileSync(join(outDir, "summary.md"), `${renderMemory(bank, pool)}\n`);
+	const totals = bankStats(bank);
+	console.log(
+		`\nrun ${runId} done: bank ${totals.active} active / ${totals.tokens} tokens; metrics -> ${metricsPath}`,
+	);
+}
+
+/** Ledger-only summary for chunks completed before this restart. */
+function summarize(extract: Extract<LedgerRecord, { type: "hy.extract" }>, ops: LedgerRecord): Row {
+	const o = ops as Extract<LedgerRecord, { type: "hy.ops" }>;
+	return {
+		chunkId: o.chunkId,
+		resumed: false,
+		reconstructedFromLedger: true,
+		drafts: extract.drafts.length,
+		ops: {
+			ADD: o.ops.filter((x: { action: string }) => x.action === "ADD").length,
+			UPDATE: o.ops.filter((x: { action: string }) => x.action === "UPDATE").length,
+			DELETE: o.ops.filter((x: { action: string }) => x.action === "DELETE").length,
+		},
+		rejectedOps: (o.rejectedCount ?? 0) as number,
+	};
+}
+
+// Importable by dev/judge.ts: only run when executed directly.
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+	main().catch((error) => {
+		console.error(String((error as Error)?.message ?? error));
+		process.exitCode = 1;
+	});
+}
