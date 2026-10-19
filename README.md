@@ -47,7 +47,7 @@ provider is up.
 |---|---|---|
 | `enabled` | `true` | turn the extension off without unloading it |
 | `dryRun` | `false` | run the pipeline, append nothing to the session |
-| `observeAfterTokens` | `6000` | pending window that triggers a write, measured on the full entries at chars/4 rather than on the clipped text a chunk would carry (the *first* footer bar) |
+| `observeAfterTokens` | `6000` | pending window that triggers a write, measured on the full entries at chars/4 rather than on the clipped text a chunk would carry. Measured on *stored* text: pi stubs old tool output before sending, so a whole-branch figure runs ~2x pi's count while fresh pending text does not (the *first* footer bar) |
 | `maxChunkTokens` | `24000` | chunk budget per write. Note: estimated at chars/4, and code-heavy chunks tokenise at ~1.4–1.5× that, so a 20 000 budget is ~30 000 real prompt tokens |
 | `maxEntryChars` | `3000` | per-entry truncation inside a chunk, so one huge tool output cannot consume the whole budget |
 | `poolMaxTokens` | `6000` | cap on the *active* bank (the *second* footer bar); see DESIGN.md § "What happens when the bank fills". ~72 tokens per fact, and the rendered summary is ~1.2× the cap |

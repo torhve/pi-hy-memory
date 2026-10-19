@@ -169,6 +169,17 @@ compaction summary is `renderMemory(bank, poolMaxTokens)`, a string build with n
 call, and the reconcile prompt shows at most `candidateLimit` retrieved entries
 regardless of how large the bank is.
 
+**Our token estimate measures stored text, not the request.** pi stubs old tool output
+before sending (the branch carries `context_edit` entries for it), so a whole-branch figure
+is not comparable to pi's own count. Measured on session `01a1510e` at the 09:56 compaction:
+the branch held 2 925 entries, 1 009 of them `toolResult`, our estimate was 364 669 and
+`preparation.tokensBefore` was 152 409. Excluding tool results ours was 56 381, so pi
+includes roughly a third of that output and stubs the rest. This does not move the
+*trigger*: the pending window is fresh text that has not been stubbed, and for fresh text
+chars/4 lands within the documented ~1.4x tokeniser factor. It does mean a compaction's
+`tokensBeforeEstimate` is a stored-text figure — which is why the audit records it next to
+pi's real `tokensBefore` instead of replacing it.
+
 Two things about this cap that measurement forced:
 
 **Eviction is not durable, and that is deliberate.** `enforceBudget` mutates the in-memory
