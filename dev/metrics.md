@@ -20,7 +20,8 @@ this file so two runs are comparable word-for-word.
       "candidateCoverage": {
         // recomputed with src/protocol.candidatesPerDraft at onExtract time,
         // i.e. against the pre-apply bank and the pipeline's own defaults
-        "zeroCandidateDrafts": 6,       // drafts whose candidates are absent from the 12 shown; 0 when the bank is still empty
+        "zeroCandidateDrafts": 1,       // drafts WITH candidates that the shown cap dropped — the coverage failure Tier-1 fixes
+        "noCandidateDrafts": 5,         // drafts whose scoring found no bank entry at all (nothing to show; not a failure)
         "shownUnion": 12                // bank entries actually rendered to reconcile
       },
       "ops": { "ADD": 8, "UPDATE": 1, "DELETE": 0 },

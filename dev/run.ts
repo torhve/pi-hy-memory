@@ -46,7 +46,6 @@ function numArg(flag: string, fallback: number): number {
 	return at >= 0 ? Number(process.argv[at + 1]) : fallback;
 }
 
-/** Look a model up in pi's model store: bare id or `provider/modelId`. */
 /** Resolve the writer route: models.json first, then llama-swap instances (models there are registered dynamically at startup, e.g. `remote/hy-memory-30b-a3b`). */
 export async function resolveRoute(modelSpec: string): Promise<{ origin: string; apiKey?: string; model: string }> {
 	const store = JSON.parse(readFileSync(join(homedir(), ".pi", "agent", "models.json"), "utf8")) as {
@@ -92,16 +91,25 @@ function bankStats(bank: BankEntry[]): { active: number; tokens: number } {
 }
 
 /** The same candidate selection `writeChunk` performs (default per-draft limit 8, shown cap 12). */
-function candidateCoverage(bank: BankEntry[], drafts: Draft[]): { zeroCandidateDrafts: number; shownUnion: number } {
+function candidateCoverage(
+	bank: BankEntry[],
+	drafts: Draft[],
+): { zeroCandidateDrafts: number; noCandidateDrafts: number; shownUnion: number } {
 	const active = bank.filter((e) => e.status === "active");
-	if (active.length === 0) return { zeroCandidateDrafts: 0, shownUnion: 0 };
+	if (active.length === 0) return { zeroCandidateDrafts: 0, noCandidateDrafts: 0, shownUnion: 0 };
 	const perDraft = candidatesPerDraft(bank, drafts, 8);
 	const union = new Map<string, BankEntry>();
 	for (const list of perDraft.values()) for (const e of list) if (!union.has(e.id)) union.set(e.id, e);
 	const shown = new Set([...union.values()].slice(0, 12).map((e) => e.id));
 	let starved = 0;
-	for (const list of perDraft.values()) if (!list.some((e) => shown.has(e.id))) starved++;
-	return { zeroCandidateDrafts: starved, shownUnion: shown.size };
+	let none = 0;
+	for (const list of perDraft.values()) {
+		// A draft with no candidates at all has nothing to show; a draft WITH
+		// candidates that the shown cap dropped is the real coverage failure.
+		if (list.length === 0) none++;
+		else if (!list.some((e) => shown.has(e.id))) starved++;
+	}
+	return { zeroCandidateDrafts: starved, noCandidateDrafts: none, shownUnion: shown.size };
 }
 
 async function main(): Promise<void> {
@@ -157,11 +165,35 @@ async function main(): Promise<void> {
 		pool,
 		chunks: [],
 	};
-	// Recompute chunk metrics already in the ledger from the ledger itself.
-	for (const r of ledger)
-		if (r.type === "hy.ops" && extractOf.has(r.chunkId))
-			metrics.chunks.push(summarize(extractOf.get(r.chunkId)!, r));
-
+	// Chunks finished in an earlier attempt keep their full metrics rows when
+	// this attempt already wrote them; only rows predating the metrics file
+	// are reconstructed (ledger-only) from the fold.
+	const priorByChunk = new Map<string, Row>(
+		existsSync(metricsPath)
+			? ((JSON.parse(readFileSync(metricsPath, "utf8")).chunks ?? []) as Row[]).map((r) => [r.chunkId, r])
+			: [],
+	);
+	const capturesById = new Map<string, Row>();
+	for (const item of corpus) {
+		const c = JSON.parse(readFileSync(join(capturesDir, item.path), "utf8")) as Row;
+		capturesById.set(String(c.chunkId), { ...c, category: item.category ?? null });
+	}
+	const prefix: LedgerRecord[] = [];
+	for (const r of ledger) {
+		if (r.type === "hy.ops" && extractOf.has(r.chunkId)) {
+			metrics.chunks.push(
+				priorByChunk.get(r.chunkId) ??
+					summarize(
+						extractOf.get(r.chunkId)!,
+						r,
+						foldLedger(prefix),
+						foldLedger([...prefix, r]),
+						capturesById.get(r.chunkId),
+					),
+			);
+		}
+		prefix.push(r);
+	}
 	console.log(`run=${runId} model=${route.model} origin=${route.origin} temp=0 kwargs=no_think timeout=600s`);
 	console.log(
 		`corpus=${corpus.length} chunks, ledger has ${doneChunk.size} complete, ${extractOf.size - doneChunk.size} resumable`,
@@ -178,9 +210,8 @@ async function main(): Promise<void> {
 		const resumeRecord = extractOf.get(chunkId);
 		const before = bankStats(bank);
 		const started = Date.now();
-		let coverage: { zeroCandidateDrafts: number; shownUnion: number } | undefined = resumeRecord
-			? candidateCoverage(bank, resumeRecord.drafts as unknown as Draft[])
-			: undefined;
+		let coverage: { zeroCandidateDrafts: number; noCandidateDrafts: number; shownUnion: number } | undefined =
+			resumeRecord ? candidateCoverage(bank, resumeRecord.drafts as unknown as Draft[]) : undefined;
 		let extractOnDisk = false;
 		let write: Awaited<ReturnType<typeof writeChunk>>;
 		try {
@@ -224,7 +255,11 @@ async function main(): Promise<void> {
 			entryCount: write.entryCount,
 			drafts: write.drafts.length,
 			rejectedDrafts: write.rejectedDrafts.map((r) => r.reason),
-			candidateCoverage: coverage ?? { zeroCandidateDrafts: -1, shownUnion: write.seen.length },
+			candidateCoverage: coverage ?? {
+				zeroCandidateDrafts: -1,
+				noCandidateDrafts: -1,
+				shownUnion: write.seen.length,
+			},
 			ops: {
 				ADD: write.ops.filter((o) => o.action === "ADD").length,
 				UPDATE: write.ops.filter((o) => o.action === "UPDATE").length,
@@ -247,10 +282,11 @@ async function main(): Promise<void> {
 		metrics.chunks.push(row);
 		writeFileSync(metricsPath, `${JSON.stringify(metrics, null, 2)}\n`);
 		console.log(
-			`${chunkId}: drafts ${row.drafts} (rejected ${row.rejectedDrafts.length}) | ADD ${row.ops.ADD} UPDATE ${row.ops.UPDATE} DELETE ${row.ops.DELETE} | starved drafts ${row.candidateCoverage.zeroCandidateDrafts} | bank ${before.active}->${after.active} (${after.tokens} tok, growth ${row.bankGrowthRatio}) | wall ${row.usage.wallTotalS}s${resumeRecord ? " [resumed]" : ""}`,
+			`${chunkId}: drafts ${row.drafts} (rejected ${row.rejectedDrafts.length}) | ADD ${row.ops.ADD} UPDATE ${row.ops.UPDATE} DELETE ${row.ops.DELETE} | starved ${row.candidateCoverage.zeroCandidateDrafts}/no-cand ${row.candidateCoverage.noCandidateDrafts} | bank ${before.active}->${after.active} (${after.tokens} tok, growth ${row.bankGrowthRatio}) | wall ${row.usage.wallTotalS}s${resumeRecord ? " [resumed]" : ""}`,
 		);
 	}
 
+	writeFileSync(metricsPath, `${JSON.stringify(metrics, null, 2)}\n`);
 	writeFileSync(join(outDir, "bank.json"), `${JSON.stringify(bank, null, 1)}\n`);
 	writeFileSync(join(outDir, "summary.md"), `${renderMemory(bank, pool)}\n`);
 	const totals = bankStats(bank);
@@ -259,20 +295,49 @@ async function main(): Promise<void> {
 	);
 }
 
-/** Ledger-only summary for chunks completed before this restart. */
-function summarize(extract: Extract<LedgerRecord, { type: "hy.extract" }>, ops: LedgerRecord): Row {
+/** Fully rebuild a finished chunk's metrics row from the ledger: the records
+ * carry drafts, usage and op lists, and folding the ledger prefix replays the
+ * exact bank the chunk saw. Only per-attempt wall-clock stays unrecoverable. */
+function summarize(
+	extract: Extract<LedgerRecord, { type: "hy.extract" }>,
+	ops: LedgerRecord,
+	bankBefore: BankEntry[],
+	bankAfter: BankEntry[],
+	capture: Row | undefined,
+): Row {
 	const o = ops as Extract<LedgerRecord, { type: "hy.ops" }>;
+	const drafts = extract.drafts;
+	const referenced = new Set(o.ops.map((op) => (op as { draft?: number }).draft).filter((d) => d !== undefined));
+	const before = bankStats(bankBefore);
+	const after = bankStats(bankAfter);
+	const chunkTokens = capture?.estimateChunkTokens ?? capture?.auditChunkTokens ?? 0;
 	return {
 		chunkId: o.chunkId,
+		category: capture?.category ?? null,
 		resumed: false,
 		reconstructedFromLedger: true,
-		drafts: extract.drafts.length,
+		entryCount: capture?.entryCount ?? null,
+		drafts: drafts.length,
+		rejectedDrafts: [],
+		rejectedDraftCount: extract.rejectedCount ?? 0,
+		candidateCoverage: candidateCoverage(bankBefore, drafts as unknown as Draft[]),
 		ops: {
 			ADD: o.ops.filter((x: { action: string }) => x.action === "ADD").length,
 			UPDATE: o.ops.filter((x: { action: string }) => x.action === "UPDATE").length,
 			DELETE: o.ops.filter((x: { action: string }) => x.action === "DELETE").length,
 		},
-		rejectedOps: (o.rejectedCount ?? 0) as number,
+		rejectedOps: o.rejectedOps?.map((x: { reason: string }) => x.reason) ?? [],
+		downgradedOps: o.downgradedOps?.map((x: { reason: string }) => x.reason) ?? [],
+		omittedDrafts: drafts.length - referenced.size,
+		bankBefore: before,
+		bankAfter: after,
+		bankGrowthRatio: chunkTokens ? Number(((after.tokens - before.tokens) / chunkTokens).toFixed(3)) : null,
+		confidence: drafts.map((d) => d.confidence),
+		usage: {
+			extract: extract.usage,
+			reconcile: o.usage,
+			wallTotalS: Number(((extract.usage?.wallS ?? 0) + (o.usage?.wallS ?? 0)).toFixed(1)),
+		},
 	};
 }
 

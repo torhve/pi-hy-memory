@@ -26,9 +26,10 @@ import { resolveRoute } from "./run.js";
 type ChunkFile = {
 	chunkId: string;
 	sessionId: string;
-	tokenCount: number;
-	entries: number;
-	drafts: number;
+	entryCount: number;
+	estimateChunkTokens: number;
+	auditChunkTokens: number;
+	draftCount: number;
 	text: string;
 	refs: string[];
 };
