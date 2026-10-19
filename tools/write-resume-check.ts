@@ -124,6 +124,11 @@ const writer: Writer = {
 		["hy.extract", "hy.ops"],
 	);
 	check("one fact added", bank.filter((e) => e.status === "active").length, 1);
+	// Every completed write names the model behind each stage, so the audit can say
+	// what answered rather than what was configured. This extract was resumed from
+	// the persisted drafts, so it never saw a model: it says "resumed" instead of
+	// inventing one.
+	check("models reported per stage", result.models, { extract: "resumed", reconcile: "test/fake" });
 
 	console.log(failures === 0 ? "ok: coverage + resume" : `${failures} failure(s)`);
 	process.exit(failures === 0 ? 0 : 1);

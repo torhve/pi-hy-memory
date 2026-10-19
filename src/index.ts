@@ -528,6 +528,7 @@ export default function piHyMemory(pi: ExtensionAPI): void {
 					outTokens: result.usage.extract.outTokens + result.usage.reconcile.outTokens,
 					wallS: (Date.now() - started) / 1000,
 					endpoints: result.endpoints,
+					models: result.models,
 					budgetDropped: result.budgetDropped.length,
 					budgetDroppedIds: result.budgetDropped.slice(0, 5).map((e) => e.id),
 					failover: result.failover ? result.failover.slice(0, 120) : undefined,
