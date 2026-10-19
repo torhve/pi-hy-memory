@@ -21,6 +21,7 @@ import { Type } from "@earendil-works/pi-ai";
 import type { ExtensionAPI, ExtensionContext, SessionEntry } from "@earendil-works/pi-coding-agent";
 
 import { enforceBudget, foldLedger } from "./bank.js";
+import { shouldChainWrite } from "./chain.js";
 import { EXTRACT_RECORD, highestChunkSeq, nextChunkId } from "./chunks.js";
 import { type HyConfig, legacyKeys, SETTING_DEFAULTS } from "./config.js";
 import { type ChunkBuild, compactionBoundary, entryTokens, renderEntry, serializeEntries } from "./entries.js";
@@ -142,6 +143,8 @@ export default function piHyMemory(pi: ExtensionAPI): void {
 	const { config, parseError: configParseError } = loadConfigFile(CONFIG_FILE);
 	const status = createStatusBar("hy");
 	let lastPending = 0;
+	/** Follow-up writes started since the last turn_end; see src/chain.ts. */
+	let chained = 0;
 	let state: SessionState | null = null;
 	let warned = false;
 
@@ -312,6 +315,7 @@ export default function piHyMemory(pi: ExtensionAPI): void {
 			});
 		}
 		const lastGap = [...effective].reverse().find((r) => r.type === "hy.gap");
+		chained = 0;
 		state = {
 			sessionId,
 			ledger: effective,
@@ -567,15 +571,67 @@ export default function piHyMemory(pi: ExtensionAPI): void {
 		})();
 	};
 
+	/**
+	 * A finished write does not necessarily leave the window under the trigger: the
+	 * next `turn_end` may be minutes away (measured: ten, with the footer bar
+	 * saturated). So the completion path re-evaluates once, under the narrow policy
+	 * in src/chain.ts.
+	 */
+	const maybeChainWrite = (ctx: ExtensionContext, sessionId: string): void => {
+		if (!state) return;
+		const live = state;
+		let branch: SessionEntry[];
+		let liveSession: string;
+		try {
+			branch = ctx.sessionManager.getBranch();
+			liveSession = ctx.sessionManager.getSessionId();
+		} catch {
+			return; // session replaced; the next turn_end re-reads it
+		}
+		const { pending, tokens } = tokensSince(branch, live.cursorId, live.resumeFromId);
+		const chunk = serializeEntries(pending, { maxTokens: chunkBudget(), maxEntryChars: config.maxEntryChars });
+		const decision = shouldChainWrite({
+			enabled: config.enabled,
+			sessionMatches: liveSession === sessionId && liveSession === live.sessionId,
+			inFlight: live.pending !== null,
+			pendingExtract: live.pendingExtract !== null,
+			failures: live.failures,
+			chained,
+			pendingTokens: tokens,
+			triggerTokens: config.observeAfterTokens,
+			entryCount: chunk.entryCount,
+		});
+		if (!decision.chain) {
+			if (decision.reason !== "under trigger" && decision.reason !== "chain limit") {
+				audit("chain_skipped", { sessionId, reason: decision.reason, pendingTokens: tokens, chained });
+			}
+			return;
+		}
+		const chunkId = nextChunkId(live.sessionId, live.ledger, () => ++live.chunkSeq);
+		chained++;
+		audit("write_chained", {
+			sessionId,
+			chunkId,
+			chunkTokens: estimateTokens(chunk.text),
+			droppedEntries: chunk.droppedEntries,
+			pendingTokens: tokens,
+			chained,
+		});
+		startWrite(ctx, chunk, chunkId, sessionId);
+	};
+
 	const startWrite = (ctx: ExtensionContext, chunk: ChunkBuild, chunkId: string, sessionId: string): void => {
 		if (!state) return;
 		const promise = runWrite(ctx, chunk, chunkId, sessionId).finally(() => {
-			if (state) state.pending = null;
+			if (!state) return;
+			state.pending = null;
+			maybeChainWrite(ctx, sessionId);
 		});
 		state.pending = promise;
 	};
 
 	pi.on("turn_end", (_event, ctx) => {
+		chained = 0;
 		if (!config.enabled) return;
 		if (!state) {
 			try {

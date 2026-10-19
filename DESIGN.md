@@ -72,6 +72,10 @@ turn_end
   ├─ enforceBudget        pool token cap, supersede the weakest
   └─ append ledger        hy.extract + hy.ops
 
+write completes
+  └─ window still ≥ observeAfterTokens? -> follow-up write (≤2 per turn, only while
+     failures == 0 and no persisted extract)                        (src/chain.ts)
+
 session_before_compact     (pi decides when; this only answers)
   └─ fold ledger -> render facts -> { summary, firstKeptEntryId, details }   (no model call)
 
@@ -83,6 +87,15 @@ recall tool
 ```
 
 Two model calls per chunk. No turn budget, no completion signal, no third agent.
+
+**A completed write may chain one more.** The trigger runs on `turn_end` and returns
+early while a write is in flight, so a chunk that landed mid-turn left its backlog waiting
+for the next turn — measured on session `01a1510e`, ten minutes with the footer pinned at
+29k/15k after a failed write at 13:45 and no write until 13:55. The completion path now
+re-evaluates under a narrow policy (`src/chain.ts`): follow up only while `failures == 0`,
+never for a persisted extract (that window belongs to its retry path), and at most
+`MAX_CHAIN = 2` per turn, so an idle session drains a backlog without turning a failing
+writer into a retry loop.
 
 **The writer is a model, not an endpoint.** `src/llm.ts` resolves `provider/modelId` from pi's
 model registry and calls `registry.complete()`; provider registration, base URLs, credentials

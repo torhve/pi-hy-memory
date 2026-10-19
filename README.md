@@ -39,6 +39,7 @@ so its list is empty until its server answers. A write in that window fails with
 message; the watermark does not advance, so the next write retries and succeeds once the
 provider is up.
 
+
 ## Configuration
 
 `~/.pi/agent/pi-hy-memory.json` (all keys optional; defaults in `src/index.ts`):
@@ -62,7 +63,7 @@ provider is up.
 | `fallbackCooldownS` | `300` | stay on the fallback this long after a failover (cleared only by a **primary** answer) |
 | `busyRetries` / `busyBackoffMs` | `3` / `4000` | 429 handling: llama-swap rejects a concurrent request to a single-slot model *instantly* instead of queueing. Waits double, capped at 60 s each and at a quarter of `timeoutMs` in total; after that the fallback is used instead of sleeping through the write |
 | `pruneAfterDays` | `30` | delete per-session state older than this; `0` disables. The 10 newest sessions and the running one are always kept |
-| `waitForWriteOnSettle` | `true` | block the end of a turn on an in-flight write |
+| `waitForWriteOnSettle` | `true` | block the end of a turn on an in-flight write. A write that completes with the window still over the trigger is followed by another, at most twice per turn and only while the writer is healthy |
 | `shutdownWaitMs` | `5000` | cap on how long `session_shutdown` waits for a write |
 | `statusBar` | `true` | footer bar: window fill, bank fill, spinner, `✓ +N ~M` |
 
@@ -185,6 +186,7 @@ to break silently:
 |---|---|
 | `endpoint-check` | model resolution from pi's list (slashes in ids, late registration), the request we hand to `registry.complete()`, and the fact that a provider failure *resolves* with `stopReason: "error"` |
 | `fallback-check` | which failures move to the second model (429 retried first, 5xx/abort move, 400 does not) and `preferFallback` |
+| `chain-check` | a completed write chains another only on a healthy writer, with no persisted extract, and never past `MAX_CHAIN` |
 | `failover-state-check` | the cooldown is cleared only by a **primary** answer |
 | `write-resume-check` | coverage contiguity, and not re-extracting after a failed reconcile |
 | `compaction-window-check` | compaction holds uncovered entries while that is affordable, accepts pi's cut when it is not, and sizes entries by their real text |
