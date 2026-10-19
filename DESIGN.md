@@ -221,10 +221,28 @@ explicitly established"), having already told the model to extract only what the
 explicitly establishes, so the answer is almost always `1.0`: 965 of 996 facts across the
 sessions measured here are `high`, and this session is 163 of 166 at `1.0`, with 3 at
 `0.9`. The one session with `medium` facts (`01a14a46`, 31 at `0.5`) shows the model can
-grade, it is simply not asked to grade importance. Consequences: the ranking collapses to
-`createdAt`, so the pool behaves as "the newest `poolMaxTokens / 72` facts", and the
-`medium`/`low` tiers are dead weight until a second, orthogonal judgement (how long the
-fact stays true, not how sure we are of it) is added to the extract schema and measured.
+grade, it is simply not asked to grade importance. Consequence: the ranking collapses to
+`createdAt`, so the pool behaves as "the newest `poolMaxTokens / 72` facts" and the
+`medium`/`low` tiers are dead weight.
+
+**A second judgement was tried and rejected.** The obvious repair is to ask the extract for
+a property orthogonal to confidence — how long the fact stays true rather than how sure we
+are of it — and derive relevance from that: `decision → high`, `state → medium`,
+`detail → low`, where "detail" means the repository could tell you the same thing. Measured
+on three real chunks (an implementation window, an audit report, and a session tail), two
+wordings of the definitions, temperature 0, `llama-swap/hy-memory-30b-a3b`: 65 drafts, the
+field present on **every** draft in both wordings, and **60 of 65 labelled `detail`**
+(92 %). The two wordings agreed with each other on every chunk — 18/19 vs 15/16 `detail` on
+the audit chunk, 14/15 vs 13/15 on the implementation chunk — so the variation tracks the
+*content*, not the phrasing. Nothing to rank with: a bank where 92 % of facts are `detail`
+evicts in recency order anyway, one layer of indirection later.
+
+The reason is structural rather than a prompt bug: the extractor emits durable technical
+facts by construction, so any property meaning "this is a technical fact" applies to nearly
+all of them. A discriminating signal has to come from *cross-fact* evidence — which facts
+the agent actually reads back through `hy_recall`, or which ones keep being restated and
+retrieved as reconcile candidates — not from asking the writer to classify each fact in
+isolation. That is not implemented; recency is the policy until something like it is.
 
 ### Retention
 

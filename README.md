@@ -135,7 +135,10 @@ writer is that a fact is explicit — which, having been told to extract only ex
 facts, it answers `1.0` almost always (965 of 996 facts across the sessions measured here;
 163 of 166 at `1.0` in the session this was measured on). So the ordering is effectively
 **recency**, and the pool behaves as "the newest ~`poolMaxTokens / 72` facts", with the
-`medium`/`low` tiers unused. That is why admission order matters enough to be pinned by
+`medium`/`low` tiers unused. Asking the extractor for a separate `stability` judgement
+(decision / state / detail) was measured on three chunks and two wordings: 60 of 65 drafts
+came back `detail`, so it ranks nothing. See DESIGN.md § "A second judgement was tried and
+rejected". That is why admission order matters enough to be pinned by
 `tools/render-check.ts`: with chronological admission the *newest* fact was the one being
 dropped.
 
