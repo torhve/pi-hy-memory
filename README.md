@@ -54,6 +54,12 @@ a 413 or a context-length rejection halves the next chunk; unparseable output do
 transport error, a 5xx, a 429 or an auth failure resets that shrink instead of applying it —
 the failover path already handles those, and a smaller chunk would not have helped.
 
+Each failure also starts a cooldown: `writeCooldownS` (30 s), doubling while it keeps failing
+and capped at 10 minutes, cleared by any success. Without it, a writer that is down costs one
+attempt per turn — measured at **508 attempts in 37 minutes** during a 502 storm — because
+nothing backs off between turns. The audit records `write_cooldown { waitS }` and one
+`write_deferred` per episode rather than a line per skipped turn.
+
 ## Configuration
 
 `~/.pi/agent/pi-hy-memory.json` (all keys optional; defaults in `src/index.ts`):
@@ -75,6 +81,7 @@ the failover path already handles those, and a smaller chunk would not have help
 | `extraBody` | `{}` | extra request fields, merged last (`samplingParams` in pi-ai terms) |
 | `fallback` | `false` | `{model, maxTokens?, timeoutMs?}` — a second model id, used when the primary is unavailable |
 | `fallbackCooldownS` | `300` | stay on the fallback this long after a failover (cleared only by a **primary** answer) |
+| `writeCooldownS` | `30` | wait before writing again after a failed attempt, doubling while it keeps failing (capped at 10 min); `0` disables. A dead endpoint otherwise costs one request per turn |
 | `busyRetries` / `busyBackoffMs` | `3` / `4000` | 429 handling: llama-swap rejects a concurrent request to a single-slot model *instantly* instead of queueing. Waits double, capped at 60 s each and at a quarter of `timeoutMs` in total; after that the fallback is used instead of sleeping through the write |
 | `pruneAfterDays` | `30` | delete per-session state older than this; `0` disables. The 10 newest sessions and the running one are always kept |
 | `waitForWriteOnSettle` | `true` | block the end of a turn on an in-flight write. A write that completes with the window still over the trigger is followed by another, at most twice per turn and only while the writer is healthy |
@@ -239,7 +246,7 @@ to break silently:
 | `chain-check` | a completed write chains another only on a healthy writer and after a successful attempt, with no persisted extract, and never past `MAX_CHAIN` |
 | `session-off-check` | `/hy off` stops the trigger, survives a reload, is announced on resume, and `/hy on` drops the off window as a `hy.gap` |
 | `lost-cursor-check` | a rewound branch resumes from the furthest coverage the ledger still reaches, not from index 0 |
-| `failure-class-check` | chunk/output failures shrink the next chunk; transport, 5xx, 429 and auth do not |
+| `failure-class-check` | chunk/output failures shrink the next chunk; transport, 5xx, 429 and auth do not — and the failure cooldown doubles to a cap |
 | `failover-state-check` | the cooldown is cleared only by a **primary** answer |
 | `write-resume-check` | coverage contiguity, and not re-extracting after a failed reconcile |
 | `compaction-window-check` | compaction holds uncovered entries while that is affordable, accepts pi's cut when it is not, and sizes entries by their real text |

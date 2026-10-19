@@ -47,6 +47,11 @@ export type HyConfig = {
 	busyRetries?: number;
 	/** Base backoff for those retries; doubles each attempt. */
 	busyBackoffMs?: number;
+	/**
+	 * Seconds to wait before writing again after a failed attempt, doubling while it
+	 * keeps failing (capped at 10 minutes). 0 disables the wait.
+	 */
+	writeCooldownS?: number;
 };
 
 /**
@@ -78,6 +83,7 @@ export const SETTING_DEFAULTS: HyConfig = {
 	fallbackCooldownS: 300,
 	busyRetries: 3,
 	busyBackoffMs: 4000,
+	writeCooldownS: 30,
 	pruneAfterDays: 30,
 	shutdownWaitMs: 5000,
 	statusBar: true,

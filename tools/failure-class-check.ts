@@ -12,7 +12,7 @@
  * and context-length rejections.
  */
 
-import { failureClass, shrinksChunk } from "../src/failures.js";
+import { failureClass, shrinksChunk, writeCooldownMs } from "../src/failures.js";
 import { WriterError } from "../src/llm.js";
 
 let failures = 0;
@@ -55,6 +55,23 @@ check("empty completion", failureClass(at("empty completion (stopReason=length)"
 check("endpoint does not shrink", shrinksChunk("endpoint"), false);
 check("chunk shrinks", shrinksChunk("chunk"), true);
 check("output shrinks", shrinksChunk("output"), true);
+
+// The wait between attempts. Measured on session 01a1510e (2026-10-19): a dead proxy
+// produced 508 attempts in 37 minutes because nothing backed off across turns.
+check("first failure waits the base", writeCooldownMs(1, 30_000), 30_000);
+check(
+	"then doubles",
+	[2, 3, 4].map((n) => writeCooldownMs(n, 30_000)),
+	[60_000, 120_000, 240_000],
+);
+check("capped at ten minutes", writeCooldownMs(40, 30_000), 600_000);
+check("no failures means no wait", writeCooldownMs(0, 30_000), 0);
+check("zero base disables it", writeCooldownMs(5, 0), 0);
+check(
+	"a storm costs a handful of requests",
+	[1, 2, 3, 4, 5, 6].reduce((s, n) => s + writeCooldownMs(n, 30_000), 0),
+	30_000 + 60_000 + 120_000 + 240_000 + 480_000 + 600_000,
+);
 
 console.log(failures === 0 ? "ok: failure classes" : `${failures} failure(s)`);
 process.exit(failures === 0 ? 0 : 1);

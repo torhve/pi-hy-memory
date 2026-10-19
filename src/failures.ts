@@ -41,3 +41,19 @@ export function failureClass(error: unknown): FailureClass {
 export function shrinksChunk(klass: FailureClass): boolean {
 	return klass !== "endpoint";
 }
+
+/**
+ * How long to wait before trying the writer again after a failure.
+ *
+ * `lastFailed` stops a chain from following a failure, but it does not stop the
+ * *trigger*: a session producing turns every few seconds still fires one attempt per
+ * turn. Measured on session 01a1510e (2026-10-19), a dead proxy (502) produced
+ * **508 attempts in 37 minutes** — one every few seconds — because nothing backed
+ * off across turns. The first wait is short (a blip should cost one attempt), then
+ * doubles, so an outage costs a handful of requests instead of hundreds.
+ */
+export function writeCooldownMs(consecutiveFailures: number, baseMs: number): number {
+	if (baseMs <= 0) return 0;
+	if (consecutiveFailures <= 0) return 0;
+	return Math.min(10 * 60_000, baseMs * 2 ** Math.min(consecutiveFailures - 1, 10));
+}

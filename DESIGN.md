@@ -137,6 +137,15 @@ writes a `hy.gap { reason: "disabled" }` — the same record compaction uses for
 not avoid — so the ledger still says which entries were never read, and no catch-up burst is
 paid on re-enable. The config's `enabled: false` stays the global kill switch and wins.
 
+**A failure backs off across turns.** `lastFailed` (src/chain.ts) stops a *chain* from
+following a failure, but the trigger still fires once per `turn_end`: with a dead proxy and a
+session producing turns every few seconds that was **508 attempts in 37 minutes** (measured
+on `01a1510e`, 2026-10-19). `writeCooldownMs` waits `writeCooldownS` (30 s) after the first
+failure, doubles per consecutive failure, caps at 10 minutes, and any success clears it —
+`write_cooldown { waitS }` once per failure, `write_deferred` once per skipped episode. The
+trigger checks the deadline before measuring the window, so a down writer costs a handful of
+requests per outage instead of one per turn.
+
 **Failures are classified before they shrink the chunk.** `failures` halves the next
 chunk, which is right when the request is the problem and wrong when the endpoint is.
 `src/failures.ts` sorts a failure into `chunk` (timeout/abort, 413, context-length

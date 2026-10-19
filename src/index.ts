@@ -35,7 +35,7 @@ import {
 	type Window,
 } from "./entries.js";
 import { nextFailoverState } from "./failover.js";
-import { failureClass, shrinksChunk } from "./failures.js";
+import { failureClass, shrinksChunk, writeCooldownMs } from "./failures.js";
 import { createWriter, type Writer } from "./llm.js";
 import { writeChunk } from "./pipeline.js";
 import { renderMemory, summaryBudget } from "./render.js";
@@ -96,6 +96,12 @@ type SessionState = {
 	enabled: boolean;
 	/** `coverage_drift` is audited once per episode, not every turn. */
 	coverageDriftAudited?: boolean;
+	/** Consecutive failed attempts of any class; drives the writer cooldown. */
+	consecutiveFailures: number;
+	/** No write attempt before this time; set after a failure. */
+	writeCooldownUntil: number;
+	/** The cooldown has been reported once, so a storm does not fill the audit. */
+	cooldownAudited?: boolean;
 	chunkSeq: number;
 	/** Consecutive failed writes; shrinks the chunk so a retry can complete. */
 	failures: number;
@@ -351,6 +357,8 @@ export default function piHyMemory(pi: ExtensionAPI): void {
 			resumeFromId: lastGap?.fromId,
 			chunkSeq: highestChunkSeq(effective),
 			failures: 0,
+			consecutiveFailures: 0,
+			writeCooldownUntil: 0,
 			pendingExtract: readPendingExtract(sessionId),
 			primaryDownUntil: 0,
 			inFlight: false,
@@ -503,6 +511,9 @@ export default function piHyMemory(pi: ExtensionAPI): void {
 				live.resumeFromId = undefined;
 				live.coverageDriftAudited = false;
 				lastAttemptFailed = false;
+				live.consecutiveFailures = 0;
+				live.writeCooldownUntil = 0;
+				live.cooldownAudited = false;
 				live.failures = 0;
 				// Only a primary answer clears the cooldown: a fallback-only write never
 				// tested the primary, and treating it as recovery made every write pay
@@ -599,6 +610,18 @@ export default function piHyMemory(pi: ExtensionAPI): void {
 			} catch (error) {
 				lastAttemptFailed = true;
 				const kind = failureClass(error);
+				if (state && state.sessionId === sessionId) {
+					state.consecutiveFailures += 1;
+					const waitMs = writeCooldownMs(state.consecutiveFailures, (config.writeCooldownS ?? 30) * 1000);
+					state.writeCooldownUntil = Date.now() + waitMs;
+					state.cooldownAudited = false;
+					audit("write_cooldown", {
+						sessionId,
+						failures: state.consecutiveFailures,
+						failureClass: kind,
+						waitS: Math.round(waitMs / 1000),
+					});
+				}
 				// Only a chunk or output failure says anything about chunk size. An
 				// endpoint failure (transport, 5xx, 429) resets the shrink instead of
 				// halving the budget for a problem the chunk did not cause.
@@ -722,6 +745,18 @@ export default function piHyMemory(pi: ExtensionAPI): void {
 				chars: 0,
 			};
 			startWrite(ctx, chunk, saved.chunkId, sessionId);
+			return;
+		}
+
+		if (live.writeCooldownUntil > Date.now()) {
+			if (!live.cooldownAudited) {
+				live.cooldownAudited = true;
+				audit("write_deferred", {
+					sessionId,
+					until: new Date(live.writeCooldownUntil).toISOString(),
+					consecutiveFailures: live.consecutiveFailures,
+				});
+			}
 			return;
 		}
 
