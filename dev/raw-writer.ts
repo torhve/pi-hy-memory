@@ -10,6 +10,7 @@
  *   POC_MODEL=… POC_ORIGIN=… POC_KEY=… npx tsx dev/poc.ts
  */
 
+import { Agent, fetch as undiciFetch } from "undici";
 import type { Completion, Writer } from "../src/llm.js";
 import type { CallUsage } from "../src/types.js";
 
@@ -29,6 +30,17 @@ export function rawWriter(options: RawWriterOptions): Writer {
 	const base = options.origin.replace(/\/+$/, "");
 	const url = base.endsWith("/v1") ? `${base}/chat/completions` : `${base}/v1/chat/completions`;
 	const timeoutMs = options.timeoutMs ?? 600_000;
+
+	// Stock undici aborts a long HTTP/2 wait with "headers timeout after 300000".
+	// A non-streaming llama.cpp response sends its headers only when generation
+	// is complete, so that hidden 300 s cap - not this writer's own timeout -
+	// killed every long extract. The dispatcher's deadlines are the real ones;
+	// the AbortController below still enforces `timeoutMs`.
+	const dispatcher = new Agent({
+		allowH2: true,
+		headersTimeout: timeoutMs + 30_000,
+		bodyTimeout: timeoutMs + 30_000,
+	});
 
 	const buildBody = (compat: boolean): Record<string, unknown> => {
 		const body: Record<string, unknown> = {
@@ -59,7 +71,8 @@ export function rawWriter(options: RawWriterOptions): Writer {
 					{ role: "user", content: user },
 				];
 				try {
-					return await fetch(url, {
+					// Cast: raw-writer's Writer contract speaks the global Response.
+					return (await undiciFetch(url, {
 						method: "POST",
 						headers: {
 							"content-type": "application/json",
@@ -67,7 +80,8 @@ export function rawWriter(options: RawWriterOptions): Writer {
 						},
 						body: JSON.stringify(body),
 						signal: controller.signal,
-					});
+						dispatcher,
+					})) as unknown as Response;
 				} finally {
 					clearTimeout(timer);
 				}

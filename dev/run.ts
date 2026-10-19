@@ -244,17 +244,21 @@ async function main(): Promise<void> {
 				});
 				break;
 			} catch (error) {
-				const message = String((error as Error)?.message ?? error);
-				// A failed extract leaves nothing persisted; only a completed extract
-				// (this attempt or an earlier one) makes a retry cheap.
-				if (attempt >= attempts || !(persistedExtract || resumeRecord)) {
+				const cause = (error as Error)?.cause ? `: ${String((error as Error).cause)}` : "";
+				const message = `${String((error as Error)?.message ?? error)}${cause}`;
+				if (attempt >= attempts) {
 					console.error(`${chunkId}: FAILED ${message}`);
 					write = undefined;
 					break;
 				}
+				// A completed extract makes the retry cheap; a failed one is simply
+				// re-attempted, since connection-level drops often clear.
 				console.error(
-					`${chunkId}: attempt ${attempt} failed (${message}); retrying from the persisted extract`,
+					`${chunkId}: attempt ${attempt} failed (${message}); retrying ${persistedExtract || resumeRecord ? "from the persisted extract" : "with a fresh extract"}`,
 				);
+				// llama-swap keeps processing a request the client abandoned; an
+				// immediate retry collides with that zombie's concurrency slot.
+				await new Promise((resolve) => setTimeout(resolve, 45_000));
 			}
 		}
 		if (!write) continue;
