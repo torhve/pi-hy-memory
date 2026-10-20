@@ -3,7 +3,8 @@
  * Hi-fi probe: one real checkpoint from a real session, on the model you would actually run.
  *
  *   npx tsx dev/hifi-probe.ts --session <pi session .jsonl> [--model <provider/id>]
- *       [--reasoning none] [--tail 6000] [--delta 6000] [--max-tokens 2000] [--out out/hifi]
+ *       [--reasoning off] [--thinking-format qwen] [--off-value none] [--thinking-budget-field
+ *       thinking_budget] [--tail 6000] [--delta 6000] [--max-tokens 2000] [--out out/hifi]
  *
  * The bank comes from this extension's own ledger for that session, the tail from the newest
  * entries of its branch, and the request is built by `src/hifi.ts` — the same code the
@@ -59,7 +60,24 @@ const active = bank.filter((e) => e.status === "active");
 const tailTokens = Number(arg("--tail", "6000"));
 const deltaTokens = Number(arg("--delta", "6000"));
 const maxTokens = Number(arg("--max-tokens", "2000"));
-const reasoning = arg("--reasoning", "none");
+// pi's own levels. "off" means pi sends no reasoning effort, which for a qwen-format server
+// becomes an explicit enable_thinking:false. A word the endpoint invented ("none") is not a
+// pi level and silently changes nothing.
+const reasoningRaw = arg("--reasoning", "off");
+const LEVELS = ["off", "minimal", "low", "medium", "high", "xhigh", "max"];
+if (!LEVELS.includes(reasoningRaw)) {
+	console.error(`--reasoning must be one of ${LEVELS.join(", ")} (got "${reasoningRaw}")`);
+	process.exit(1);
+}
+const reasoning = reasoningRaw as "off";
+// Which knob tells *this* server to stop thinking. pi auto-detects the format from the URL,
+// and an auto-detected guess is what produced the empty answers: the payload carried no
+// reasoning field at all while the model emitted a thinking block. A Qwen-style server takes
+// enable_thinking, an OpenAI-style one takes reasoning_effort, and the two are not
+// interchangeable. `off-value` is pi's thinkingLevelMap.off, the endpoint's own word for off.
+const thinkingFormat = arg("--thinking-format", "");
+const offValue = arg("--off-value", "");
+const budgetField = arg("--thinking-budget-field", "");
 
 const facts = hifiFacts(bank, { lastSeq: 0, maxTokens: deltaTokens, estimate: estimateTokens });
 const tailEntries = selectTail(branch, tailTokens);
@@ -76,7 +94,21 @@ const model: Model<any> = {
 	baseUrl: route.origin,
 	input: ["text"],
 	cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-	reasoning: false,
+	// Declared as a reasoning model so pi's reasoning machinery runs at all: with
+	// reasoning:false it sends no reasoning field whatever the caller asks, which is how
+	// the server ends up thinking by default.
+	reasoning: true,
+	...(offValue ? { thinkingLevelMap: { off: offValue } } : {}),
+	compat: {
+		...(thinkingFormat ? { thinkingFormat: thinkingFormat as "qwen" } : {}),
+		...(offValue ? { supportsReasoningEffort: true } : {}),
+		...(budgetField ? { thinkingTokenBudgetField: budgetField as "thinking_budget" } : {}),
+		// Deliberately without omitWhenOff: with reasoning off this resolves to an explicit
+		// false. Omitting the field is exactly what let the server think by default.
+		...(thinkingFormat.includes("chat-template")
+			? { chatTemplateKwargs: { enable_thinking: { $var: "thinking.enabled" } } }
+			: {}),
+	} as Model<any>["compat"],
 	contextWindow: 131072,
 	maxTokens,
 };
@@ -124,6 +156,7 @@ console.log(
 	`payload reasoning fields: ${JSON.stringify({
 		reasoning_effort: body.reasoning_effort,
 		chat_template_kwargs: body.chat_template_kwargs,
+		thinking_format_sent: thinkingFormat,
 		enable_thinking: body.enable_thinking,
 		thinking_budget: body.thinking_budget ?? body.thinking_token_budget ?? body.thinking_budget_tokens,
 		max_tokens: body.max_tokens ?? body.max_completion_tokens,
