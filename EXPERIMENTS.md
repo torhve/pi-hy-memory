@@ -39,7 +39,7 @@ Baseline observations before judging:
 
 - Kitx saturation incident (extended arm): after 2 successful chunks, all 30
   remaining attempts died in ~7 s each with AbortError - HTTP/2 streams reset
-  while remote's upstream queued, and even a plain curl probe hung past 120 s.
+  while the remote route's upstream queued, and even a plain curl probe hung past 120 s.
   Route health is a measured variable, not a constant. The Tier-1 arm trio
   therefore runs on the local llama-swap writer (`baseline-extended-local`,
   `tier1-perdraft-local`, judged against each other); remote remains the later

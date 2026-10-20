@@ -5,6 +5,7 @@ Documentation=https://github.com/ggml-org/llama.cpp/issues/27604
 [Service]
 Type=oneshot
 # Same user as llama-swap: pgrep must see the child processes and kill must be permitted.
+# Set these to the account llama-swap runs as on your host.
 User=llamaswap
 Group=llamaswap
 ExecStart=/usr/local/bin/llama-watchdog.sh
