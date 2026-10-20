@@ -9,6 +9,8 @@ this file so two runs are comparable word-for-word.
   "runId": "baseline-2026-10-19",
   "model": "remote/hy-memory-30b-a3b",
   "pool": 12000,
+  "renderMode": "perDraft",
+  "candidateLimit": 12,              // shown cap and per-draft retrieval depth
   "chunks": [
     {
       "chunkId": "hy-01a1510e-012",

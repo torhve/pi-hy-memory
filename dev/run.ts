@@ -1,7 +1,8 @@
 /**
  * Corpus runner with named run ids and chunk-level resume.
  *
- *   npx tsx dev/run.ts --run <runId> [--corpus FILE] [--pool 12000] [--candidate-render-mode union|perDraft]
+ *   npx tsx dev/run.ts --run <runId> [--corpus FILE] [--pool 12000]
+ *       [--candidate-render-mode union|perDraft] [--candidate-limit 12]
  *
  * Writer route resolution, in order:
  *   1. POC_ORIGIN / POC_KEY / POC_MODEL (same convention as poc.ts);
@@ -90,18 +91,20 @@ function bankStats(bank: BankEntry[]): { active: number; tokens: number } {
 	return { active: active.length, tokens: active.reduce((s, e) => s + e.tokenCount, 0) };
 }
 
-/** The same candidate selection `writeChunk` performs (default per-draft limit 8, shown cap 12). */
+/** The same candidate selection `writeChunk` performs (per-draft limit = shown cap). */
 function candidateCoverage(
 	bank: BankEntry[],
 	drafts: Draft[],
 	mode: "union" | "perDraft" = "union",
+	limit = 12,
 ): { zeroCandidateDrafts: number; noCandidateDrafts: number; shownUnion: number } {
 	const active = bank.filter((e) => e.status === "active");
 	if (active.length === 0) return { zeroCandidateDrafts: 0, noCandidateDrafts: 0, shownUnion: 0 };
-	const perDraft = candidatesPerDraft(bank, drafts, 8);
+	const perDraft = candidatesPerDraft(bank, drafts, limit);
 	const union = new Map<string, BankEntry>();
 	for (const list of perDraft.values()) for (const e of list) if (!union.has(e.id)) union.set(e.id, e);
-	const shownEntries = mode === "perDraft" ? selectShownPerDraft(perDraft, 12) : [...union.values()].slice(0, 12);
+	const shownEntries =
+		mode === "perDraft" ? selectShownPerDraft(perDraft, limit) : [...union.values()].slice(0, limit);
 	const shown = new Set(shownEntries.map((e) => e.id));
 	let starved = 0;
 	let none = 0;
@@ -114,6 +117,13 @@ function candidateCoverage(
 	return { zeroCandidateDrafts: starved, noCandidateDrafts: none, shownUnion: shown.size };
 }
 
+/** Limit a prior run used, so reconstructed rows score the same selection. */
+function candidateLimitFromDisk(metricsPath: string): number {
+	if (!existsSync(metricsPath)) return 12;
+	const prior = JSON.parse(readFileSync(metricsPath, "utf8")) as { candidateLimit?: number };
+	return prior.candidateLimit ?? 12;
+}
+
 async function main(): Promise<void> {
 	const runId = arg("--run", "");
 	if (!runId) throw new Error("--run <runId> is required");
@@ -123,6 +133,9 @@ async function main(): Promise<void> {
 	const pool = numArg("--pool", 12000);
 	const modelSpec = process.env.POC_MODEL ?? "remote/hy-memory-30b-a3b";
 	const renderMode = arg("--candidate-render-mode", "union") as "union" | "perDraft";
+	// Shown cap and per-draft retrieval depth are the same number in `writeChunk`
+	// (`candidateLimit`), so one flag moves both.
+	const candidateLimit = numArg("--candidate-limit", 12);
 	const route = process.env.POC_ORIGIN
 		? { origin: process.env.POC_ORIGIN, apiKey: process.env.POC_KEY, model: process.env.POC_MODEL ?? modelSpec }
 		: await resolveRoute(modelSpec);
@@ -162,11 +175,19 @@ async function main(): Promise<void> {
 		if (r.type === "hy.extract") extractOf.set(r.chunkId, r);
 		if (r.type === "hy.ops") doneChunk.add(r.chunkId);
 	}
-	const metrics: { runId: string; model: string; pool: number; renderMode: string; chunks: Row[] } = {
+	const metrics: {
+		runId: string;
+		model: string;
+		pool: number;
+		renderMode: string;
+		candidateLimit: number;
+		chunks: Row[];
+	} = {
 		runId,
 		model: route.model,
 		pool,
 		renderMode,
+		candidateLimit,
 		chunks: [],
 	};
 	// Chunks finished in an earlier attempt keep their full metrics rows when
@@ -194,13 +215,14 @@ async function main(): Promise<void> {
 						foldLedger([...prefix, r]),
 						capturesById.get(r.chunkId),
 						renderMode,
+						candidateLimitFromDisk(metricsPath),
 					),
 			);
 		}
 		prefix.push(r);
 	}
 	console.log(
-		`run=${runId} model=${route.model} origin=${route.origin} temp=0 kwargs=no_think timeout=600s candidates=${renderMode}`,
+		`run=${runId} model=${route.model} origin=${route.origin} temp=0 kwargs=no_think timeout=600s candidates=${renderMode} limit=${candidateLimit}`,
 	);
 	console.log(
 		`corpus=${corpus.length} chunks, ledger has ${doneChunk.size} complete, ${extractOf.size - doneChunk.size} resumable`,
@@ -218,7 +240,9 @@ async function main(): Promise<void> {
 		const before = bankStats(bank);
 		const started = Date.now();
 		let coverage: { zeroCandidateDrafts: number; noCandidateDrafts: number; shownUnion: number } | undefined =
-			resumeRecord ? candidateCoverage(bank, resumeRecord.drafts as unknown as Draft[], renderMode) : undefined;
+			resumeRecord
+				? candidateCoverage(bank, resumeRecord.drafts as unknown as Draft[], renderMode, candidateLimit)
+				: undefined;
 		let extractOnDisk = false;
 		let persistedExtract: (LedgerRecord & { type: "hy.extract" }) | undefined;
 		let write: Awaited<ReturnType<typeof writeChunk>> | undefined;
@@ -230,6 +254,7 @@ async function main(): Promise<void> {
 					poolMaxTokens: pool,
 					rawDir: join(outDir, "raw"),
 					candidateRenderMode: renderMode,
+					candidateLimit,
 					resume: resumeFrom
 						? {
 								drafts: resumeFrom.drafts as Draft[],
@@ -248,6 +273,7 @@ async function main(): Promise<void> {
 							bank,
 							record.drafts.map((d) => d as unknown as Draft),
 							renderMode,
+							candidateLimit,
 						);
 					},
 				});
@@ -336,6 +362,7 @@ function summarize(
 	bankAfter: BankEntry[],
 	capture: Row | undefined,
 	renderMode: "union" | "perDraft",
+	candidateLimit: number,
 ): Row {
 	const o = ops as Extract<LedgerRecord, { type: "hy.ops" }>;
 	const drafts = extract.drafts;
@@ -352,7 +379,7 @@ function summarize(
 		drafts: drafts.length,
 		rejectedDrafts: [],
 		rejectedDraftCount: extract.rejectedCount ?? 0,
-		candidateCoverage: candidateCoverage(bankBefore, drafts as unknown as Draft[], renderMode),
+		candidateCoverage: candidateCoverage(bankBefore, drafts as unknown as Draft[], renderMode, candidateLimit),
 		ops: {
 			ADD: o.ops.filter((x: { action: string }) => x.action === "ADD").length,
 			UPDATE: o.ops.filter((x: { action: string }) => x.action === "UPDATE").length,
