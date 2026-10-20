@@ -28,7 +28,7 @@ import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { foldLedger } from "../src/bank.js";
 import { writeChunk } from "../src/pipeline.js";
-import { candidatesPerDraft } from "../src/protocol.js";
+import { candidatesPerDraft, selectShownPerDraft } from "../src/protocol.js";
 import { renderMemory } from "../src/render.js";
 import type { SerializedChunk } from "../src/serialize.js";
 import type { BankEntry, Draft, LedgerRecord } from "../src/types.js";
@@ -94,13 +94,15 @@ function bankStats(bank: BankEntry[]): { active: number; tokens: number } {
 function candidateCoverage(
 	bank: BankEntry[],
 	drafts: Draft[],
+	mode: "union" | "perDraft" = "union",
 ): { zeroCandidateDrafts: number; noCandidateDrafts: number; shownUnion: number } {
 	const active = bank.filter((e) => e.status === "active");
 	if (active.length === 0) return { zeroCandidateDrafts: 0, noCandidateDrafts: 0, shownUnion: 0 };
 	const perDraft = candidatesPerDraft(bank, drafts, 8);
 	const union = new Map<string, BankEntry>();
 	for (const list of perDraft.values()) for (const e of list) if (!union.has(e.id)) union.set(e.id, e);
-	const shown = new Set([...union.values()].slice(0, 12).map((e) => e.id));
+	const shownEntries = mode === "perDraft" ? selectShownPerDraft(perDraft, 12) : [...union.values()].slice(0, 12);
+	const shown = new Set(shownEntries.map((e) => e.id));
 	let starved = 0;
 	let none = 0;
 	for (const list of perDraft.values()) {
@@ -191,6 +193,7 @@ async function main(): Promise<void> {
 						foldLedger(prefix),
 						foldLedger([...prefix, r]),
 						capturesById.get(r.chunkId),
+						renderMode,
 					),
 			);
 		}
@@ -215,7 +218,7 @@ async function main(): Promise<void> {
 		const before = bankStats(bank);
 		const started = Date.now();
 		let coverage: { zeroCandidateDrafts: number; noCandidateDrafts: number; shownUnion: number } | undefined =
-			resumeRecord ? candidateCoverage(bank, resumeRecord.drafts as unknown as Draft[]) : undefined;
+			resumeRecord ? candidateCoverage(bank, resumeRecord.drafts as unknown as Draft[], renderMode) : undefined;
 		let extractOnDisk = false;
 		let persistedExtract: (LedgerRecord & { type: "hy.extract" }) | undefined;
 		let write: Awaited<ReturnType<typeof writeChunk>> | undefined;
@@ -244,6 +247,7 @@ async function main(): Promise<void> {
 						coverage = candidateCoverage(
 							bank,
 							record.drafts.map((d) => d as unknown as Draft),
+							renderMode,
 						);
 					},
 				});
@@ -332,6 +336,7 @@ function summarize(
 	bankBefore: BankEntry[],
 	bankAfter: BankEntry[],
 	capture: Row | undefined,
+	renderMode: "union" | "perDraft",
 ): Row {
 	const o = ops as Extract<LedgerRecord, { type: "hy.ops" }>;
 	const drafts = extract.drafts;
@@ -348,7 +353,7 @@ function summarize(
 		drafts: drafts.length,
 		rejectedDrafts: [],
 		rejectedDraftCount: extract.rejectedCount ?? 0,
-		candidateCoverage: candidateCoverage(bankBefore, drafts as unknown as Draft[]),
+		candidateCoverage: candidateCoverage(bankBefore, drafts as unknown as Draft[], renderMode),
 		ops: {
 			ADD: o.ops.filter((x: { action: string }) => x.action === "ADD").length,
 			UPDATE: o.ops.filter((x: { action: string }) => x.action === "UPDATE").length,

@@ -36,6 +36,44 @@ Baseline observations before judging:
 
 ## Transport findings (harness-affecting, possibly production-affecting)
 
+
+- Kitx saturation incident (extended arm): after 2 successful chunks, all 30
+  remaining attempts died in ~7 s each with AbortError - HTTP/2 streams reset
+  while remote's upstream queued, and even a plain curl probe hung past 120 s.
+  Route health is a measured variable, not a constant. The Tier-1 arm trio
+  therefore runs on the local llama-swap writer (`baseline-extended-local`,
+  `tier1-perdraft-local`, judged against each other); remote remains the later
+  confirmation route for whatever wins. Partial remote data retained: chunks
+  001-002 gave 15/36 drafts (42 %) with zero bank candidates at a 36-entry
+  bank and 36/36 unconditional ADDs - the Tier-1 target failure signature
+  reproduced before the transport died.
+- Wedged-writer root cause (the saturation above, now traced): a documented
+  chain, not random. (1) llama-server does not cancel generation when the
+  client disconnects - orphaned generations hold slots until context exhausts,
+  non-streaming included (llama.cpp #24496; PR #26242 addresses drop-stop).
+  Our own first remote baseline seeded exactly this: three 300 s client aborts
+  of 400 s extracts (the hidden headers cap, since raised) left orphans
+  holding 131 k-context slots. (2) On AMD/RDNA-class backends a client abort
+  while another request is in flight deadlocks the whole server: everything
+  hangs, /health dies too, SIGTERM ignored - only SIGKILL works (llama.cpp
+  #27604). That matches the incident ending: manual `kill -9`. (3) Queued
+  clients disconnecting can also cancel the *active* decode - cancel cascade
+  (ik_llama.cpp #1929, ungated `llama_decode_stop` call sites). Meanwhile
+  llama-swap's defenses are startup-only: `healthCheckTimeout` never watches a
+  ready model, and `timeouts.responseHeader` defaults to 0 = hold forever on a
+  wedged upstream. Hardening stack (priority order): fix our client-side
+  abort sources (production's hidden 300 s cap first); per-model
+  `timeouts.responseHeader` > 0, small `concurrencyLimit` (fast 429 instead of
+  deep queues full of disconnecting connections), `filters.setParams`
+  `max_tokens?` cap, `cmdStop: kill -9 ${PID}` (wedged builds ignore SIGTERM),
+  optional idle `ttl` to reload clean; if the served build lacks `--watchdog`
+  (present in forks/older servers, absent from current upstream README - check
+  `llama-server --help`), a systemd probe on llama-server's own port (health
+  + tiny completion, bypassing the proxy queue) SIGKILLs the wedged process -
+  llama-swap restarts it on the next request. Forensics for the next incident:
+  `logToStdout: proxy,http,upstream` + `logTimeFormat: rfc3339`.
+  Sources: github.com/ggml-org/llama.cpp/issues/24496, /issues/27604,
+  github.com/ikawrakow/ik_llama.cpp/issues/1929, llama-swap docs/config.example.yaml.
 - Non-streaming llama.cpp completions emit response headers only when
   generation completes. Node's bundled undici aborts HTTP/2 waits with
   `headersTimeout: 300000`, which silently killed every remote extract whose
@@ -68,6 +106,12 @@ Corpus run ≈ 18 min remote vs ≈ 4 min local (local also avoids per-call cost
 seed, judge model local `qwen3.8-27b-q6` (never the writer model; the 35B MoE
 judges tried first crashed llama-swap's upstream), temp 0.
 
+Judge transport: judging must never evict the writer model from the taranis
+llama-swap (a shared-instance judge run was killed for exactly that). The
+standing judge route is now the separate tre machine's llama.cpp endpoint
+(`qwen3.8-flash-next-iq3_xxs`, reasoning suppressed with `no_think`, 168k ctx)
+via `JUDGE_ORIGIN` / `JUDGE_KEY` / `JUDGE_MODEL`, taken from pi's own
+`models.json` at runtime. Judges and writer arms therefore run concurrently.
 Standing judge model now: local `qwen35-9b-summar` (non-reasoning). Current
 standing pair for baseline-remote (`judge-seed7.json`, `judge-seed11.json`):
 supported 59-60/63 full, 0-4 partial, 0 unsupported; durable 53-58, marginal
