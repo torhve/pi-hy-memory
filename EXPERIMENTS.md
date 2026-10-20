@@ -399,3 +399,37 @@ Verdict: viable as a **batched, opt-in review**, and the evidence does *not* sup
 an automatic deletion path — nothing here measures whether the closed set is safe to forget.
 Cheaper and safer first use: feed the verdicts to the summary selection (rank, not delete), and
 only tombstone behind an explicit command.
+
+## Run: hi-fi compaction against the session model (2026-10-21)
+
+The proposal: at a compaction, ask the session's own model to *write* the checkpoint — pi's
+six sections — from the bank delta plus the kept tail, instead of rendering the bank. The
+question was whether a quantised local model can do that at all.
+
+One real session (`01a1510e`, 5 895 branch entries, 408 active facts, 11 842–12 075 input
+tokens per request, 64–70 facts offered, 43 tail lines):
+
+| arm | reasoning | max tokens | output | text blocks | verdict |
+|---|---|---|---|---|---|
+| 1 | `"none"` (not a pi level) | 2 000 | 2 000, stop `length` | 0 | rejected |
+| 2 | `off` | 2 000 (server default; the flag was swallowed) | 2 000, stop `length` | 0 | rejected |
+| 3 | `medium` | 6 000 (flag swallowed again — zsh does not word-split) | 2 000, stop `length` | 0 | rejected |
+
+Three identical failures, and the mechanism is in pi-ai's own source
+(`api/openai-completions.js`):
+
+> Reasoning and the answer share `max_tokens` here, so an uncapped reasoning phase can
+> consume the whole response and leave no answer and no tool call.
+
+and, one block earlier: when no reasoning is requested, pi sends a reasoning field **only if
+the model declares `thinkingLevelMap.off`** and `compat.supportsReasoningEffort`. A local
+reasoning model with neither gets *no* reasoning field, so the server applies its own default
+— which for a thinking model is "think". The probe confirms it: the payload carried no
+`reasoning_effort`, no `chat_template_kwargs`, no `enable_thinking`, and `usage.reasoning`
+reported 0 while 2 000 output tokens vanished.
+
+So the failure is not the model being unable to summarise. It is the request never telling
+that particular server to stop thinking, and the answer budget being shared with the thinking.
+The endpoint had already told us its vocabulary when an earlier call sent `no_think`:
+*"unknown reasoning effort 'no_think': use none, low, medium or high"* — pi's levels are
+`off, minimal, low, medium, high, xhigh, max`, and `off` is not a value that server accepts.

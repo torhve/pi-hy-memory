@@ -117,13 +117,16 @@ console.log(
 );
 console.log(`verdict: ${verdict.ok ? "accepted" : `REJECTED — ${verdict.reason}`}`);
 console.log(`thinking tokens: ${result.usage?.reasoning ?? "not reported"} of ${result.usage?.output ?? 0} output`);
+console.log(`content blocks: ${JSON.stringify(result.blocks)}`);
 const body = (payload.body ?? payload) as Record<string, any>;
+console.log(`payload keys: ${Object.keys(body).join(", ")}`);
 console.log(
 	`payload reasoning fields: ${JSON.stringify({
 		reasoning_effort: body.reasoning_effort,
 		chat_template_kwargs: body.chat_template_kwargs,
 		enable_thinking: body.enable_thinking,
-		max_tokens: body.max_tokens,
+		thinking_budget: body.thinking_budget ?? body.thinking_token_budget ?? body.thinking_budget_tokens,
+		max_tokens: body.max_tokens ?? body.max_completion_tokens,
 	})}`,
 );
 console.log(

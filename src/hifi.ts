@@ -157,6 +157,8 @@ export interface HifiResult {
 	usage?: Usage;
 	stopReason: string;
 	ms: number;
+	/** Content block types the answer actually contained, for diagnosis. */
+	blocks: string[];
 }
 
 /** One completion, with a hard timeout. Any transport failure propagates to the caller's fallback. */
@@ -192,7 +194,13 @@ export async function hifiSummary(options: HifiCallOptions): Promise<HifiResult>
 			.filter((b) => b.type === "text")
 			.map((b) => (b as { text: string }).text)
 			.join("\n");
-		return { text, usage: response.usage, stopReason: response.stopReason, ms: Date.now() - started };
+		return {
+			text,
+			usage: response.usage,
+			stopReason: response.stopReason,
+			ms: Date.now() - started,
+			blocks: response.content.map((b) => b.type),
+		};
 	} finally {
 		clearTimeout(timer);
 		options.signal?.removeEventListener("abort", onOuter);
