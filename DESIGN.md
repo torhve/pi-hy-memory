@@ -115,6 +115,10 @@ session_start
 
 recall tool
   └─ id -> entry -> sourceEntryIds -> exact source text from the session ledger
+hy_flush (the session model names the boundary)
+  ├─ bare        -> list the unwritten entries: [n] role: preview  (cap flushListEntries)
+  └─ { to }      -> queue the write path above over entries [0]..[to]; the front is always
+                   included, because coverage cannot skip
 ```
 
 Two model calls per chunk. No turn budget, no completion signal, no third agent.
@@ -166,6 +170,32 @@ tries again — the cooldown ladder is what protects a dead endpoint, not the ve
 The chain rule then decides whether to follow the drain, so an idle catch-up is bounded at three
 writes per tick. The timer is `unref()`'d so it never holds a process open, and it is cleared
 on `session_shutdown`. (`tools/idle-drain-check.ts`)
+
+**A model that knows the work settled can name the boundary.** Every path above cuts a chunk where
+`observeAfterTokens` lands, and a boundary that falls inside a transition costs updates: each write
+sees a smaller slice of it. The session model knows when a stretch finished and does not know how
+many tokens it was, so `hy_flush` (`src/flush.ts`) offers it that seam. A bare call lists the
+unwritten entries under this tool's own positional refs — pi never shows the model session entry
+ids, and `src/serialize.ts` hides them because the writer was measured copying rendered id labels
+into fact text — and `hy_flush({ to })` queues a write up to that ref.
+
+`to` names the end and nothing else, because coverage is monotone: a flush that skipped front
+entries would advance a watermark the ledger can never honour. The front of the unwritten window is
+always included, a `to` past the last ref is clamped rather than rejected (a model counting entries
+is estimating, not indexing), and the answer says which of the two happened. The write is queued
+rather than synchronous: extract is 28–52 s on a local writer and `timeoutMs` is 480 000, so a tool
+that waited for the write could hold a turn for eight minutes.
+
+`shouldFlushWrite` (`src/chain.ts`) skips the token threshold on purpose — that is the whole point —
+and keeps the guards that make a write wrong or wasteful: `/hy off`, a write in flight, a persisted
+extract awaiting its reconcile, a held primary, an active cooldown, and a queue bounded at
+`MAX_PENDING_FLUSH = 2`, because a model that flushes after every edit pays ~25 s and 9 000 tokens
+per call and `writeCooldownS` alone does not stop the queueing. `failures` is not a veto here, for
+the same reason the idle drain does not veto it. The prompt surface is short for the same reason it
+is short for the writer: one clause of when, one of what, and no JSON example, because a quantized
+model restates an example as prose instead of calling the tool. The listing caps at
+`flushListEntries = 24` rows of 120 characters — enough to choose a range, and a preview is never
+re-serialized into the writer's prompt. (`tools/flush-check.ts`)
 
 **Coverage is a position, not an id.** The watermark is stored as an entry id, and pi can move
 the leaf: a rewind, a resumed checkpoint, or a compaction that re-parents the branch leaves
@@ -786,7 +816,7 @@ its failures were ours to fix (all in `EXPERIMENTS.md` with sources):
 
 `src/` is the full extension: the write path above, wired into pi in `src/index.ts`
 (`turn_end` trigger, `agent_before_settle` write wait, `session_before_compact` fold,
-`session_shutdown`, `pi.appendEntry`, the `hy_recall` tool, the `/hy` command, the
+`session_shutdown`, `pi.appendEntry`, the `hy_recall` and `hy_flush` tools, the `/hy` command, the
 footer bar). The harnesses in `dev/` replay the four real captured observer chunks
 through the same `writeChunk` path the extension uses. Run from the repository root:
 
@@ -883,3 +913,9 @@ Results and judge verdicts are in `RESULTS.md`.
 5. **Compaction takeover at scale.** `dev/compact-test.py` exercises
    `session_before_compact` in a real RPC session, but at n=1; sessions that compact
    repeatedly with a live bank are not yet measured.
+6. **Model-named boundaries have no measured gain yet.** `hy_flush` gives the session model the
+   boundary, and `tools/flush-check.ts` pins the rules it must obey (front always included, clamped
+   `to`, bounded queue). Whether a boundary chosen where work settled produces more UPDATEs and more
+   specific facts than one chosen by the token threshold needs a session-level replay with a real
+   session model: every capture in `dev/corpus-extended.json` already arrived with its boundary
+   fixed, so the corpus runs cannot answer it.

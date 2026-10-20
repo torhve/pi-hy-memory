@@ -102,6 +102,15 @@ export type HyConfig = {
 	 * trigger. 0 disables it.
 	 */
 	idleDrainAfterMs: number;
+	/**
+	 * Offer the session model a `hy_flush` tool so it can name the range the writer
+	 * should read instead of waiting for the token threshold. On by default: the cost
+	 * is the tool's prompt surface, and the payoff is a chunk boundary chosen where
+	 * work settled rather than where 6 000 estimated tokens landed.
+	 */
+	flushTool: boolean;
+	/** How many unwritten entries the listing shows before it summarises the rest. */
+	flushListEntries: number;
 };
 
 /**
@@ -149,6 +158,8 @@ export const SETTING_DEFAULTS: HyConfig = {
 	busyBackoffMs: 4000,
 	writeCooldownS: 30,
 	idleDrainAfterMs: 180_000,
+	flushTool: true,
+	flushListEntries: 24,
 	pruneAfterDays: 30,
 	shutdownWaitMs: 5000,
 	statusBar: true,

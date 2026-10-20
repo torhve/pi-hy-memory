@@ -126,3 +126,51 @@ export function shouldIdleDrain(input: IdleDrainInput): IdleDrainDecision {
 		return { drain: false, reason: "backlog under idle threshold" };
 	return { drain: true, reason: "idle with a large backlog" };
 }
+
+/** Queued model-initiated writes allowed at once, so a chatty model cannot queue a storm. */
+export const MAX_PENDING_FLUSH = 2;
+
+export type FlushInput = {
+	/** `/hy off` or `enabled: false`. */
+	sessionActive: boolean;
+	/** A write is already running; a second would overlap it. */
+	inFlight: boolean;
+	/** An extract is persisted and awaiting its reconcile; that path retries on its own. */
+	pendingExtract: boolean;
+	/** The primary writer is inside its post-failover hold. */
+	primaryDown: boolean;
+	/** A cooldown from consecutive failures is active. */
+	coolingDown: boolean;
+	/** Renderable entries in the unwritten window. */
+	entryCount: number;
+	/** Model-initiated writes already queued. */
+	pendingFlushes: number;
+};
+
+export type FlushDecision = { flush: boolean; reason: string };
+
+/**
+ * Whether a write the *session model* asked for should start.
+ *
+ * Stricter than the token trigger in one way and looser in another. Looser: no
+ * threshold. The model asked because a stretch of work settled, and a 2 000-token
+ * stretch of decisions is worth writing even though `observeAfterTokens` would
+ * wait for 6 000 tokens of anything. Stricter: a dead writer must not be poked
+ * once per tool call, so the cooldown and the primary hold still refuse, and the
+ * queue is bounded — a model that flushes after every edit pays ~25 s and 9 000
+ * tokens per call, and `writeCooldownS` alone does not stop the queueing.
+ *
+ * `failures` is deliberately not a veto. `tools/idle-drain-check.ts` established
+ * that a writer which has failed is probed rather than vetoed, and this call is
+ * the one place a user-visible model can decide the writer is worth asking.
+ */
+export function shouldFlushWrite(input: FlushInput): FlushDecision {
+	if (!input.sessionActive) return { flush: false, reason: "session off" };
+	if (input.entryCount === 0) return { flush: false, reason: "nothing unwritten" };
+	if (input.inFlight) return { flush: false, reason: "write in flight" };
+	if (input.pendingExtract) return { flush: false, reason: "extract awaiting reconcile" };
+	if (input.pendingFlushes >= MAX_PENDING_FLUSH) return { flush: false, reason: "flush queue full" };
+	if (input.primaryDown) return { flush: false, reason: "primary writer held" };
+	if (input.coolingDown) return { flush: false, reason: "write cooling down" };
+	return { flush: true, reason: "model asked" };
+}

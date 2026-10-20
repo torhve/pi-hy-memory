@@ -98,6 +98,7 @@ const branch = [
 ];
 
 type ToolDef = {
+	name: string;
 	execute: (
 		toolCallId: string,
 		params: Record<string, unknown>,
@@ -107,13 +108,13 @@ type ToolDef = {
 	) => Promise<{ content: { type: string; text: string }[]; details: unknown }>;
 };
 const handlers = new Map<string, (event: unknown, ctx: unknown) => unknown>();
-let tool: ToolDef | null = null;
+const tools = new Map<string, ToolDef>();
 const pi = {
 	on: (name: string, handler: (event: unknown, ctx: unknown) => unknown) => {
 		handlers.set(name, handler);
 	},
 	registerTool: (def: ToolDef) => {
-		tool = def;
+		tools.set(def.name, def);
 	},
 	registerCommand: () => {},
 };
@@ -128,10 +129,10 @@ const ctx = {
 };
 
 piHyMemory(pi as never);
-check("tool registered", tool !== null, true);
-
+check("hy_recall registered", tools.has("hy_recall"), true);
+check("hy_flush registered", tools.has("hy_flush"), true);
 const recall = async (params: Record<string, unknown>): Promise<string> => {
-	const result = await (tool as ToolDef).execute("t1", params, undefined, undefined, ctx);
+	const result = await (tools.get("hy_recall") as ToolDef).execute("t1", params, undefined, undefined, ctx);
 	return result.content.map((b) => b.text).join("\n");
 };
 

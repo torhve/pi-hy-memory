@@ -62,7 +62,7 @@ nothing backs off between turns. The audit records `write_cooldown { waitS }` an
 
 ## Configuration
 
-`~/.pi/agent/pi-hy-memory.json` (all keys optional; defaults in `src/index.ts`):
+`~/.pi/agent/pi-hy-memory.json` (all keys optional; defaults in `src/config.ts`):
 
 | key | default | meaning |
 |---|---|---|
@@ -95,6 +95,8 @@ nothing backs off between turns. The audit records `write_cooldown { waitS }` an
 | `fallbackCooldownS` | `300` | stay on the fallback this long after a failover (cleared only by a **primary** answer) |
 | `writeCooldownS` | `30` | wait before writing again after a failed attempt, doubling while it keeps failing (capped at 10 min); `0` disables. A dead endpoint otherwise costs one request per turn |
 | `idleDrainAfterMs` | `180000` | drain a session that is doing nothing: after this much quiet, one write starts if the unread window is at least **4×** `observeAfterTokens`. A write is otherwise only ever started by `turn_end`, so a session left open never pays down its backlog. `0` disables it. A writer that has failed is probed, not vetoed: at most 3 attempts spaced by `writeCooldownS`, then it waits for a turn |
+| `flushTool` | `true` | let the session model name the range the writer reads: `hy_flush` with no arguments lists the unwritten entries, `hy_flush({to})` queues a write up to that ref. The front of the window is always included — coverage is monotone, so a skipped front would be a hole the ledger can never mark. Refuses on `/hy off`, a write in flight, a pending extract, a held primary, an active cooldown, and a queue of 2. Off costs no prompt tokens |
+| `flushListEntries` | `24` | how many unwritten entries that listing shows before summarising the rest; previews are 120 characters, never re-serialized into the writer's prompt |
 | `busyRetries` / `busyBackoffMs` | `3` / `4000` | 429 handling: llama-swap rejects a concurrent request to a single-slot model *instantly* instead of queueing. Waits double, capped at 60 s each and at a quarter of `timeoutMs` in total; after that the fallback is used instead of sleeping through the write |
 | `pruneAfterDays` | `30` | delete per-session state older than this; `0` disables. The 10 newest sessions and the running one are always kept |
 | `waitForWriteOnSettle` | `true` | block the end of a turn on an in-flight write. A write that completes with the window still over the trigger is followed by another, at most twice per turn and only while the writer is healthy |
@@ -132,6 +134,17 @@ watermark to the newest entry and records a `hy.gap` with `reason: "disabled"` �
 otherwise a session that was off for hours pays for the whole backlog in a burst of writes on
 re-enable. The config's `enabled: false` is the global kill switch and wins over `/hy on`;
 the command says so rather than pretending.
+
+**`hy_flush` — the model can name the boundary.** Memory work normally starts on a turn once the
+unread window passes `observeAfterTokens`, so a chunk ends wherever that estimate landed. With
+`flushTool: true` the session model is also offered a `hy_flush` tool: a bare call lists the entries
+the writer has not read (`[n] role: first 120 characters`), and `hy_flush({ to: n })` queues a write
+over entries `[0]..[n]`. The front of the unwritten window is always included — coverage along a
+branch is monotone, so a flush that skipped the front would leave entries no later write can mark as
+covered — and a `to` past the last entry is clamped and reported. The write is queued, so the turn
+keeps going: the facts land when it finishes and are readable with `hy_recall`. It refuses when the
+session is off, a write is in flight, an extract is awaiting its reconcile, the primary writer is
+held, a cooldown is active, or two flushes are already queued.
 
 ## Compaction: who decides when
 
@@ -357,6 +370,14 @@ is required to use the extension.
 | `src/status.ts` | footer bar: window fill, bank fill, spinner, flash |
 | `src/failover.ts` | when the primary is considered down, and when it is trusted again |
 | `src/state.ts` | retention for per-session state |
+| `src/config.ts` | every setting and its default |
+| `src/entries.ts` | coverage window, entry rendering, chunk building from session entries |
+| `src/chain.ts` | when a finished write is followed by another, and when a flush is accepted |
+| `src/failures.ts` | failure class, cooldown ladder, whether a chunk should shrink |
+| `src/flush.ts` | `hy_flush`: list the unwritten entries, resolve a `to` into a monotone range |
+| `src/hifi.ts` | the optional model-written checkpoint and its fact guard |
+| `src/llm.ts` | the writer client used by the extension |
+| `src/index.ts` | the wiring: triggers, tools, command, footer |
 | `dev/poc.ts` | replay harness over captured chunks (needs `POC_ORIGIN`) |
 | `dev/export-judge.ts` | bank → judge result files |
 | `dev/raw-writer.ts` | the only HTTP client, for the shell harnesses above |
