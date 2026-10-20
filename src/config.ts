@@ -13,7 +13,16 @@ export type HyConfig = {
 	observeAfterTokens: number;
 	maxChunkTokens: number;
 	maxEntryChars: number;
-	poolMaxTokens: number;
+	/** Ceiling on the active bank: the store, not the summary. */
+	bankMaxTokens: number;
+	/** What a compaction summary renders; a selection over the bank. */
+	summaryMaxTokens: number;
+	/** A fact this many chunks old and never superseded counts as a foundation. */
+	foundationAfterChunks: number;
+	/** Share of the summary budget reserved for user-stated facts. */
+	summaryConstraintShare: number;
+	/** Share reserved for old, never-superseded facts. */
+	summaryFoundationShare: number;
 	keepRecentTokens: number;
 	candidateLimit: number;
 	candidateRenderMode: "union" | "perDraft";
@@ -61,7 +70,9 @@ export type HyConfig = {
  * silently ignoring it would leave a session writing to the wrong model.
  */
 export function legacyKeys(config: Record<string, unknown>): string[] {
-	return ["origin", "apiKey", "maxTokensParam", "reasoningEffort"].filter((key) => config[key] !== undefined);
+	return ["origin", "apiKey", "maxTokensParam", "reasoningEffort", "poolMaxTokens"].filter(
+		(key) => config[key] !== undefined,
+	);
 }
 
 /** The documented defaults. Every key in `HyConfig` belongs here. */
@@ -71,7 +82,11 @@ export const SETTING_DEFAULTS: HyConfig = {
 	observeAfterTokens: 6000,
 	maxChunkTokens: 6000,
 	maxEntryChars: 3000,
-	poolMaxTokens: 6000,
+	bankMaxTokens: 60000,
+	summaryMaxTokens: 8000,
+	foundationAfterChunks: 8,
+	summaryConstraintShare: 0.1,
+	summaryFoundationShare: 0.35,
 	keepRecentTokens: 6000,
 	candidateLimit: 24,
 	candidateRenderMode: "perDraft",

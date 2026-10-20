@@ -38,7 +38,7 @@ export type ChunkWrite = {
 	/** `provider/modelId` that actually answered each call ("resumed" for a reused extract). */
 	models: { extract: string; reconcile: string };
 	failover?: string;
-	/** Facts evicted because the bank exceeded poolMaxTokens. */
+	/** Facts evicted because the bank exceeded bankMaxTokens. */
 	budgetDropped: { id: string; statement: string }[];
 	records: LedgerRecord[];
 };
@@ -64,7 +64,7 @@ export async function writeChunk(
 	chunkId: string,
 	userContent: string | SerializedChunk,
 	options: {
-		poolMaxTokens?: number;
+		bankMaxTokens?: number;
 		candidateLimit?: number;
 		/**
 		 * "perDraft" (production default): guarantee every draft with candidates
@@ -144,6 +144,12 @@ export async function writeChunk(
 		failover = extract.failed;
 		if (options.rawDir) writeFileSync(`${options.rawDir}/${chunkId}.extract.txt`, extract.content);
 		({ drafts, rejected } = stage("extract", chunkId, () => parseDrafts(extract.content, chunk.refs)));
+		// Provenance the writer never sees: a draft grounded in a user turn is the class
+		// the summary reserves budget for.
+		drafts = drafts.map((draft) => ({
+			...draft,
+			fromUser: chunk.roles ? draft.refs.some((r) => chunk.roles?.[r] === "user") : false,
+		}));
 		extractUsage = extract.usage;
 	}
 
@@ -233,8 +239,11 @@ export async function writeChunk(
 		});
 	}
 
-	const report = applyOps(bank, drafts, ops, chunkId, chunk.refs, createdAt);
-	const budget = enforceBudget(bank, options.poolMaxTokens ?? 6000);
+	// `chunkSeq` is the write's position in the ledger; foldLedger derives the same
+	// number from record order, so a live bank and a replayed one agree.
+	const chunkSeq = bank.reduce((max, entry) => Math.max(max, entry.chunkSeq ?? 0), 0) + 1;
+	const report = applyOps(bank, drafts, ops, chunkId, chunk.refs, createdAt, chunkSeq);
+	const budget = enforceBudget(bank, options.bankMaxTokens ?? 60000);
 
 	const records: LedgerRecord[] = [
 		extractRecord,

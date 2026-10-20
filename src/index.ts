@@ -262,6 +262,13 @@ export default function piHyMemory(pi: ExtensionAPI): void {
 		return Math.max(4000, Math.round(config.maxChunkTokens / 2 ** factor));
 	};
 
+	/** Summary selection parameters, from the same config the writer uses. */
+	const selection = (_bank: unknown) => ({
+		foundationAfterChunks: config.foundationAfterChunks,
+		constraintShare: config.summaryConstraintShare,
+		foundationShare: config.summaryFoundationShare,
+	});
+
 	const candidateBudget = (): number =>
 		(state?.failures ?? 0) > 0 ? Math.min(config.candidateLimit, 8) : config.candidateLimit;
 
@@ -286,7 +293,7 @@ export default function piHyMemory(pi: ExtensionAPI): void {
 			off: !sessionActive(),
 			budget: config.observeAfterTokens,
 			bank: state.bank.filter((e) => e.status === "active").reduce((sum, e) => sum + (e.tokenCount ?? 0), 0),
-			pool: config.poolMaxTokens,
+			pool: config.bankMaxTokens,
 		});
 	};
 
@@ -299,7 +306,7 @@ export default function piHyMemory(pi: ExtensionAPI): void {
 			writeFileSync(`${base}.bank.json`, JSON.stringify(state.bank, null, 1));
 			writeFileSync(
 				`${base}.summary.md`,
-				`${renderMemory(state.bank, summaryBudget(config.poolMaxTokens, state.bank))}\n`,
+				`${renderMemory(state.bank, summaryBudget(config.summaryMaxTokens, state.bank), selection(state.bank))}\n`,
 			);
 			writeFileSync(
 				`${base}.stats.json`,
@@ -336,11 +343,11 @@ export default function piHyMemory(pi: ExtensionAPI): void {
 		// so re-folding restores those facts. Re-apply the current cap here so a reload
 		// cannot leave the bank (and the status bar / summary) above it.
 		const folded = foldLedger(effective);
-		const recheck = enforceBudget(folded, config.poolMaxTokens);
+		const recheck = enforceBudget(folded, config.bankMaxTokens);
 		if (recheck.dropped.length > 0) {
 			audit("budget_reapplied", {
 				sessionId,
-				pool: config.poolMaxTokens,
+				pool: config.bankMaxTokens,
 				dropped: recheck.dropped.length,
 				ids: recheck.dropped.slice(0, 5).map((e: { id: string }) => e.id),
 			});
@@ -447,7 +454,7 @@ export default function piHyMemory(pi: ExtensionAPI): void {
 				const resume = startState.pendingExtract?.chunkId === chunkId ? startState.pendingExtract : null;
 				const { primary, fallback } = writers(ctx);
 				const result = await writeChunk(primary, startState.bank, chunkId, chunk, {
-					poolMaxTokens: config.poolMaxTokens,
+					bankMaxTokens: config.bankMaxTokens,
 					candidateLimit: candidateBudget(),
 					candidateRenderMode: config.candidateRenderMode,
 					fallback,
@@ -839,7 +846,11 @@ export default function piHyMemory(pi: ExtensionAPI): void {
 			return undefined;
 		}
 
-		const summary = renderMemory(state.bank, summaryBudget(config.poolMaxTokens, state.bank));
+		const summary = renderMemory(
+			state.bank,
+			summaryBudget(config.summaryMaxTokens, state.bank),
+			selection(state.bank),
+		);
 		if (!summary.trim()) return undefined;
 
 		const firstKeptIndex = choice.firstKeptIndex;
@@ -1103,7 +1114,10 @@ export default function piHyMemory(pi: ExtensionAPI): void {
 			const active = live.bank.filter((e) => e.status === "active");
 			const tokens = active.reduce((sum, e) => sum + e.tokenCount, 0);
 			if (arg === "summary") {
-				ctx.ui.notify(renderMemory(live.bank, summaryBudget(config.poolMaxTokens, live.bank)), "info");
+				ctx.ui.notify(
+					renderMemory(live.bank, summaryBudget(config.summaryMaxTokens, live.bank), selection(live.bank)),
+					"info",
+				);
 				return;
 			}
 			ctx.ui.notify(

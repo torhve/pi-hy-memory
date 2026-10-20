@@ -19,6 +19,14 @@ export type BankEntry = {
 	sourceEntryIds: string[];
 	/** Capture/chunk this entry was written from. */
 	chunkId: string;
+	/**
+	 * Position of the write that produced it, counted in `hy.ops` records. Age is
+	 * `latest - chunkSeq`, which is what the summary's foundation slice needs; it is
+	 * derived during the fold, so old ledgers get correct values.
+	 */
+	chunkSeq: number;
+	/** True when any of the draft's evidence entries was a user turn. */
+	fromUser: boolean;
 	createdAt: string;
 	status: "active" | "superseded";
 	/** Set when this entry replaced an older one. */
@@ -36,6 +44,8 @@ export type Draft = {
 	keys: string[];
 	/** Numeric refs as they appear in the serialized chunk, e.g. 7 -> [7]. */
 	refs: number[];
+	/** Set by code from the chunk's roles, never emitted by the writer. */
+	fromUser?: boolean;
 };
 
 export type ReconcileOp =

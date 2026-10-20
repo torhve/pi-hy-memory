@@ -130,7 +130,9 @@ async function main(): Promise<void> {
 	const corpusPath = arg("--corpus", new URL("./corpus.json", import.meta.url).pathname);
 	const capturesDir = new URL("../captures-dev/", import.meta.url).pathname;
 	const outDir = new URL(`../out/${runId}/`, import.meta.url).pathname;
-	const pool = numArg("--pool", 12000);
+	// The store ceiling for this arm; the summary cap is the shipped default, since
+	// these captures are replayed as single chunks and compaction is not exercised.
+	const pool = numArg("--pool", 60000);
 	const modelSpec = process.env.POC_MODEL ?? "remote/hy-memory-30b-a3b";
 	const renderMode = arg("--candidate-render-mode", "union") as "union" | "perDraft";
 	// Shown cap and per-draft retrieval depth are the same number in `writeChunk`
@@ -251,7 +253,7 @@ async function main(): Promise<void> {
 			const resumeFrom = persistedExtract ?? resumeRecord;
 			try {
 				write = await writeChunk(writer, bank, chunkId, chunk, {
-					poolMaxTokens: pool,
+					bankMaxTokens: pool,
 					rawDir: join(outDir, "raw"),
 					candidateRenderMode: renderMode,
 					candidateLimit,

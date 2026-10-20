@@ -254,9 +254,9 @@ was actually present in the chunk removed by exact match, bracketed numeric refs
 
 ## What happens when the bank fills
 
-`poolMaxTokens` caps the *active* bank, not the ledger. After every write
+`bankMaxTokens` caps the *active* bank, not the ledger. After every write
 `enforceBudget()` sums the active entries' `tokenCount` and, if the total exceeds the
-cap, ranks and trims:
+ceiling, ranks and trims:
 
 1. **Rank by `createdAt`, newest first.** Not insertion order: a stable sort over insertion
    order dropped the *newest* facts — measured on session 01a14c10, four of them real
@@ -265,7 +265,7 @@ cap, ranks and trims:
    entry, and there is nothing else to rank by (see *Ranking*).
 2. **Keep what fits** — a bin-packing walk, not a tail cut, so one long fact does not
    evict three short ones.
-3. **Tombstone the rest**: `status: "superseded"`, `supersedeReason: "pool budget"`.
+3. **Tombstone the rest**: `status: "superseded"`, `supersedeReason: "bank budget"`.
 
 A budget-dropped fact is **hidden but not lost**: it stays in the bank file and in the
 ledger, `hy_recall <id>` still returns it with its source evidence, but it is absent from
@@ -276,10 +276,10 @@ which creates a new entry rather than reviving the old one. Each write now repor
 instead of silent.
 
 Sizing, measured on this writer: a fact costs ~72 tokens (`tokenCount`), so the cap is
-roughly `poolMaxTokens / 72` facts — 5 000 ≈ 70 facts, 12 000 ≈ 165. Two real sessions
+roughly `summaryMaxTokens / 72` facts — 6 000 ≈ 83, 8 000 ≈ 110. Two real sessions
 reached 4 968 and 4 985 tokens, i.e. both were evicting facts at the default, which is
 why the shipped config raises it. The cost of a larger pool is prompt size only: the
-compaction summary is `renderMemory(bank, poolMaxTokens)`, a string build with no model
+compaction summary is `renderMemory(bank, summaryMaxTokens)`, a string build with no model
 call, and the reconcile prompt shows at most `candidateLimit` retrieved entries
 regardless of how large the bank is.
 
@@ -300,7 +300,7 @@ Two things about this cap that measurement forced:
 bank and logs `budgetDropped`; it does not append ledger records. On `session_start` the
 bank is re-folded from the ledger (`foldLedger`), so a budget eviction disappears on
 reload and the facts come back. Observed directly: raising the pool from 5 000 to 12 000
-and reloading restored all 22 facts that had been evicted as `pool budget` in session
+and reloading restored all 22 facts that had been evicted as `bank budget` in session
 `01a14c10` (69 → 91 active). Eviction therefore behaves as pressure, not deletion — it is
 re-applied at the next write against whatever cap is current, and the ledger stays a pure
 history of what the writer decided. `loadState` therefore re-applies `enforceBudget`
@@ -311,7 +311,7 @@ the footer bar or the summary above the current cap (`tools/reload-budget-check.
 a rendered line adds `[id] (task) `, measured at +14.2 tokens per fact on a 91-fact
 session (7 953 rendered / 6 659 counted = 1.19x). Rendering a full pool at the pool number
 drops facts for overhead the pool never counted. A constant multiplier
-would break again as soon as task labels run long, so `summaryBudget(poolMaxTokens, bank)`
+would break again as soon as task labels run long, so `summaryBudget(summaryMaxTokens, bank)`
 sums the actual `[id] (task) ` prefixes for this bank (+630 tokens for 60 facts in
 `tools/reload-budget-check.ts`), and `renderMemory` reports what it omitted instead of
 truncating silently. Measured on the real banks: 12 000 tokens of bank ≈ 161 facts ≈
@@ -339,6 +339,92 @@ chronologically afterwards, so the newest fact is the last line read. Omission i
 bin-packing skip (a fact too large for the remaining budget is passed over, not fatal), and
 what was omitted is counted in the tail and reachable through `hy_recall`.
 
+### The bank is a store; the summary is a selection
+
+One number, `poolMaxTokens`, has been doing three jobs at once: the size of the compaction
+summary, the set of entries a later write may UPDATE, and the eviction threshold. Welding them
+together makes "the summary only fits 84 facts" mean "the bank may only *have* 84 facts", and
+on a long session the memory degrades into a tail. Measured on the longest production session
+(32 chunks, 408 facts written):
+
+| quantity | value |
+|---|---|
+| active bank at the end | 408 facts / 29 357 tokens |
+| summary budget (old `poolMaxTokens`) | 6 000 tokens ≈ 84 facts |
+| age of the oldest fact that summary keeps | **7 chunks** (84 facts) |
+| the same 6 000-token cap, stratified selection (below) | oldest kept: **20 chunks** (122 facts) |
+| the shipped 8 000-token cap, stratified | oldest kept: 12 chunks (142 facts) — a larger budget spends more of itself on current state, by design |
+
+29 k of facts is nothing for a 168 k window: the summary is small, not the bank. So the two
+are separated:
+
+- **`bankMaxTokens`** (default **60 000**) is the store's ceiling, and the only thing
+  `enforceBudget` trims to. Most sessions never reach it: the 32-chunk session above ended at
+  half of it.
+- **`summaryMaxTokens`** (default **8 000**) is what `renderMemory` fills at compaction time.
+  The summary is a *selection over the bank*, not a copy of its tail.
+- **Candidate retrieval** keeps using the whole active bank, bounded per call by
+  `candidateLimit`, so reconcile cost does not move.
+
+Cost: a larger bank file and a longer fold, both linear (29 k tokens of facts ≈ 120 KB of
+text here), and nothing per write. The price is that lexical retrieval now has more entries to
+choose between — and it already misses (93 of 109 removal-bearing drafts failed to retrieve
+the entry they contradict). A bigger store raises the value of fixing retrieval; that is why
+key-exact scoring is in the same plan rather than "later".
+
+### What the summary prints when it cannot print everything
+
+Recency is a poor summary rank on a long session: it prints the last few hours of churn and
+drops the decisions the session is built on. A model judgement cannot fix that (measured
+twice, see *Ranking*), so the selection is stratified in code. Three slices, filled in this
+order, each newest-first, never duplicated:
+
+1. **Constraints** — facts whose source entries were user turns (`summaryConstraintShare`,
+   10 %). Cheap (2 of 408 here) and the class the judge values most.
+2. **Foundations** — active facts older than `foundationAfterChunks` (default 8) that were
+   never superseded (35 %). Old survivors are not proof of durability, but they are the best
+   deterministic proxy available: 303 of the 408 were never superseded, so this slice is
+   about *age*, not about survival alone.
+3. **Current state** — everything else, newest first (the rest).
+
+Shares are budgets, and unused budget spills forward, so a session with no user-stated facts
+still fills the summary. Admission is a bin-packing walk inside each slice (one long fact does
+not block three short ones), and the omission tail still reports the total.
+
+The measurement that justifies it is the one above: same 6 000-token cap, reach 7 → 20 chunks,
+122 facts instead of 84. Whether that is *better* is a judge question, not a count, and that
+gate has not run yet: the blind judge needs the LAN endpoint, which was down for this pass.
+Until it does, the count is the whole evidence.
+
+One caveat about the constraint slice: `fromUser` is recorded on the draft at write time, so
+ledgers written before the split have it as `false` and the slice is inert for them. New
+writes fill it; a re-folded old bank keeps working with the other two slices.
+
+### When the store itself is full
+
+`bankMaxTokens` is a ceiling, not a target, so "full" is rare — but at ~900 tokens of facts
+per chunk a 200-chunk session carries ~180 k and will hit it. In order of preference:
+
+1. **Demote.** A fact past the summary budget stays active and retrievable; it is simply not
+   printed. This is already what the omission tail promises, and it costs nothing.
+2. **Consolidate.** When the store passes its ceiling, one extra call merges the oldest
+   fragments into fewer, denser facts. It is close to the writer's trained task (bank
+   updates), but it aims straight at its worst failure surface — lost specificity — so it is
+   an experiment with a judge gate, not an assumption.
+3. **Evict.** Today's rule, kept as the last resort: deterministic, visible in the audit, and
+   the fact stays recallable. When it does fire, it should record `hy.evict` so a reload
+   cannot change what the reader saw.
+
+### Plan
+
+| step | change | gate | status |
+|---|---|---|---|
+| 1 | split `bankMaxTokens` / `summaryMaxTokens`; the summary becomes a selection | oldest kept moves 7 → 20+ chunks on the 32-chunk ledger; no regression on current state | shipped |
+| 2 | stratify the selection: constraints / foundations / current | reach 7 → 20 chunks at the same cap; blind judge still pending | shipped |
+| 3 | key-exact retrieval ranking | fewer misses on removal drafts than 93/109 | planned |
+| 4 | durable `hy.evict` when the ceiling bites | a reload cannot change the rendered summary | planned |
+| 5 | consolidation pass at the ceiling | judge specificity does not fall | later |
+
 ### Ranking
 
 There is no relevance tier. There used to be one, derived from a `confidence` field the
@@ -350,7 +436,7 @@ extract prompt asked for, and it was removed after two measurements and one pape
   establishes. Result: 965 of 996 facts `high`, one session 163 of 166 at exactly `1.0`. The
   one session with `medium` facts (`01a14a46`, 31 at `0.5`) shows the model *can* grade; it
   is simply not being asked to grade importance. So the rank collapsed to `createdAt` in
-  practice and the pool already behaved as "the newest `poolMaxTokens / 72` facts".
+  practice and the pool already behaved as "the newest `summaryMaxTokens / 72` facts".
 - **A second judgement was tried and rejected.** The obvious repair is a property orthogonal
   to confidence — how long the fact stays true, `decision → high` / `state → medium` /
   `detail → low`, where "detail" means the repository could tell you the same thing.
@@ -447,7 +533,7 @@ big window as headroom rather than as a target.
 We answer `session_before_compact` and never call `ctx.compact()`. Two reasons:
 
 1. **The summary is bank-bounded, not history-bounded.** `renderMemory(bank,
-   poolMaxTokens)` costs the same whether it replaces 40 k or 900 k of history, and it
+   summaryMaxTokens)` costs the same whether it replaces 40 k or 900 k of history, and it
    is model-free. The cost model that justifies a shrinking ratio for a
    model-summarising extension does not apply. Late compaction is cheaper for us, which
    is what pi's default already does.
@@ -460,11 +546,13 @@ A ratio trigger is only worth adding for two things pi cannot express: a hard ce
 (`min(r × window, N)`) and "never compact while a write is in flight". Neither is
 justified until a session actually runs on a window where the ceiling matters.
 
-### `poolMaxTokens` is window-relative
+### `summaryMaxTokens` is window-relative
 
-12 000 tokens of bank is 29 % of a 40 960 window, 7 % of 168 000, 4.6 % of 262 144 and
-1.2 % of 1 048 576. The cap is per session, so a shared config should be sized for the
-smallest window in use — or split per project.
+8 000 tokens of summary is 20 % of a 40 960 window, 4.8 % of 168 000, 3 % of 262 144 and
+0.8 % of 1 048 576 — and it is a *selection* out of a bank that can be an order of magnitude
+larger, so a shared config sized for the smallest window in use is still the right rule, just
+against a smaller number than before. The store ceiling (`bankMaxTokens`) is not
+window-relative at all: it costs nothing per call.
 
 ## Cost model
 

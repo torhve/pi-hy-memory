@@ -71,7 +71,11 @@ nothing backs off between turns. The audit records `write_cooldown { waitS }` an
 | `observeAfterTokens` | `6000` | pending window that triggers a write, measured on the full entries at chars/4 rather than on the clipped text a chunk would carry. Measured on *stored* text: pi stubs old tool output before sending, so a whole-branch figure runs ~2x pi's count while fresh pending text does not (the *first* footer bar) |
 | `maxChunkTokens` | `6000` | chunk budget per write. Estimated at chars/4, and code-heavy chunks tokenise at ~1.4–1.5× that, so 6 000 is ~9 000 real prompt tokens. Was 24 000: one wide window found 41 facts over three captures, five ~4 500-token windows found 120 for +5 % input tokens and half the wall time (see "Chunk size") |
 | `maxEntryChars` | `3000` | per-entry truncation inside a chunk, so one huge tool output cannot consume the whole budget |
-| `poolMaxTokens` | `6000` | cap on the *active* bank (the *second* footer bar); see DESIGN.md § "What happens when the bank fills". ~72 tokens per fact, and the rendered summary is ~1.2× the cap |
+| `bankMaxTokens` | `60000` | ceiling on the *active* bank — the store, not the summary (the *second* footer bar). Reaching it evicts the newest-first tail; most sessions end far below it (the longest measured session had 408 facts / 29 357 tokens). `poolMaxTokens` from older configs is this key |
+| `summaryMaxTokens` | `8000` | what a compaction summary renders, selected out of the bank (see DESIGN.md § "The bank is a store; the summary is a selection"). ~72 tokens per fact, and the rendered summary is ~1.2× this |
+| `foundationAfterChunks` | `8` | a fact this many chunks old and never superseded counts as a *foundation* for the summary selection |
+| `summaryConstraintShare` | `0.1` | share of the summary budget reserved for facts whose evidence was a user turn |
+| `summaryFoundationShare` | `0.35` | share reserved for old, never-superseded facts |
 | `keepRecentTokens` | `6000` | raw entries kept verbatim by a compaction. The cut is clamped back to the write watermark so nothing unread is dropped, but only by up to `maxChunkTokens`; past that the compaction is handed back to pi (see "Compaction: who decides when") |
 | `candidateLimit` | `24` | bank entries shown to the reconcile call, and the per-draft retrieval depth. Was 12: measured on the extended corpus, 12 starved 2.2 % of drafts once the bank passed ~110 entries; 24 starves none for +24 % reconcile input tokens |
 | `candidateRenderMode` | `perDraft` | how the `candidateLimit` window is chosen: `perDraft` guarantees every draft its own best bank match before the cap fills; `union` shows the score-sorted union (legacy) |
@@ -124,7 +128,7 @@ the command says so rather than pretending.
 ## Compaction: who decides when
 
 **pi decides.** The extension never triggers a compaction — it only supplies the summary
-through `session_before_compact` (`renderMemory(bank, poolMaxTokens)`), sets
+through `session_before_compact` (`renderMemory(bank, summaryMaxTokens)`), sets
 `firstKeptEntryId` itself (so this extension's `keepRecentTokens` wins over pi's
 `compaction.keepRecentTokens`), and logs the event. If the bank is empty it returns
 nothing and pi summarises with its own model.
@@ -178,40 +182,45 @@ The incumbents do own the decision, with three different schemes (DESIGN.md §
 81 000 is that extension's packaged default, not a tuned local value: `"calibrated"` is the
 default mode, so a flat cap is what you get until you switch to `"ratio"`.
 
-### What the summary contains when the pool is full
+### What the summary contains
 
-The summary is capped at `poolMaxTokens` plus the real `[id] (task) ` prefixes
-(`summaryBudget`). When it does not all fit, facts are admitted **newest first** — the
-same rule the pool cap uses. Lines are printed chronologically afterwards, so the newest
-fact is the last line the model reads, and the omission tail says how many were hidden
-(each is reachable with `hy_recall <id>`).
+The bank is a store; the summary is a **selection** over it, capped at `summaryMaxTokens`
+plus the real `[id] (task) ` prefixes (`summaryBudget`). Three slices are filled, newest
+first inside each, never duplicated:
 
-**Recency is the only rank.** There is no relevance tier: it used to be derived in code from
-a `confidence` field the extract prompt asked for, and the writer answered `1.0` almost
-always (965 of 996 facts across the sessions measured here) — having already been told to
-extract only what the chunk explicitly establishes, it had nothing to be unsure about. So
-the pool behaved as "the newest ~`poolMaxTokens / 72` facts" anyway. A second judgement
-(`stability`: decision / state / detail) was measured on three chunks and two wordings: 60
-of 65 drafts came back `detail`, so it ranked nothing. Neither field survives; the writer
-was never trained to grade its own output (see DESIGN.md § *Ranking*). Admission order still
-matters enough to be pinned by `tools/render-check.ts`: with chronological admission the *newest* fact was the one being
-dropped.
-
-Our summary is bounded by the bank (12 k), not by history, so we do not inherit the
-"summarising 1 M tokens is expensive and lossy" problem that motivates pi-blackhole's
-shrinking curve. On a very large window, compacting *late* is cheaper for us, which is
-what pi's default already does.
-
-### `poolMaxTokens` is window-relative
-
-The bank cap is only meaningful next to the session model's window:
-
-| session window | 12 000-token bank is | comfortable range |
+| slice | what | share |
 |---|---|---|
-| 40 960 | 29 % — too big | 3 000–4 000 |
-| 168 000 | 7 % — about right | 10 000–14 000 |
-| 262 144 | 4.6 % | 16 000–20 000 |
-| 1 048 576 | 1.2 % | 25 000–30 000 |
+| constraints | facts whose evidence was a user turn | `summaryConstraintShare` (0.1) |
+| foundations | facts older than `foundationAfterChunks` and never superseded | `summaryFoundationShare` (0.35) |
+| current state | everything else | the rest |
+
+Unused share spills forward, so a session with no user-stated facts still fills the summary.
+Lines are printed chronologically afterwards, so the newest fact is the last line the model
+reads, and the omission tail says how many were hidden (each is reachable with
+`hy_recall <id>`).
+
+Why not recency alone: measured on the longest production session (32 chunks, 408 facts,
+29 357 tokens of bank), a newest-first 6 000-token summary kept 84 facts and the oldest was
+**7 chunks** old. The same budget with the slices above keeps 122 facts reaching **20
+chunks** back. Why not let the writer rank them: it answered `1.0` for 965 of 996 facts
+(965/996) and labelled 60 of 65 drafts `detail` on a `stability` field, so both judgements were
+removed (see DESIGN.md § *Ranking*). Selection is pinned by `tools/render-check.ts`.
+
+Our summary is bounded by the bank, not by history, so we do not inherit the "summarising
+1 M tokens is expensive and lossy" problem that motivates pi-blackhole's shrinking curve. On
+a very large window, compacting *late* is cheaper for us, which is what pi's default already
+does.
+
+### `summaryMaxTokens` is window-relative
+
+The summary cap is only meaningful next to the session model's window:
+
+| session window | 8 000-token summary is | comfortable range |
+|---|---|---|
+| 40 960 | 20 % — too big | 3 000–4 000 |
+| 168 000 | 4.8 % — about right | 8 000–12 000 |
+| 262 144 | 3 % | 12 000–16 000 |
+| 1 048 576 | 0.8 % | 20 000–30 000 |
 
 The cap is per session, not per model, so a config used across models should be sized
 for the *smallest* window you actually run, or split per project.
@@ -222,7 +231,7 @@ hy ▕███░░░░░▏ 6.2k/15k   ▕██░░░░░░▏ 1.4k
 ```
 
 First bar is the window that triggers the next write, second is the bank against
-`poolMaxTokens`. While a write runs the braille spinner names the stage — `extract`,
+`bankMaxTokens` (the store ceiling, not the summary). While a write runs the braille spinner names the stage — `extract`,
 `reconcile`, or `wait busy 15s` when backing off a 429 — and a finished write flashes
 `✓ +6 ~2` for five seconds. `✗ <reason>` replaces it on failure, and `hy off` replaces the
 whole first bar when the session switch is off. Derived from

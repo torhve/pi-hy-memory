@@ -75,6 +75,13 @@ export function renderEntry(entry: SessionEntry, maxChars: number): string | und
 
 export type ChunkBuild = SerializedChunk & { droppedEntries: number; chars: number };
 
+/** The message role an entry carries, for provenance (`user` is the durable class). */
+function roleOf(entry: SessionEntry): string {
+	if (entry.type !== "message") return entry.type;
+	const message = entry.message as Record<string, unknown>;
+	return typeof message.role === "string" ? message.role : "message";
+}
+
 /**
  * Entries -> chunk, newest entries first until the token budget is spent, then
  * restored to chronological order so the writer reads the story in order.
@@ -84,12 +91,12 @@ export function serializeEntries(
 	options: { maxTokens: number; maxEntryChars?: number },
 ): ChunkBuild {
 	const maxChars = options.maxEntryChars ?? 3000;
-	const rendered: { id: string; line: string; tokens: number }[] = [];
+	const rendered: { id: string; line: string; tokens: number; role: string }[] = [];
 	for (const entry of entries) {
 		if (!entry?.id) continue;
 		const line = renderEntry(entry, maxChars);
 		if (!line) continue;
-		rendered.push({ id: entry.id, line, tokens: estimateTokens(line) });
+		rendered.push({ id: entry.id, line, tokens: estimateTokens(line), role: roleOf(entry) });
 	}
 
 	// Take the OLDEST pending entries that fit, not the newest.
@@ -110,13 +117,15 @@ export function serializeEntries(
 	const dropped = rendered.length - kept.length;
 
 	const refs: string[] = [];
+	const roles: string[] = [];
 	const text = kept
 		.map((row, index) => {
 			refs.push(row.id);
+			roles.push(row.role);
 			return `[${index}] ${row.line}`;
 		})
 		.join("\n");
-	return { text, refs, entryCount: kept.length, droppedEntries: dropped, chars: text.length };
+	return { text, refs, roles, entryCount: kept.length, droppedEntries: dropped, chars: text.length };
 }
 
 export type CompactionBoundary = {

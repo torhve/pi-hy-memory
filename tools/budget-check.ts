@@ -21,6 +21,8 @@ const mk = (id: string, createdAt: string, tokens = 100) =>
 		createdAt,
 		tokenCount: tokens,
 		status: "active",
+		chunkSeq: 1,
+		fromUser: false,
 		statement: `fact ${id}`,
 		chunkId: "c",
 		task: "t",
@@ -44,7 +46,7 @@ check(
 );
 check(
 	"reason set",
-	dropped.every((e: any) => e.supersedeReason === "pool budget"),
+	dropped.every((e: any) => e.supersedeReason === "bank budget"),
 );
 
 // Insertion order must not matter: the same facts handed over shuffled keep the same set.
@@ -91,5 +93,5 @@ check(
 	again.dropped.length === 0 && withSuperseded[1].status === "active",
 );
 
-console.log(failures === 0 ? "ok: pool budget keeps the newest that fit" : `${failures} failure(s)`);
+console.log(failures === 0 ? "ok: bank budget keeps the newest that fit" : `${failures} failure(s)`);
 process.exit(failures === 0 ? 0 : 1);

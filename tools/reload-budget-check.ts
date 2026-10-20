@@ -79,7 +79,7 @@ check(
 );
 check(
 	"eviction names a reason",
-	firstEnforce.dropped.every((e) => e.supersedeReason === "pool budget"),
+	firstEnforce.dropped.every((e) => e.supersedeReason === "bank budget"),
 );
 check(
 	"evicted bank fits the pool",

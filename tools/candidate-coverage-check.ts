@@ -26,6 +26,8 @@ const entry = (id: string, statement: string): BankEntry => ({
 	keys: [],
 	sourceEntryIds: [],
 	chunkId: "c0",
+	chunkSeq: 1,
+	fromUser: false,
 	createdAt: "2026-01-01T00:00:00.000Z",
 	status: "active",
 	tokenCount: 10,

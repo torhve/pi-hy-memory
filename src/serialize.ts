@@ -18,6 +18,11 @@ export type SerializedChunk = {
 	/** ref index -> real session entry id */
 	refs: string[];
 	entryCount: number;
+	/**
+	 * ref index -> entry role ("user", "assistant", "toolResult", …). Code uses it to
+	 * mark drafts whose evidence is a user turn; the writer never sees it.
+	 */
+	roles?: string[];
 };
 
 export function serializeChunk(userContent: string): SerializedChunk {
@@ -28,5 +33,28 @@ export function serializeChunk(userContent: string): SerializedChunk {
 		refs.push(id);
 		return `[${refs.length - 1}]`;
 	});
-	return { text, refs, entryCount: refs.length };
+	// Already-serialized text (captures, replay) has no id labels to count, so the
+	// roles are read back from the rendered line prefixes instead.
+	return { text, refs, entryCount: refs.length, roles: rolesFromText(text) };
+}
+
+/** `[3] [User @ 09:17]: …` -> "user" at index 3. Undefined for lines without a prefix. */
+export function rolesFromText(text: string): string[] | undefined {
+	const roles: string[] = [];
+	for (const line of text.split("\n")) {
+		const at = /^\[(\d+)\] \[([A-Za-z ]+)/.exec(line);
+		if (!at) continue;
+		const index = Number(at[1]);
+		const label = at[2].trim().toLowerCase();
+		const role = label.startsWith("user")
+			? "user"
+			: label.startsWith("assistant")
+				? "assistant"
+				: label.startsWith("tool result")
+					? "toolResult"
+					: label;
+		while (roles.length < index) roles.push("?");
+		roles[index] = role;
+	}
+	return roles.length > 0 ? roles : undefined;
 }

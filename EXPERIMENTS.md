@@ -255,3 +255,35 @@ last starved drafts for ~770 extra shown tokens per chunk. `no-candidate` drafts
 at any limit, because that is lexical retrieval finding nothing, not the cap.
 
 **Shipped**: `candidateLimit` 12 → **24**.
+
+## Run: the bank split into store + summary (2026-10-20)
+
+Offline, deterministic: fold the longest production ledger (32 chunks, 446 entries, 408
+active, 29 357 tokens of facts) and compare the compaction summary under the old and new
+rules. No model calls, so nothing here is a quality judgement — it measures what the reader
+*would be shown*.
+
+| rule | cap | facts shown | omitted | oldest fact (chunks back) | median age | chunks represented |
+|---|---|---|---|---|---|---|
+| newest-first over a bank trimmed to the cap | 6 000 | 84 | 0 | **7** | 4 | 8 |
+| stratified over the whole bank | 6 000 | 122 | 286 | **20** | 5 | 13 |
+| stratified, shipped default | 8 000 | 142 | 266 | 12 | 6 | 13 |
+
+Reading:
+
+- The old path is two losses stacked: `enforceBudget` cut 408 facts to 84 *before*
+  `renderMemory` ran, and then admitted them newest-first. The new path keeps all 408 in the
+  bank and spends the same cap choosing better.
+- At the same 6 000-token cap the stratified rule reaches 20 chunks back instead of 7 and
+  shows 45 % more facts, because the foundation slice spends budget on facts the recency
+  walk never surfaced.
+- The larger shipped cap reaches *less* far back (12 chunks) than 6 000 does: with 35 % of a
+  bigger budget reserved for foundations and the rest newest-first, growth goes to current
+  state. That is the intended trade, not a regression — but it means `summaryMaxTokens` is a
+  real knob, not a size to maximise.
+
+Caveats: the constraint slice is inert on this ledger, because `fromUser` is recorded at
+write time and this session predates the split (0 of 408 facts). The blind judge pass (does
+the older reach actually help the reader?) is pending — the judge endpoint was down.
+
+Gate as written: oldest kept moves 7 → 20+ chunks at an equal cap. PASS.

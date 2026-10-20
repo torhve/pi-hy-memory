@@ -45,10 +45,10 @@ check(
 	[loadConfigFile(configPath).config.model, loadConfigFile(configPath).parseError],
 	["hy-memory-30b-a3b", null],
 );
-writeFileSync(configPath, JSON.stringify({ model: "test/writer", poolMaxTokens: 9999 }));
+writeFileSync(configPath, JSON.stringify({ model: "test/writer", bankMaxTokens: 9999 }));
 check(
 	"valid file: merged over defaults",
-	[loadConfigFile(configPath).config.model, loadConfigFile(configPath).config.poolMaxTokens],
+	[loadConfigFile(configPath).config.model, loadConfigFile(configPath).config.bankMaxTokens],
 	["test/writer", 9999],
 );
 writeFileSync(configPath, "{ not valid json");

@@ -91,7 +91,7 @@ async function main(): Promise<void> {
 		let write: Awaited<ReturnType<typeof writeChunk>>;
 		try {
 			write = await writeChunk(writer, bank, chunkId, userContent(capture), {
-				poolMaxTokens: pool,
+				bankMaxTokens: pool,
 				rawDir: `${OUT_DIR}/raw`,
 			});
 		} catch (error) {

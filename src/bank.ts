@@ -21,6 +21,7 @@ export function entryFromDraft(
 	refs: string[],
 	createdAt: string,
 	seed: string,
+	chunkSeq: number,
 ): BankEntry {
 	return {
 		id: newId(seed),
@@ -29,6 +30,8 @@ export function entryFromDraft(
 		keys: draft.keys,
 		sourceEntryIds: draft.refs.map((r) => refs[r]).filter(Boolean),
 		chunkId,
+		chunkSeq,
+		fromUser: draft.fromUser === true,
 		createdAt,
 		status: "active",
 		tokenCount: estimateTokens(draft.statement),
@@ -50,6 +53,7 @@ export function applyOps(
 	chunkId: string,
 	refs: string[],
 	createdAt: string,
+	chunkSeq = 1,
 ): ApplyReport {
 	const byId = new Map(bank.map((e) => [e.id, e]));
 	const report: ApplyReport = { added: [], updated: [], deleted: [], omitted: 0, skipped: [] };
@@ -71,7 +75,7 @@ export function applyOps(
 		}
 		const draft = drafts[op.draft];
 		if (!draft) continue;
-		const entry = entryFromDraft(draft, chunkId, refs, createdAt, `${chunkId}:${op.draft}:${op.action}`);
+		const entry = entryFromDraft(draft, chunkId, refs, createdAt, `${chunkId}:${op.draft}:${op.action}`, chunkSeq);
 		if (op.action === "UPDATE") {
 			const target = byId.get(op.target);
 			if (target && target.status === "active") {
@@ -121,7 +125,7 @@ export function enforceBudget(bank: BankEntry[], maxTokens: number): { dropped: 
 	for (const entry of active) {
 		if (!keepIds.has(entry.id)) {
 			entry.status = "superseded";
-			entry.supersedeReason = "pool budget";
+			entry.supersedeReason = "bank budget";
 			dropped.push(entry);
 		}
 	}
@@ -137,6 +141,7 @@ export function foldLedger(records: LedgerRecord[]): BankEntry[] {
 	// overwrote the earlier drafts and every op past its length was skipped —
 	// 3 facts silently vanished on every replay.
 	let pending: { chunkId: string; drafts: (Draft & { sourceEntryIds: string[] })[] } | undefined;
+	let chunkSeq = 0;
 
 	for (const record of records) {
 		// A gap records lost coverage; it contributes no facts and must not be read
@@ -147,6 +152,7 @@ export function foldLedger(records: LedgerRecord[]): BankEntry[] {
 			continue;
 		}
 		const drafts = pending?.chunkId === record.chunkId ? pending.drafts : [];
+		chunkSeq += 1;
 		for (const op of record.ops) {
 			if (op.action === "DELETE") {
 				const target = bank.find((e) => e.id === op.target && e.status === "active");
@@ -166,6 +172,8 @@ export function foldLedger(records: LedgerRecord[]): BankEntry[] {
 				keys: draft.keys,
 				sourceEntryIds: draft.sourceEntryIds,
 				chunkId: record.chunkId,
+				chunkSeq,
+				fromUser: draft.fromUser === true,
 				createdAt: record.createdAt,
 				status: "active",
 				tokenCount: estimateTokens(draft.statement),

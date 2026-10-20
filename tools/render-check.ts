@@ -14,11 +14,14 @@
  * 3. Omission is a bin-packing skip, not a cut: one oversized fact does not take
  *    the budget of the facts that would have fit around it.
  *
- * There is no relevance tier any more (see DESIGN.md, *Ranking*), so nothing here
- * asserts that one fact outranks another on anything but recency.
+ * There is no relevance tier any more (see DESIGN.md, *Ranking*). The summary is a
+ * *selection* over the bank, stratified into constraints / foundations / current
+ * state, so the last block here pins that too: a user-stated fact and an old
+ * never-superseded fact have to survive a budget that recency alone would spend on
+ * the newest lines.
  */
 
-import { renderMemory, summaryBudget } from "../src/render.js";
+import { renderMemory, selectForSummary, summaryBudget } from "../src/render.js";
 
 const estimate = (s: string): number => Math.max(1, Math.round(s.length / 4));
 
@@ -27,6 +30,8 @@ const fact = (id: string, chars: number, createdAt: string) =>
 		id,
 		createdAt,
 		status: "active",
+		chunkSeq: 1,
+		fromUser: false,
 		chunkId: "c",
 		task: "t",
 		statement: "x".repeat(chars),
@@ -113,5 +118,68 @@ check(
 );
 check("and it is counted as omitted", /1 more fact not shown/.test(skip), skip.match(/\d+ more facts? not shown/)?.[0]);
 
-console.log(failures === 0 ? "ok: render budget + admission" : `${failures} failure(s)`);
+// (f) Stratified selection. Same budget, four facts: the newest one and an old
+//     foundation compete for two slots; recency alone would keep the two newest and
+//     drop the foundation, which is the long-session failure (oldest kept: 7 chunks
+//     on the 32-chunk production session).
+const old = (id: string, chunkSeq: number, fromUser: boolean, createdAt: string) =>
+	({ ...(fact(id, 200, createdAt) as Record<string, unknown>), chunkSeq, fromUser }) as never;
+const strat = [
+	old("u-old", 1, true, "2026-01-01T00:00:00Z"),
+	old("f-old", 2, false, "2026-01-01T00:01:00Z"),
+	old("new-1", 9, false, "2026-01-01T00:09:00Z"),
+	old("new-2", 10, false, "2026-01-01T00:10:00Z"),
+];
+// The tightest budget that shows exactly two facts: small enough that the slices
+// actually compete (a budget that fits everything proves nothing).
+const shownAt = (maxTokens: number, share: { constraintShare: number; foundationShare: number }): string[] =>
+	selectForSummary(strat, maxTokens, { foundationAfterChunks: 8, ...share }).shown.map((e) => e.id);
+let twoFacts = 0;
+for (let maxTokens = 120; maxTokens < 800; maxTokens += 5) {
+	if (shownAt(maxTokens, { constraintShare: 0, foundationShare: 0 }).length === 2) {
+		twoFacts = maxTokens;
+		break;
+	}
+}
+const plain = renderMemory(strat, twoFacts, { foundationAfterChunks: 8, constraintShare: 0, foundationShare: 0 });
+check(
+	"recency alone keeps the two newest and drops the foundation",
+	plain.includes("[new-2]") && plain.includes("[new-1]") && !plain.includes("[f-old]"),
+	plain.match(/^\[[a-z0-9-]+\]/gm)?.join(","),
+);
+const tiered = renderMemory(strat, twoFacts, { foundationAfterChunks: 8, constraintShare: 0, foundationShare: 0.5 });
+check(
+	"stratified keeps a foundation instead",
+	tiered.includes("[f-old]") && !tiered.includes("[new-1]"),
+	tiered.match(/^\[[a-z0-9-]+\]/gm)?.join(","),
+);
+const withUser = renderMemory(strat, twoFacts, {
+	foundationAfterChunks: 8,
+	constraintShare: 0.5,
+	foundationShare: 0.5,
+});
+check(
+	"a user-stated fact is reserved budget",
+	withUser.includes("[u-old]"),
+	withUser.match(/^\[[a-z0-9-]+\]/gm)?.join(","),
+);
+check(
+	"and the slices never duplicate a fact",
+	new Set(withUser.match(/^\[[a-z0-9-]+\]/gm) ?? []).size === (withUser.match(/^\[[a-z0-9-]+\]/gm) ?? []).length,
+);
+check("stratified stays in budget", estimate(withUser) <= twoFacts, `${estimate(withUser)}/${twoFacts}`);
+
+// (g) The bank is not the summary: renderMemory selects, it does not evict.
+const big = Array.from({ length: 200 }, (_, i) =>
+	old(`b${i}`, i + 1, false, new Date(Date.UTC(2026, 0, 1, 0, i)).toISOString()),
+);
+const bigSummary = renderMemory(big, 4_000, { foundationAfterChunks: 8 });
+check("a 200-fact bank renders a bounded summary", estimate(bigSummary) <= 4_000, `${estimate(bigSummary)} tokens`);
+check("and reports the rest as omitted", /more facts not shown/.test(bigSummary));
+check(
+	"while every fact stays active",
+	big.every((e: any) => e.status === "active"),
+);
+
+console.log(failures === 0 ? "ok: render budget, admission, and stratified selection" : `${failures} failure(s)`);
 process.exit(failures === 0 ? 0 : 1);
