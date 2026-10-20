@@ -170,3 +170,49 @@ Gate verdicts:
 **Merged**: `candidateRenderMode` defaults to `perDraft` in production
 (`src/config.ts`); `union` remains selectable for experiments. SKIP stays
 in the op vocabulary, dormant.
+
+## Run: chunk size (`split-chunk`, 2026-10-20)
+
+Motivation, from the paper (arXiv 2610.22196): the writer is trained on chunks of
+"about ten turns" with a 4 096-token OPD prompt budget, and its annotation study found
+less context produces *more specific* facts (two-chunk context: +25 % proper nouns,
++59 % numbers per fact versus full history). Our captures carry ~10 turns but 18–24 k
+prompt tokens, i.e. 13–24 k stored tokens.
+
+Extract-only arm (`dev/split-chunk.ts`): the same capture extracted once whole, then
+split at entry boundaries into ~4 500-token windows. Route `hy-memory-30b-a3b` (local
+llama-swap), temp 0, `no_think`, current `src/prompts.ts` (post-`confidence`), per-window
+`maxTokens` 8 000. Reconcile is deliberately out of scope: this compares what the writer
+*saw*.
+
+| capture | entries | tokens | full facts | split facts | anchors/fact full→split | numbers/fact full→split | in tok full→split | wall full→split | full facts re-found |
+|---|---|---|---|---|---|---|---|---|---|
+| 012 | 93 | 20 052 | 10 | 41 | 5.80 → 6.29 | 2.20 → 1.98 | 23 534 → 24 702 | 194 s → 57 s | 8/10 |
+| 006 | 166 | 17 857 | 15 | 33 | 6.60 → 6.24 | 3.27 → 2.55 | 21 860 → 23 028 | 77 s → 46 s | 12/15 |
+| 007 | 127 | 18 444 | 16 | 46 | 6.94 → 5.41 | 3.06 → 2.22 | 21 184 → 22 352 | 87 s → 55 s | 13/16 |
+| **total** | | | **41** | **120 (2.9×)** | 6.45 → 5.98 | 2.84 → 2.25 (120 → 267 total) | 66 578 → 70 082 (+5 %) | 359 s → 158 s (−56 %) | **33/41 (80 %)** |
+
+Out tokens 5 062 → 13 990; generic facts 3 % → 2 %; exact duplicates 0 in both arms;
+mean statement length 221–350 (full) vs 248–295 (split) chars, i.e. shorter facts, not
+vaguer ones.
+
+Reading:
+
+- **Coverage is what splitting buys**, and it is what the judge says we lack (~6 durable
+  facts missed per chunk): 2.9× the facts for a flat input bill.
+- **Per-fact density drops slightly** (anchors −7 %, numbers −21 %) — the opposite
+  direction from the paper's annotation result — but total specific content rises
+  2.2–2.7×, and the remaining generic share is lower.
+- **It is not a superset.** One fifth of the wide-window facts (cross-window decisions,
+  mostly) are not re-found, so the arms read the same history differently. Narrower
+  windows cost the "why" that spans a boundary.
+- **Wall time halves serially**, five small prefills against one 20 k prefill.
+
+Gate: facts ≥ 1.5× (PASS, 2.9×), input tokens ≤ +20 % (PASS, +5 %), specificity not
+materially worse per fact (PASS, −7 % anchors; numbers −21 % but 2.2× the total), wall not
+worse (PASS, −56 %).
+
+**Shipped**: `maxChunkTokens` 24 000 → **6 000** (the size the split arm tested). A larger
+pending window is written as consecutive chunks, oldest entries first, drained by the
+existing chain (≤2 per turn) — no new mechanism. Not yet run end-to-end at 6 000 with
+reconcile, which is where narrower chunks could cost updates.
