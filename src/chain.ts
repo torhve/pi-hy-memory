@@ -56,3 +56,62 @@ export function shouldChainWrite(input: ChainInput): ChainDecision {
 	if (input.pendingTokens < input.triggerTokens) return { chain: false, reason: "under trigger" };
 	return { chain: true, reason: "window still over trigger" };
 }
+
+/**
+ * How much larger than the write trigger a backlog has to be before an idle
+ * session is worth draining on its own. Below this, the next turn would have
+ * handled it anyway and a timer only spends writer time the user is not asking for.
+ */
+export const IDLE_DRAIN_TRIGGER_FACTOR = 4;
+
+export type IdleDrainInput = {
+	enabled: boolean;
+	/** `/hy off` is remembered per session; an off session must stay silent. */
+	sessionActive: boolean;
+	/** Milliseconds since the last turn ended. */
+	idleMs: number;
+	/** How quiet the session has to be before a drain counts as idle work. */
+	idleAfterMs: number;
+	inFlight: boolean;
+	pendingExtract: boolean;
+	failures: number;
+	/** The primary writer is inside its post-failover hold. */
+	primaryDown: boolean;
+	/** A cooldown from consecutive failures is active. */
+	coolingDown: boolean;
+	pendingTokens: number;
+	triggerTokens: number;
+	entryCount: number;
+};
+
+export type IdleDrainDecision = { drain: boolean; reason: string };
+
+/**
+ * Whether a session that is doing nothing should still pay down its backlog.
+ *
+ * The trigger lives on `turn_end` and nothing else starts a write, so a session
+ * that is left open drains only when it is used. Measured on session 01a15860
+ * (2026-10-20): reloaded at 18:40 with 352 000 tokens unread, `writes: 0` and
+ * `compactions: 0` afterwards — the bar saturated and nothing was scheduled,
+ * because no turn ran.
+ *
+ * The gate is deliberately stricter than the ordinary trigger: an idle drain is
+ * for a backlog the user is not about to pay off themselves, so it needs
+ * `IDLE_DRAIN_TRIGGER_FACTOR` times the trigger, a healthy writer, and no work
+ * already in flight.
+ */
+export function shouldIdleDrain(input: IdleDrainInput): IdleDrainDecision {
+	if (!input.enabled) return { drain: false, reason: "disabled" };
+	if (!input.sessionActive) return { drain: false, reason: "session off" };
+	if (input.idleAfterMs <= 0) return { drain: false, reason: "idle drain disabled" };
+	if (input.idleMs < input.idleAfterMs) return { drain: false, reason: "session not idle" };
+	if (input.inFlight) return { drain: false, reason: "write in flight" };
+	if (input.pendingExtract) return { drain: false, reason: "extract awaiting reconcile" };
+	if (input.failures > 0) return { drain: false, reason: "writer unhealthy" };
+	if (input.primaryDown) return { drain: false, reason: "primary writer held" };
+	if (input.coolingDown) return { drain: false, reason: "write cooling down" };
+	if (input.entryCount === 0) return { drain: false, reason: "nothing renderable" };
+	if (input.pendingTokens < input.triggerTokens * IDLE_DRAIN_TRIGGER_FACTOR)
+		return { drain: false, reason: "backlog under idle threshold" };
+	return { drain: true, reason: "idle with a large backlog" };
+}

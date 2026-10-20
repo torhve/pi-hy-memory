@@ -21,7 +21,7 @@ import { Type } from "@earendil-works/pi-ai";
 import type { ExtensionAPI, ExtensionContext, SessionEntry } from "@earendil-works/pi-coding-agent";
 
 import { enforceBudget, foldLedger } from "./bank.js";
-import { shouldChainWrite } from "./chain.js";
+import { IDLE_DRAIN_TRIGGER_FACTOR, shouldChainWrite, shouldIdleDrain } from "./chain.js";
 import { EXTRACT_RECORD, highestChunkSeq, nextChunkId } from "./chunks.js";
 import { type HyConfig, legacyKeys, SETTING_DEFAULTS } from "./config.js";
 import {
@@ -174,6 +174,11 @@ export default function piHyMemory(pi: ExtensionAPI): void {
 	let chained = 0;
 	/** Whether the write that just finished failed, for the chain gate. */
 	let lastAttemptFailed = false;
+	/** Idle-drain bookkeeping: the last turn that ran, and the timer watching it. */
+	let lastActivityAt = Date.now();
+	let idleTimer: ReturnType<typeof setInterval> | null = null;
+	/** The context to write with when no turn is running to hand one over. */
+	let liveCtx: ExtensionContext | null = null;
 	let state: SessionState | null = null;
 	let warned = false;
 
@@ -448,6 +453,8 @@ export default function piHyMemory(pi: ExtensionAPI): void {
 	};
 
 	pi.on("session_start", (_event, ctx) => {
+		markActivity(ctx);
+		startIdleTimer();
 		if (configParseError) {
 			audit("config_parse_failed", { file: CONFIG_FILE, error: configParseError.slice(0, 200) });
 			warn(ctx, `config ${CONFIG_FILE} could not be parsed, using defaults: ${configParseError.slice(0, 160)}`);
@@ -763,9 +770,90 @@ export default function piHyMemory(pi: ExtensionAPI): void {
 		state.pending = promise;
 	};
 
+	/**
+	 * Idle drain. `turn_end` is the only place a write is normally started, so a
+	 * session that is open but unused keeps its backlog indefinitely: measured on
+	 * session 01a15860 (2026-10-20), reloaded with 352 000 tokens unread and
+	 * `writes: 0` afterwards because no turn ran. While the session is quiet and the
+	 * window is far larger than the trigger, start one write per tick and let the
+	 * chain rule decide whether to follow it.
+	 */
+	const markActivity = (ctx: ExtensionContext): void => {
+		lastActivityAt = Date.now();
+		liveCtx = ctx;
+	};
+
+	const stopIdleTimer = (): void => {
+		if (!idleTimer) return;
+		clearInterval(idleTimer);
+		idleTimer = null;
+	};
+
+	const idleDrainTick = (): void => {
+		const live = state;
+		const ctx = liveCtx;
+		if (!live || !ctx) return;
+		let branch: SessionEntry[];
+		let sessionId: string;
+		try {
+			branch = ctx.sessionManager.getBranch();
+			sessionId = ctx.sessionManager.getSessionId();
+		} catch {
+			return; // session replaced mid-tick; the next tick or a turn re-reads it
+		}
+		if (sessionId !== live.sessionId) return;
+		const window = coverageWindow(branch, live.ledger, live.cursorId, live.resumeFromId);
+		const idleMs = Date.now() - lastActivityAt;
+		const decision = shouldIdleDrain({
+			enabled: config.enabled,
+			sessionActive: sessionActive(),
+			idleMs,
+			idleAfterMs: config.idleDrainAfterMs ?? 0,
+			inFlight: live.pending !== null,
+			pendingExtract: live.pendingExtract !== null,
+			failures: live.consecutiveFailures,
+			primaryDown: live.primaryDownUntil > Date.now(),
+			coolingDown: live.writeCooldownUntil > Date.now(),
+			pendingTokens: window.tokens,
+			triggerTokens: config.observeAfterTokens,
+			entryCount: window.pending.length,
+		});
+		if (!decision.drain) return;
+		const chunk = serializeEntries(window.pending, {
+			maxTokens: chunkBudget(),
+			maxEntryChars: config.maxEntryChars,
+		});
+		if (chunk.entryCount === 0) return;
+		const chunkId = nextChunkId(live.sessionId, live.ledger, () => ++live.chunkSeq);
+		chained = 0;
+		lastAttemptFailed = false;
+		audit("idle_drain", {
+			sessionId,
+			chunkId,
+			pendingTokens: window.tokens,
+			idleMs,
+			thresholdTokens: config.observeAfterTokens * IDLE_DRAIN_TRIGGER_FACTOR,
+		});
+		status.stage("extract", "idle drain");
+		startWrite(ctx, chunk, chunkId, sessionId);
+	};
+
+	const startIdleTimer = (): void => {
+		stopIdleTimer();
+		const after = config.idleDrainAfterMs ?? 0;
+		if (after <= 0) return;
+		// Ticked more often than the threshold so "quiet for three minutes" is noticed
+		// within a minute rather than at the end of the next interval. The 1 s floor is
+		// what lets a check drive the timer at all.
+		const timer = setInterval(idleDrainTick, Math.max(1_000, Math.min(after, 60_000)));
+		timer.unref();
+		idleTimer = timer;
+	};
+
 	pi.on("turn_end", (_event, ctx) => {
 		chained = 0;
 		lastAttemptFailed = false;
+		markActivity(ctx);
 		if (!sessionActive()) return;
 		if (!state) {
 			try {
@@ -846,6 +934,7 @@ export default function piHyMemory(pi: ExtensionAPI): void {
 	 * only its mirror file, so pi waits for it here unless that is disabled.
 	 */
 	pi.on("agent_before_settle", async (_event, ctx) => {
+		markActivity(ctx);
 		if (!config.waitForWriteOnSettle || !state?.pending) return undefined;
 		void ctx;
 		try {
@@ -1066,6 +1155,7 @@ export default function piHyMemory(pi: ExtensionAPI): void {
 	});
 
 	pi.on("session_shutdown", async (_event, ctx) => {
+		stopIdleTimer();
 		if (!state) return;
 		const sessionId = state.sessionId;
 		try {

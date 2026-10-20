@@ -94,6 +94,14 @@ export type HyConfig = {
 	 * keeps failing (capped at 10 minutes). 0 disables the wait.
 	 */
 	writeCooldownS?: number;
+	/**
+	 * Drain a session that is idle instead of waiting for its next turn. A write is
+	 * otherwise only ever started by `turn_end`, so a session left open with a large
+	 * backlog never pays it down. This starts one write once the session has been
+	 * quiet this long *and* the unread window is at least four times the write
+	 * trigger. 0 disables it.
+	 */
+	idleDrainAfterMs: number;
 };
 
 /**
@@ -140,6 +148,7 @@ export const SETTING_DEFAULTS: HyConfig = {
 	busyRetries: 3,
 	busyBackoffMs: 4000,
 	writeCooldownS: 30,
+	idleDrainAfterMs: 180_000,
 	pruneAfterDays: 30,
 	shutdownWaitMs: 5000,
 	statusBar: true,

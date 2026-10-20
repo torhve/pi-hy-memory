@@ -147,6 +147,21 @@ is separate from `failures` on purpose: an endpoint failure resets the budget sh
 means the writer is struggling — measured 2026-10-19, chunk 069 failed and 070 started one
 second later, another full 20 000-token request.
 
+**A session that is not being used has to be drained separately.** Both paths above are
+`turn_end` work, and nothing else starts a write — there is no timer in the extension. A
+session that is reloaded and then left open therefore keeps its backlog indefinitely: measured
+on session `01a15860` (2026-10-20), reloaded at 18:40 with 352 000 tokens unread, then
+`writes: 0` and `compactions: 0` because no turn ever ran. `idleDrainAfterMs` (180 s) adds a
+ticking check that starts one write when the session has been quiet that long *and* the unread
+window is at least `IDLE_DRAIN_TRIGGER_FACTOR = 4` times `observeAfterTokens`. The factor is
+the whole design: a 12 000-token window is a backlog the next turn pays off anyway, and a
+timer that drains it spends writer time the user is not asking for. The gate reuses every
+chain guard — no in-flight write, no persisted extract awaiting its reconcile, `failures == 0`,
+no held primary, no cooldown, and never for a session switched off with `/hy off` — and the
+chain rule then decides whether to follow the drain, so an idle catch-up is bounded at three
+writes per tick. The timer is `unref()`'d so it never holds a process open, and it is cleared
+on `session_shutdown`. (`tools/idle-drain-check.ts`)
+
 **Coverage is a position, not an id.** The watermark is stored as an entry id, and pi can move
 the leaf: a rewind, a resumed checkpoint, or a compaction that re-parents the branch leaves
 that id in the session file but off the current chain. Two failures followed from treating the
