@@ -125,3 +125,48 @@ the 27B-judge pass below.
   bank **misses ~6 durable facts per chunk** — coverage, not precision, is the failure mode.
   Judge misses concentrate on embedded constraints and metrics stated inside tool output
   rather than user turns.
+
+
+## Extended-arm A/B and the Tier-1 merge (2026-10-20)
+
+Arms, local writer, temp 0, 12-chunk extended corpus (`dev/corpus-extended.json`):
+`baseline-extended-local` (union shown-set) vs `tier1-perdraft-local`
+(perDraft shown-set + zero-candidate markers).
+
+Coverage (offline replay, `dev/coverage-report.ts`, no model calls):
+starved drafts 38/185 = 20.5 % → 4/179 = 2.2 %; the residual is pure cap
+arithmetic on chunk 016 (27 candidate-having drafts, 12 slots). Reconcile
+input tokens 35,527 → 33,201 (−6.5 %).
+
+Blind judge (tre `qwen3.8-flash-next-iq3_xxs`, seeds 7 and 11):
+
+| axis | baseline s7 / s11 | perDraft s7 / s11 |
+| --- | --- | --- |
+| ops | 182 / 182 | 177 / 177 |
+| supported full / partial / unsupported | 138/44/0 · 124/48/0 | 133/44/0 · 130/47/0 |
+| durable / marginal / noise | 119/36/27 · 109/33/30 | 112/27/38 · 119/30/28 |
+| mean specificity | 2.79 / 2.61 | 2.81 / 2.76 |
+| missed durable facts | 102 / 100 | 100 / 93 |
+
+Zero unsupported writes in every pass. The seed-7 noise bump (+11) was
+disproven by seed 11 (−2): noise ranges overlap and seed variance on this
+axis (±10) dominates the arm difference. Noise anatomy is shared by both
+arms and concentrates in chunk 006, the big refactor chunk: the extract
+writes granular diff/test-edit bookkeeping about *intermediate* states
+(removed test lines, line numbers, renames) and never records that the
+artifact itself was deleted later in the same chunk — the exact target class
+of E2 (transitions) and E3 (should-not-store traps).
+
+SKIP: zero uses in both arms. The plumbing is verified end-to-end
+(`tools/skip-op-check.ts`), but the model does not reach for the vocabulary
+at temp 0; its fate belongs to E3, not to Tier-1.
+
+Gate verdicts:
+- starved drafts ≤ 10 %: **PASS** (2.2 %).
+- reconcile tokens ≤ baseline + 20 %: **PASS** (−6.5 %).
+- no rejection/noise regression: **PASS** (unsupported zero, noise within
+  seed variance, missed slightly improved).
+
+**Merged**: `candidateRenderMode` defaults to `perDraft` in production
+(`src/config.ts`); `union` remains selectable for experiments. SKIP stays
+in the op vocabulary, dormant.

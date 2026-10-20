@@ -74,6 +74,7 @@ nothing backs off between turns. The audit records `write_cooldown { waitS }` an
 | `poolMaxTokens` | `6000` | cap on the *active* bank (the *second* footer bar); see DESIGN.md § "What happens when the bank fills". ~72 tokens per fact, and the rendered summary is ~1.2× the cap |
 | `keepRecentTokens` | `6000` | raw entries kept verbatim by a compaction. The cut is clamped back to the write watermark so nothing unread is dropped, but only by up to `maxChunkTokens`; a larger backlog is lost and recorded as a gap (see "Compaction: who decides when") |
 | `candidateLimit` | `12` | bank entries shown to the reconcile call |
+| `candidateRenderMode` | `perDraft` | how the `candidateLimit` window is chosen: `perDraft` guarantees every draft its own best bank match before the cap fills; `union` shows the score-sorted union (legacy) |
 | `model` | `hy-memory-30b-a3b` | writer model from **your pi model list**: `provider/modelId`, or a bare id |
 | `maxTokens` | `8000` | output cap per call |
 | `timeoutMs` | `480000` | total wall-clock cap per call; raise it for a CPU-offloaded writer |

@@ -449,6 +449,7 @@ export default function piHyMemory(pi: ExtensionAPI): void {
 				const result = await writeChunk(primary, startState.bank, chunkId, chunk, {
 					poolMaxTokens: config.poolMaxTokens,
 					candidateLimit: candidateBudget(),
+					candidateRenderMode: config.candidateRenderMode,
 					fallback,
 					preferFallback: (state?.primaryDownUntil ?? 0) > Date.now(),
 					busyRetries: config.busyRetries,

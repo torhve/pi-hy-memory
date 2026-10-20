@@ -67,10 +67,14 @@ export async function writeChunk(
 		poolMaxTokens?: number;
 		candidateLimit?: number;
 		/**
-		 * "union" (current production default): show the score-sorted union, capped
-		 * — drafts whose candidates fall outside the cap see nothing.
-		 * "perDraft": guarantee every draft with candidates sees its own best match
-		 * before the cap fills.
+		 * "perDraft" (production default): guarantee every draft with candidates
+		 * sees its own best match before the cap fills — a draft never arrives at
+		 * the reconcile call blind just because other drafts' candidates ranked
+		 * higher. Measured on the 12-chunk extended corpus: starved drafts
+		 * 20.5 % → 2.2 %, reconcile tokens −6.5 %, no judge-verified quality
+		 * regression (zero unsupported writes, noise within seed variance).
+		 * "union": the legacy behaviour — show the score-sorted union, capped;
+		 * drafts whose candidates fall outside the cap see nothing.
 		 */
 		candidateRenderMode?: "union" | "perDraft";
 		rawDir?: string;
@@ -167,7 +171,7 @@ export async function writeChunk(
 	}
 	const candidateCap = options.candidateLimit ?? 12;
 	const seen =
-		options.candidateRenderMode === "perDraft"
+		options.candidateRenderMode !== "union"
 			? selectShownPerDraft(perDraft, candidateCap)
 			: [...union.values()].slice(0, candidateCap);
 	let ops: ReconcileOp[] = [];
@@ -177,7 +181,7 @@ export async function writeChunk(
 
 	if (drafts.length > 0) {
 		const zeroCandidate =
-			options.candidateRenderMode === "perDraft"
+			options.candidateRenderMode !== "union"
 				? new Set([...perDraft.entries()].filter(([, list]) => list.length === 0).map(([i]) => i))
 				: undefined;
 		const user = `${renderBankForReconcile(seen)}\n\n${renderDraftsForReconcile(drafts, zeroCandidate)}`;

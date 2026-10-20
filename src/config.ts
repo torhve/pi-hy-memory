@@ -16,6 +16,7 @@ export type HyConfig = {
 	poolMaxTokens: number;
 	keepRecentTokens: number;
 	candidateLimit: number;
+	candidateRenderMode: "union" | "perDraft";
 	waitForWriteOnSettle: boolean;
 	/** Upper bound on how long session_shutdown waits for an in-flight write. */
 	shutdownWaitMs?: number;
@@ -73,6 +74,7 @@ export const SETTING_DEFAULTS: HyConfig = {
 	poolMaxTokens: 6000,
 	keepRecentTokens: 6000,
 	candidateLimit: 12,
+	candidateRenderMode: "perDraft",
 	waitForWriteOnSettle: true,
 	model: "hy-memory-30b-a3b",
 	maxTokens: 8000,
