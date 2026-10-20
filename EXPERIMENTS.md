@@ -502,3 +502,33 @@ after three attempts, and the fact remains in the bank and recallable.
 
 Caveat kept honest: the four-boundary table is a simulation over the real bank with the model's
 measured citation rate substituted for the model. The single-boundary numbers above are live.
+
+## Run: the writer route moved to strata-poly (2026-10-21)
+
+`remote/hy-memory-30b-a3b` now serves PolyStrata's `strata-poly` engine; the llama.cpp profile
+is still on the same box as `hy-memory-30b-a3b-llamacpp`. Replayed the baseline chunk
+`hy-01a15629-001` (10 entries, 5 480-token extract call, temp 0, `no_think`, 8 000-token cap)
+through `dev/run.ts`: four runs on strata-poly, two on llama.cpp, against the 2026-10-19
+baseline for the same chunk.
+
+| route | runs | drafts | extract out tok | extract wall | chunk wall |
+|---|---|---|---|---|---|
+| strata-poly, via proxy | 4 | 6, 7, 7, 8 | 1 243 / 1 336 / 1 291 / 1 488 | 84.3 / 88.0 / 86.7 / 97.2 s | 92.0 / 96.7 / 95.1 / 106.4 s |
+| llama.cpp, same box | 2 | 7, 7 | 1 361 / 1 366 | 183.5 / 117.7 s | 193.8 / 128.1 s |
+| llama.cpp, 2026-10-19 baseline | 1 | 7 | 1 475 | 126.0 s | 137.1 s |
+
+**The engine is faster and the write path is unaffected.** ~1.4× on the chunk (92–106 s against
+128–194 s today and 137 s in the baseline), and the proxy adds nothing measurable — the spread
+between two runs of the same engine is explained by output length, not the hop. Zero rejected or
+unparsable ops on any run. The llama.cpp first run (183.5 s) carries the model-swap penalty; its
+second run is the fair number.
+
+**It is not deterministic at temperature 0.** The extract prompt was identical by construction
+across all six runs — 5 480 input tokens every time — and strata-poly answered with 6, 7, 7 and
+8 drafts, 1 243 to 1 488 output tokens. llama.cpp answered 7 and 7, output counts 5 tokens apart.
+Consequence: one run per arm no longer separates writer settings on the strata route, and
+several earlier arms in this file were measured that way. Repeats are required now. The 96.6 %
+agreement gate measures the judge, not the writer.
+
+Failover is unchanged and still real: primary `remote/hy-memory-30b-a3b` (strata-poly) and
+fallback `hy-memory-30b-a3b` (llama.cpp hybrid) are different engines on different hardware.

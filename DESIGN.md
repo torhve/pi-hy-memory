@@ -677,6 +677,10 @@ and only wall time differs: **local `hy-memory-30b-a3b` 30.3 s, `remote/hy-memor
 137 s** — 4–5× on the same payload, so a 5-chunk corpus is ~4 min local and ~18 min through
 the proxy.
 
+*(2026-10-21: that 137 s is the llama.cpp profile. `remote/hy-memory-30b-a3b` now runs on
+strata-poly and the same chunk takes 92–106 s, but it is not reproducible at temperature 0 —
+see EXPERIMENTS.md, "the writer route moved to strata-poly".)*
+
 ### Chunk size
 
 The paper's chunk is "about ten turns" with a 4 096-token OPD prompt budget, and its own
