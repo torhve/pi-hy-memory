@@ -46,7 +46,8 @@ export type Draft = {
 export type ReconcileOp =
 	| { action: "ADD"; draft: number }
 	| { action: "UPDATE"; draft: number; target: string; reason?: string }
-	| { action: "DELETE"; target: string; reason?: string };
+	| { action: "DELETE"; target: string; reason?: string }
+	| { action: "SKIP"; draft: number; reason?: string };
 
 export type ExtractResult = {
 	drafts: Draft[];

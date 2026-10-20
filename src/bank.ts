@@ -43,6 +43,7 @@ export type ApplyReport = {
 	updated: { entry: BankEntry; target: string }[];
 	deleted: { target: string; reason?: string }[];
 	omitted: number;
+	skipped: { draft: number; reason?: string }[];
 };
 
 export function applyOps(
@@ -54,7 +55,7 @@ export function applyOps(
 	createdAt: string,
 ): ApplyReport {
 	const byId = new Map(bank.map((e) => [e.id, e]));
-	const report: ApplyReport = { added: [], updated: [], deleted: [], omitted: 0 };
+	const report: ApplyReport = { added: [], updated: [], deleted: [], omitted: 0, skipped: [] };
 
 	for (const op of ops) {
 		if (op.action === "DELETE") {
@@ -63,6 +64,12 @@ export function applyOps(
 			target.status = "superseded";
 			target.supersedeReason = op.reason ?? "invalidated by newer chunk";
 			report.deleted.push({ target: op.target, reason: target.supersedeReason });
+			continue;
+		}
+		if (op.action === "SKIP") {
+			// An explicit rejection of the draft by the model: nothing enters the
+			// bank, but the decision and its reason are recorded.
+			report.skipped.push({ draft: op.draft, reason: op.reason });
 			continue;
 		}
 		const draft = drafts[op.draft];
@@ -161,6 +168,7 @@ export function foldLedger(records: LedgerRecord[]): BankEntry[] {
 				}
 				continue;
 			}
+			if (op.action === "SKIP") continue;
 			const draft = drafts[op.draft];
 			if (!draft) continue;
 			const entry: BankEntry = {

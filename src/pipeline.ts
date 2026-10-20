@@ -18,6 +18,7 @@ import {
 	renderBankForReconcile,
 	renderDraftsForReconcile,
 	sameSubject,
+	selectShownPerDraft,
 } from "./protocol.js";
 import { type SerializedChunk, serializeChunk } from "./serialize.js";
 import type { BankEntry, CallUsage, Draft, LedgerRecord, ReconcileOp } from "./types.js";
@@ -65,6 +66,13 @@ export async function writeChunk(
 	options: {
 		poolMaxTokens?: number;
 		candidateLimit?: number;
+		/**
+		 * "union" (current production default): show the score-sorted union, capped
+		 * — drafts whose candidates fall outside the cap see nothing.
+		 * "perDraft": guarantee every draft with candidates sees its own best match
+		 * before the cap fills.
+		 */
+		candidateRenderMode?: "union" | "perDraft";
 		rawDir?: string;
 		/**
 		 * Drafts from an extract call that already succeeded on this same window
@@ -157,14 +165,22 @@ export async function writeChunk(
 		allowedTargets.set(index, new Set(list.map((e) => e.id)));
 		for (const entry of list) if (!union.has(entry.id)) union.set(entry.id, entry);
 	}
-	const seen = [...union.values()].slice(0, options.candidateLimit ?? 12);
+	const candidateCap = options.candidateLimit ?? 12;
+	const seen =
+		options.candidateRenderMode === "perDraft"
+			? selectShownPerDraft(perDraft, candidateCap)
+			: [...union.values()].slice(0, candidateCap);
 	let ops: ReconcileOp[] = [];
 	let rejectedOps: { reason: string; op: unknown }[] = [];
 	let downgradedOps: { reason: string; op: unknown }[] = [];
 	let reconcileUsage: CallUsage = { inTokens: 0, outTokens: 0, wallS: 0 };
 
 	if (drafts.length > 0) {
-		const user = `${renderBankForReconcile(seen)}\n\n${renderDraftsForReconcile(drafts)}`;
+		const zeroCandidate =
+			options.candidateRenderMode === "perDraft"
+				? new Set([...perDraft.entries()].filter(([, list]) => list.length === 0).map(([i]) => i))
+				: undefined;
+		const user = `${renderBankForReconcile(seen)}\n\n${renderDraftsForReconcile(drafts, zeroCandidate)}`;
 		options.onStage?.("reconcile", `${drafts.length} drafts`);
 		const raw = await completeWithFallback(
 			primary,

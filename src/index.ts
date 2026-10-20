@@ -578,6 +578,7 @@ export default function piHyMemory(pi: ExtensionAPI): void {
 					updated: result.report.updated.length,
 					deleted: result.report.deleted.length,
 					omitted: result.report.omitted,
+					skipped: result.report.skipped.length,
 					rejectedDrafts: result.rejectedDrafts.length,
 					rejectedOps: result.rejectedOps.length,
 					downgraded: result.downgraded.length,

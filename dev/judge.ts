@@ -13,7 +13,7 @@
  *
  *   npx tsx dev/judge.ts --run <runId> [--model <judgeModel>] [--corpus dev/corpus.json]
  *
- * Writes out/<runId>/judge.json and prints per-chunk aggregates.
+ * Writes out/<runId>/judge-seed<N>.json and prints per-chunk aggregates.
  */
 
 import { readFileSync, writeFileSync } from "node:fs";
@@ -36,7 +36,7 @@ type ChunkFile = {
 
 type JudgedOp = {
 	chunkId: string;
-	op: "ADD" | "UPDATE" | "DELETE";
+	op: "ADD" | "UPDATE" | "DELETE" | "SKIP";
 	text: string;
 	oldText?: string;
 	reason?: string;
@@ -116,6 +116,7 @@ function judgeOps(
 	const before = bankBefore(records, chunkId);
 	const out: JudgedOp[] = [];
 	for (const op of opsRec.ops) {
+		if (op.action === "SKIP") continue; // a deliberate non-write; the rubric judges writes
 		if (op.action === "DELETE") {
 			const old = before.get(op.target);
 			out.push({
@@ -285,11 +286,11 @@ async function main(): Promise<void> {
 	}
 
 	writeFileSync(
-		join(runDir, "judge.json"),
+		join(runDir, `judge-seed${seed}.json`),
 		`${JSON.stringify({ runId, judgeModel, seed, totalOps, noise, unsupported, missed, verdicts }, null, 2)}\n`,
 	);
 	console.log(
-		`\njudge done: ops ${totalOps}, noise ${noise}, unsupported ${unsupported}, missed ${missed} -> ${runDir}/judge.json`,
+		`\njudge done: ops ${totalOps}, noise ${noise}, unsupported ${unsupported}, missed ${missed} -> ${runDir}/judge-seed${seed}.json`,
 	);
 }
 

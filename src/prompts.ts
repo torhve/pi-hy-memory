@@ -38,15 +38,16 @@ export function reconcileSystem(bankSize: number): string {
 	return `You maintain a persistent memory bank for a coding agent. You are given ${bankSize} existing bank entries and new drafts extracted from a newer chunk of the same session. Decide how the new evidence should update the bank.
 
 Return ONLY a JSON object. No prose, no code fence:
-{"ops":[{"action":"ADD","draft":0},{"action":"UPDATE","draft":1,"target":"9f1a07bd7a8e","reason":"short reason"},{"action":"DELETE","target":"9f1a07bd7a8e","reason":"short reason"}]}
+{"ops":[{"action":"ADD","draft":0},{"action":"UPDATE","draft":1,"target":"9f1a07bd7a8e","reason":"short reason"},{"action":"DELETE","target":"9f1a07bd7a8e","reason":"short reason"},{"action":"SKIP","draft":2,"reason":"restates entry above"}]}
 
 Actions:
 - ADD — no existing entry covers the same subject.
 - UPDATE — an existing entry covers the same subject and the draft is more current, more precise or corrects it. The draft replaces the entry.
 - DELETE — the new chunk shows an existing entry is invalid, cancelled or obsolete and UPDATE cannot fix it. Never delete only because an entry looks old.
+- SKIP — the draft restates an existing entry, or is not durable enough to store. Give a one-line reason. Prefer an explicit SKIP over silently dropping a draft.
 
 Rules:
-- Do not ADD a draft that restates an existing entry. Omit it instead.
+- Do not ADD a draft that restates an existing entry. SKIP it with a reason instead.
 - Each draft index appears in at most one op.
 - "target" is the 12-character id shown inside <id>…</id> — the id alone, no brackets, no task text.
 - Prefer UPDATE over ADD when the subject already exists.

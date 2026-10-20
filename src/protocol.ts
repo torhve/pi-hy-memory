@@ -166,6 +166,20 @@ export function parseOps(
 		}
 		const action = String(item.action ?? "").toUpperCase();
 		const reason = item.reason ? String(item.reason).slice(0, 200) : undefined;
+		if (action === "SKIP") {
+			const idx = Number(item.draft);
+			if (!Number.isInteger(idx) || idx < 0 || idx >= draftCount) {
+				rejected.push({ reason: "draft index out of range", op: item });
+				continue;
+			}
+			if (usedDrafts.has(idx)) {
+				rejected.push({ reason: "draft already used by another op", op: item });
+				continue;
+			}
+			usedDrafts.add(idx);
+			ops.push({ action: "SKIP", draft: idx, reason });
+			continue;
+		}
 		if (action === "ADD" || action === "UPDATE") {
 			const idx = Number(item.draft);
 			if (!Number.isInteger(idx) || idx < 0 || idx >= draftCount) {
@@ -276,16 +290,47 @@ export function candidatesPerDraft(bank: BankEntry[], drafts: Draft[], limit = 8
 	return sets;
 }
 
+/**
+ * Shown-set selection that guarantees per-draft coverage instead of letting a
+ * union slice starve whole drafts: each draft's best candidate is shown first
+ * (draft order), remaining slots fill round-robin by descending per-draft rank.
+ * Deterministic; never exceeds `cap` entries.
+ */
+export function selectShownPerDraft(perDraft: Map<number, BankEntry[]>, cap: number): BankEntry[] {
+	const chosen: BankEntry[] = [];
+	const taken = new Set<string>();
+	const add = (entry: BankEntry | undefined): boolean => {
+		if (!entry || taken.has(entry.id) || chosen.length >= cap) return false;
+		taken.add(entry.id);
+		chosen.push(entry);
+		return true;
+	};
+	for (const list of perDraft.values()) add(list[0]);
+	for (let rank = 1; chosen.length < cap; rank++) {
+		let any = false;
+		for (const list of perDraft.values()) {
+			if (add(list[rank])) any = true;
+		}
+		if (!any) break;
+	}
+	return chosen;
+}
+
 export function renderBankForReconcile(entries: BankEntry[]): string {
 	if (entries.length === 0) return "Existing bank entries: (none)";
 	return `Existing bank entries:\n${entries.map((e) => `<id>${e.id}</id> (${e.task}) ${e.statement}`).join("\n")}`;
 }
 
-export function renderDraftsForReconcile(drafts: Draft[]): string {
+export function renderDraftsForReconcile(drafts: Draft[], zeroCandidate?: Set<number>): string {
 	if (drafts.length === 0) return "New drafts: (none)";
 	return (
 		"New drafts:\n" +
-		drafts.map((d, i) => `${i}: (${d.task}) ${d.statement} [confidence ${d.confidence}]`).join("\n")
+		drafts
+			.map(
+				(d, i) =>
+					`${i}: (${d.task}) ${d.statement} [confidence ${d.confidence}]${zeroCandidate?.has(i) ? " [bank consulted: no matching entries]" : ""}`,
+			)
+			.join("\n")
 	);
 }
 

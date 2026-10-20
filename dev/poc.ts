@@ -100,7 +100,7 @@ async function main(): Promise<void> {
 		}
 		ledger.push(...write.records);
 
-		const counts = { ADD: 0, UPDATE: 0, DELETE: 0 };
+		const counts = { ADD: 0, UPDATE: 0, DELETE: 0, SKIP: 0 };
 		for (const op of write.ops) counts[op.action]++;
 		const active = bank.filter((e) => e.status === "active").length;
 		const inTok = write.usage.extract.inTokens + write.usage.reconcile.inTokens;

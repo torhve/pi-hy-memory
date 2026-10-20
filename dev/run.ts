@@ -1,7 +1,7 @@
 /**
  * Corpus runner with named run ids and chunk-level resume.
  *
- *   npx tsx dev/run.ts --run <runId> [--corpus dev/corpus.json] [--pool 12000] [--model <id>]
+ *   npx tsx dev/run.ts --run <runId> [--corpus FILE] [--pool 12000] [--candidate-render-mode union|perDraft]
  *
  * Writer route resolution, in order:
  *   1. POC_ORIGIN / POC_KEY / POC_MODEL (same convention as poc.ts);
@@ -120,6 +120,7 @@ async function main(): Promise<void> {
 	const outDir = new URL(`../out/${runId}/`, import.meta.url).pathname;
 	const pool = numArg("--pool", 12000);
 	const modelSpec = process.env.POC_MODEL ?? "remote/hy-memory-30b-a3b";
+	const renderMode = arg("--candidate-render-mode", "union") as "union" | "perDraft";
 	const route = process.env.POC_ORIGIN
 		? { origin: process.env.POC_ORIGIN, apiKey: process.env.POC_KEY, model: process.env.POC_MODEL ?? modelSpec }
 		: await resolveRoute(modelSpec);
@@ -159,10 +160,11 @@ async function main(): Promise<void> {
 		if (r.type === "hy.extract") extractOf.set(r.chunkId, r);
 		if (r.type === "hy.ops") doneChunk.add(r.chunkId);
 	}
-	const metrics: { runId: string; model: string; pool: number; chunks: Row[] } = {
+	const metrics: { runId: string; model: string; pool: number; renderMode: string; chunks: Row[] } = {
 		runId,
 		model: route.model,
 		pool,
+		renderMode,
 		chunks: [],
 	};
 	// Chunks finished in an earlier attempt keep their full metrics rows when
@@ -194,7 +196,9 @@ async function main(): Promise<void> {
 		}
 		prefix.push(r);
 	}
-	console.log(`run=${runId} model=${route.model} origin=${route.origin} temp=0 kwargs=no_think timeout=600s`);
+	console.log(
+		`run=${runId} model=${route.model} origin=${route.origin} temp=0 kwargs=no_think timeout=600s candidates=${renderMode}`,
+	);
 	console.log(
 		`corpus=${corpus.length} chunks, ledger has ${doneChunk.size} complete, ${extractOf.size - doneChunk.size} resumable`,
 	);
@@ -222,6 +226,7 @@ async function main(): Promise<void> {
 				write = await writeChunk(writer, bank, chunkId, chunk, {
 					poolMaxTokens: pool,
 					rawDir: join(outDir, "raw"),
+					candidateRenderMode: renderMode,
 					resume: resumeFrom
 						? {
 								drafts: resumeFrom.drafts as Draft[],
@@ -285,10 +290,12 @@ async function main(): Promise<void> {
 				ADD: write.ops.filter((o) => o.action === "ADD").length,
 				UPDATE: write.ops.filter((o) => o.action === "UPDATE").length,
 				DELETE: write.ops.filter((o) => o.action === "DELETE").length,
+				SKIP: write.ops.filter((o) => o.action === "SKIP").length,
 			},
 			rejectedOps: write.rejectedOps.map((r) => r.reason),
 			downgradedOps: write.downgraded.map((r) => r.reason),
 			omittedDrafts: write.report.omitted,
+			skippedDrafts: write.report.skipped.length,
 			budgetDropped: write.budgetDropped.length,
 			bankBefore: before,
 			bankAfter: after,
@@ -303,7 +310,7 @@ async function main(): Promise<void> {
 		metrics.chunks.push(row);
 		writeFileSync(metricsPath, `${JSON.stringify(metrics, null, 2)}\n`);
 		console.log(
-			`${chunkId}: drafts ${row.drafts} (rejected ${row.rejectedDrafts.length}) | ADD ${row.ops.ADD} UPDATE ${row.ops.UPDATE} DELETE ${row.ops.DELETE} | starved ${row.candidateCoverage.zeroCandidateDrafts}/no-cand ${row.candidateCoverage.noCandidateDrafts} | bank ${before.active}->${after.active} (${after.tokens} tok, growth ${row.bankGrowthRatio}) | wall ${row.usage.wallTotalS}s${resumeRecord ? " [resumed]" : ""}`,
+			`${chunkId}: drafts ${row.drafts} (rejected ${row.rejectedDrafts.length}) | ADD ${row.ops.ADD} UPDATE ${row.ops.UPDATE} DELETE ${row.ops.DELETE} SKIP ${row.ops.SKIP ?? 0} | starved ${row.candidateCoverage.zeroCandidateDrafts}/no-cand ${row.candidateCoverage.noCandidateDrafts} | bank ${before.active}->${after.active} (${after.tokens} tok, growth ${row.bankGrowthRatio}) | wall ${row.usage.wallTotalS}s${resumeRecord ? " [resumed]" : ""}`,
 		);
 	}
 
@@ -346,6 +353,7 @@ function summarize(
 			ADD: o.ops.filter((x: { action: string }) => x.action === "ADD").length,
 			UPDATE: o.ops.filter((x: { action: string }) => x.action === "UPDATE").length,
 			DELETE: o.ops.filter((x: { action: string }) => x.action === "DELETE").length,
+			SKIP: o.ops.filter((x: { action: string }) => x.action === "SKIP").length,
 		},
 		rejectedOps: o.rejectedOps?.map((x: { reason: string }) => x.reason) ?? [],
 		downgradedOps: o.downgradedOps?.map((x: { reason: string }) => x.reason) ?? [],

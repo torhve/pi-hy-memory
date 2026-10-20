@@ -68,6 +68,11 @@ Corpus run ≈ 18 min remote vs ≈ 4 min local (local also avoids per-call cost
 seed, judge model local `qwen3.8-27b-q6` (never the writer model; the 35B MoE
 judges tried first crashed llama-swap's upstream), temp 0.
 
+Standing judge model now: local `qwen35-9b-summar` (non-reasoning). Current
+standing pair for baseline-remote (`judge-seed7.json`, `judge-seed11.json`):
+supported 59-60/63 full, 0-4 partial, 0 unsupported; durable 53-58, marginal
+1-8, noise 1-2; mean specificity 2.25-2.75; missed 29 per run. Same story as
+the 27B-judge pass below.
 - seed 7: 63 ops (1 unparsable), full 62 / none 0, durable 61, mean specificity 2.47, noise 0, missed 30.
 - seed 11: 63 ops (3 unparsable), full 60 / none 0, durable 58, mean specificity 2.42, noise 1, missed 29.
 - **Reproducibility (done-when): supported+durability agreement 96.6 % across seeds; mean-
