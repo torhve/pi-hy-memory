@@ -115,6 +115,18 @@ for pid in $(pgrep -x llama-server); do
 	esac
 done
 
+# Memory telemetry: one journald line per probe tick so cap pressure is visible
+# BEFORE the kernel acts, and swap/dying-memcg overshoots leave an audit trail.
+CG="/sys/fs/cgroup/system.slice/llama-swap.service"
+if [ -r "$CG/memory.current" ]; then
+	cur=$(( $(cat "$CG/memory.current") / 1048576 ))
+	peak=$(( $(cat "$CG/memory.peak" 2>/dev/null || echo 0) / 1048576 ))
+	anon=$(( $(awk '/^anon /{print $2}' "$CG/memory.stat" 2>/dev/null || echo 0) / 1048576 ))
+	file=$(( $(awk '/^file /{print $2}' "$CG/memory.stat" 2>/dev/null || echo 0) / 1048576 ))
+	top=$(ps -eo rss,comm --sort=-rss 2>/dev/null | awk 'NR==2{printf "%dMB %s", $1, $2}')
+	log "mem current=${cur}MB peak=${peak}MB anon=${anon}MB file=${file}MB top=${top}"
+fi
+
 # Sweep counters belonging to processes that are gone.
 for f in "$STATE_DIR"/fail-*; do
 	[ -e "$f" ] || continue
