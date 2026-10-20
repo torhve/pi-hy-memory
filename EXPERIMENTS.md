@@ -358,3 +358,44 @@ What this leaves for the transition problem: the fix has to make the *draft* a f
 replacement ("X was removed; Y and Z remain"), which is an extract-side instruction, or give
 the writer a non-atomic op it does not have (a partial supersede). Both are open. The one
 thing measured here is that prompting the reconcile call harder is not it.
+
+## Run: prune signal from the executor model (2026-10-20)
+
+The proposal: the session's own model knows which threads it has finished, so before a
+compaction it could mark bank facts whose work is over, and those could be dropped. After the
+first compaction the bank is already in its context, so the review is cheap in *input*.
+
+Three calls (`dev/prune-signal.ts`, one 32-chunk bank, 408 active facts). Gate: a model that
+says "keep" for nearly everything gives nothing to rank with — `confidence` (965/996 at 1.0)
+and `stability` (60/65 `detail`) both died that way.
+
+| run | model | facts | format | closed | keep | invalid ids | in/out tok | wall |
+|---|---|---|---|---|---|---|---|---|
+| 1 | `deepseek-v4-pro` (reference only) | 408 | id + reason | 165 (40.4 %) | 59.6 % | 0 | 40 484 / 24 773 | 258 s |
+| 2 | `qwen3.8-flash-next-iq3_xxs` | 408 | ids only | **408 (100 %)** | 0.2 % | 1 | 42 302 / 4 774 | 101 s |
+| 3 | `qwen3.8-flash-next-iq3_xxs` | 60 (even sample) | id + reason | **26 (43.3 %)** | 56.7 % | 0 | 6 336 / 841 | 59 s |
+
+Run 4 (same model, 408 facts, id + reason) failed with `unbalanced JSON object` — the output
+overran and the object never closed. So the executor's format limit is the number of verdicts
+it can emit in one answer, not its ability to judge.
+
+Reading:
+
+- **The signal is real at batch size.** 43.3 % closed out of 60, 0 invalid ids, and the reasons
+  are exactly the intended class: "audit subagents completed; findings integrated", "script
+  error fixed and rerun", "dead code identified … later resolved". That is not a model grading
+  its own importance; it is reporting closure of work it can see.
+- **It does not scale in one call.** `ids only` invites enumeration (100 % closed), and
+  `id + reason` overruns the output budget at ~400 facts. A real integration must batch
+  (~60–100 facts per call), which means 4–7 calls for this bank.
+- **Where pruning would land** (60-fact sample): 3 of the 26 closed facts are in the summary,
+  23 are retrieved-only, 0 are invisible. So batching buys retrieval-noise reduction far more
+  than summary space — consistent with the bank census above (35 % shown / 64 % retrieved-only
+  / 1 % invisible).
+- **Cost**: 59 s and 7.2 k tokens for 60 facts. Six batches ≈ 6 min and ~43 k tokens for this
+  bank — affordable occasionally, not per compaction.
+
+Verdict: viable as a **batched, opt-in review**, and the evidence does *not* support making it
+an automatic deletion path — nothing here measures whether the closed set is safe to forget.
+Cheaper and safer first use: feed the verdicts to the summary selection (rank, not delete), and
+only tombstone behind an explicit command.
