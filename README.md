@@ -181,23 +181,20 @@ default mode, so a flat cap is what you get until you switch to `"ratio"`.
 ### What the summary contains when the pool is full
 
 The summary is capped at `poolMaxTokens` plus the real `[id] (task) ` prefixes
-(`summaryBudget`). When it does not all fit, facts are admitted **newest first**: a
-higher-relevance fact displaces a lower one, and at equal relevance the newer fact wins —
-the same rule the pool cap uses. Lines are printed chronologically afterwards, so the
-newest fact is the last line the model reads, and the omission tail says how many were
-hidden (each is reachable with `hy_recall <id>`).
+(`summaryBudget`). When it does not all fit, facts are admitted **newest first** — the
+same rule the pool cap uses. Lines are printed chronologically afterwards, so the newest
+fact is the last line the model reads, and the omission tail says how many were hidden
+(each is reachable with `hy_recall <id>`).
 
-`relevance` is not a model judgement: it is derived from `confidence` in code
-(`≥0.8` high, `≥0.5` medium, else low), and the extract prompt only asks how sure the
-writer is that a fact is explicit — which, having been told to extract only explicit
-facts, it answers `1.0` almost always (965 of 996 facts across the sessions measured here;
-163 of 166 at `1.0` in the session this was measured on). So the ordering is effectively
-**recency**, and the pool behaves as "the newest ~`poolMaxTokens / 72` facts", with the
-`medium`/`low` tiers unused. Asking the extractor for a separate `stability` judgement
-(decision / state / detail) was measured on three chunks and two wordings: 60 of 65 drafts
-came back `detail`, so it ranks nothing. See DESIGN.md § "A second judgement was tried and
-rejected". That is why admission order matters enough to be pinned by
-`tools/render-check.ts`: with chronological admission the *newest* fact was the one being
+**Recency is the only rank.** There is no relevance tier: it used to be derived in code from
+a `confidence` field the extract prompt asked for, and the writer answered `1.0` almost
+always (965 of 996 facts across the sessions measured here) — having already been told to
+extract only what the chunk explicitly establishes, it had nothing to be unsure about. So
+the pool behaved as "the newest ~`poolMaxTokens / 72` facts" anyway. A second judgement
+(`stability`: decision / state / detail) was measured on three chunks and two wordings: 60
+of 65 drafts came back `detail`, so it ranked nothing. Neither field survives; the writer
+was never trained to grade its own output (see DESIGN.md § *Ranking*). Admission order still
+matters enough to be pinned by `tools/render-check.ts`: with chronological admission the *newest* fact was the one being
 dropped.
 
 Our summary is bounded by the bank (12 k), not by history, so we do not inherit the
@@ -255,7 +252,7 @@ to break silently:
 | `ops-guard-check`, `subject-guard-check` | wrong-target and wrong-subject UPDATEs |
 | `redact-check` | credential redaction without damaging identifiers |
 | `budget-check`, `reload-budget-check` | pool eviction order, reload semantics, summary budget |
-| `render-check` | compaction summary budget, omission reporting, and newest-first admission (relevance first, then recency) |
+| `render-check` | compaction summary budget, omission reporting, and newest-first admission |
 | `prune-check` | retention deletes old sessions and nothing else |
 | `config-docs-check` | every setting in the code is in the table above, with the same default |
 | `status-check` | footer rendering, including a stale context |

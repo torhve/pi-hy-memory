@@ -16,6 +16,35 @@ Hy-Memory-30B-A3B is not an agent model. It is a **memory bank writer**, RL-trai
 Mem0 / MemOS / Hy-Memory to answer one question per chunk: *given this new evidence and
 the bank I already have, what should the bank look like now?* Measured on this machine, it
 is the most accurate writer ever put through the harness and the worst orchestrator.
+## What the writer was trained to do
+
+The model has a paper: *Hy-Memory-30B-A3B: Attributed Reinforcement Learning for Long-Term
+Memory Writing* (arXiv 2610.22196). It is worth reading as a specification, because it says
+which prompts the model has actually seen and which failures it was rewarded on.
+
+- **It is a writer inside harnesses.** Training puts the model behind the unmodified Mem0,
+  MemOS and Hy-Memory (Chat / Working / Coding) write paths and rewards the *downstream
+  answerability* of the bank it produces: on-policy distillation from a flagship teacher onto
+  bank states the student itself wrote, then chunk-level GRPO over eight rollouts per window.
+  The reader and judge are frozen, so the bank is the only thing that can improve.
+- **A chunk is about ten turns.** OPD prompt budget 4 096 tokens; RL context 28 672 prompt +
+  4 096 response. A chunk never crosses a session boundary, and a window is up to five
+  chunks with the bank carried forward — the shape this extension already had.
+- **The failure surfaces it was rewarded on** are omission, lost specificity, semantic
+  inversion, stale-state confusion, secondary-fact loss and over-storage. Two are already
+  our own rules: an UPDATE must restate everything still true (secondary-fact loss), and the
+  op vocabulary is ADD / UPDATE / DELETE (+ SKIP) as in Mem0 (over-storage).
+- **Selectivity is behavioural, not self-reported.** Trap probes (facts that must *not* enter
+  the bank) plus a token-based bank-growth penalty teach it; the trained schema has no
+  confidence field and no self-graded durability label.
+- **Less context makes facts more specific.** Their annotation study, on identical chunks,
+  found two-chunk context produced 25 % more proper nouns and 59 % more numbers per extracted
+  fact than full history: with everything in view, attention spreads and facts go generic.
+  This is the one axis where our defaults may sit outside the training distribution.
+
+What follows for us: the two prompts are the entire model-facing surface, so they have to
+resemble the harness prompts the writer was trained on and must not ask for fields it never
+learned to emit. Both were wrong at some point; the measurements are recorded below.
 
 So this design keeps everything `pi-observational-memory` gets right — the append-only
 ledger, coverage watermarks, the model-free compaction fold, the recall tool — and replaces
@@ -54,7 +83,7 @@ replayed against the captured production payloads).
 |---|---|
 | observer agent (multi-turn tool loop, `complete=true`) | **extract call**: chunk → `{"drafts":[…]}` in assistant content |
 | reflector agent (observations → reflections) | **reconcile call**: drafts + retrieved bank → `ADD` / `UPDATE` / `DELETE` ops. Distillation *is* the model's trained task; a second agent is redundant. |
-| dropper agent (pool pressure → drop list) | `enforceBudget()`: rank by relevance + confidence, supersede the tail. Deterministic, auditable, free. |
+| dropper agent (pool pressure → drop list) | `enforceBudget()`: rank by recency, supersede the tail. Deterministic, auditable, free. |
 | coverage tiers (`none` / `partial` / `strong`) annotated per observation | not needed: the bank shown to the reconcile call *is* the coverage question. |
 | tool schema + `record_observations` handshake | none. The model is never offered a tool it measurably refuses to call. |
 
@@ -65,7 +94,9 @@ turn_end
   ├─ due? raw source tokens since last hy.extract watermark ≥ observeAfterTokens
   ├─ serialize chunk      [Source entry id: 3334369c]  ->  [7]      (ids hidden from model)
   ├─ 1) extract           chunk -> drafts JSON          (temp 0, no_think, no tools)
-  ├─ retrieve             drafts vs active bank -> <=12 candidate entries (lexical overlap)
+  ├─ retrieve             per draft: best bank entries by lexical overlap; shown set is
+  │                        every draft's best match first, then round-robin, cap 12; a draft
+  │                        with no match is marked "bank consulted: no matching entries"
   ├─ 2) reconcile         bank + drafts -> ops JSON
   ├─ validate + sanitize  schema, ids, source refs, secret redaction, near-dedup
   ├─ apply ops            ADD / UPDATE(supersede) / DELETE(tombstone)
@@ -87,6 +118,18 @@ recall tool
 ```
 
 Two model calls per chunk. No turn budget, no completion signal, no third agent.
+
+**Every draft gets its own candidates.** The reconcile call is shown at most
+`candidateLimit` (12) bank entries, and the original selection was the score-sorted union of
+every draft's matches — so a draft whose matches fell outside the cap arrived blind and became
+an unconditional ADD. Measured on a 12-chunk extended corpus: **38 of 185 drafts (20.5 %)
+starved**. `candidateRenderMode: "perDraft"` (the default) shows each draft's best match
+first, fills the remaining slots round-robin, and marks drafts with no match at all
+explicitly. Starved drafts 20.5 % → **2.2 %**, reconcile input tokens −6.5 %, and the blind
+judge found no regression (zero unsupported writes, noise inside seed variance). The residual
+is pure cap arithmetic: chunk 016 had 27 candidate-bearing drafts for 12 slots. `union`
+remains selectable. SKIP is in the vocabulary but dormant: the plumbing is verified by
+`tools/skip-op-check.ts`, and the model used it **zero times** in both arms at temperature 0.
 
 **A completed write may chain one more.** The trigger runs on `turn_end` and returns
 early while a write is in flight, so a chunk that landed mid-turn left its backlog waiting
@@ -169,15 +212,14 @@ Chunk is serialized with positional refs. Response is assistant content:
 {"drafts":[{"task":"llama-swap model capabilities",
             "statement":"llama-swap serves the observer models at llama-endpoint with an API key.",
             "keys":["llama-swap","api key"],
-            "confidence":1.0,
             "refs":[7,9]}]}
 ```
 
 Code rejects a draft when: statement < 24 chars after sanitizing, no `refs` inside the
-chunk's ref range, `confidence` not a number, or the statement duplicates one already
-accepted. `relevance` is derived in code from `confidence` (≥0.8 high, ≥0.5 medium, else
-low) rather than asked for — the model's own relevance labels correlated with durable
-value in the harness but were not consistent enough to budget a pool with.
+chunk's ref range, or the statement duplicates one already accepted. The schema is the
+model's own: `task`, `statement`, `keys`, `refs`, nothing else. A `confidence` field and the
+`relevance` tier derived from it used to sit here, and both are now gone — the writer was
+never trained to emit either (see *Ranking*).
 
 **2. Reconcile.** Only the retrieved candidates are shown, never the whole bank:
 
@@ -212,16 +254,14 @@ was actually present in the chunk removed by exact match, bracketed numeric refs
 `enforceBudget()` sums the active entries' `tokenCount` and, if the total exceeds the
 cap, ranks and trims:
 
-1. **Rank** = `relevance × 1000 + confidence × 100` (high 3 > medium 2 > low 1).
-2. **Tie-break** = `createdAt`, newest first. This matters: with a bank of 69 facts that
-   are all `relevance=high, confidence=1.0` the ranking collapses to a tie, and a stable
-   sort over insertion order dropped the *newest* facts — measured on session 01a14c10,
-   four of them real implementation facts (`disconnect()` no longer clearing
-   `attemptSeqByProfile`, the `settle(attempt)` helper, …). A memory that tracks current
-   state must prefer the newer entry when everything else is equal.
-3. **Keep what fits** — a bin-packing walk, not a tail cut, so one long fact does not
+1. **Rank by `createdAt`, newest first.** Not insertion order: a stable sort over insertion
+   order dropped the *newest* facts — measured on session 01a14c10, four of them real
+   implementation facts (`disconnect()` no longer clearing `attemptSeqByProfile`, the
+   `settle(attempt)` helper, …). A memory that tracks current state must prefer the newer
+   entry, and there is nothing else to rank by (see *Ranking*).
+2. **Keep what fits** — a bin-packing walk, not a tail cut, so one long fact does not
    evict three short ones.
-4. **Tombstone the rest**: `status: "superseded"`, `supersedeReason: "pool budget"`.
+3. **Tombstone the rest**: `status: "superseded"`, `supersedeReason: "pool budget"`.
 
 A budget-dropped fact is **hidden but not lost**: it stays in the bank file and in the
 ledger, `hy_recall <id>` still returns it with its source evidence, but it is absent from
@@ -286,45 +326,47 @@ having only while it is faithful; when it is not, one model call is the cheaper 
 `hy.gap` remains for the `/hy off` switch, where discarding the off window is the point.
 
 **Admission order decides which facts survive the summary.** Facts are admitted
-newest-first: a higher-relevance fact displaces a lower one, and at equal relevance the
-newer one wins — the same rule `enforceBudget` uses. Chronological admission did the
-opposite, because equal ranks never displace each other, so the *first* N facts were kept
-and the newest were dropped; on session `01a1510e` (2026-10-19) the single omitted fact was
-the newest in the bank, from the final write, while the summary header tells the model that
-the later of two conflicting lines is the current state. Lines are printed chronologically
-afterwards, so the newest fact is the last line read. Omission is still a bin-packing skip
-(a fact too large for the remaining budget is passed over, not fatal), and what was omitted
-is counted in the tail and reachable through `hy_recall`.
+newest-first: the newest fact that fits wins, and the oldest are the ones omitted — the same
+rule `enforceBudget` uses. Chronological admission did the opposite, so the *first* N facts
+were kept and the newest were dropped; on session `01a1510e` (2026-10-19) the single omitted
+fact was the newest in the bank, from the final write, while the summary header tells the
+model that the later of two conflicting lines is the current state. Lines are printed
+chronologically afterwards, so the newest fact is the last line read. Omission is a
+bin-packing skip (a fact too large for the remaining budget is passed over, not fatal), and
+what was omitted is counted in the tail and reachable through `hy_recall`.
 
-**Relevance is derived, and it saturates.** `relevanceOf(confidence, refs)` maps
-`confidence ≥ 0.8` to `high`, so the tiers are only as informative as the confidence the
-extract prompt asks for. It asks for explicitness ("how sure you are that the fact is
-explicitly established"), having already told the model to extract only what the chunk
-explicitly establishes, so the answer is almost always `1.0`: 965 of 996 facts across the
-sessions measured here are `high`, and this session is 163 of 166 at `1.0`, with 3 at
-`0.9`. The one session with `medium` facts (`01a14a46`, 31 at `0.5`) shows the model can
-grade, it is simply not asked to grade importance. Consequence: the ranking collapses to
-`createdAt`, so the pool behaves as "the newest `poolMaxTokens / 72` facts" and the
-`medium`/`low` tiers are dead weight.
+### Ranking
 
-**A second judgement was tried and rejected.** The obvious repair is to ask the extract for
-a property orthogonal to confidence — how long the fact stays true rather than how sure we
-are of it — and derive relevance from that: `decision → high`, `state → medium`,
-`detail → low`, where "detail" means the repository could tell you the same thing. Measured
-on three real chunks (an implementation window, an audit report, and a session tail), two
-wordings of the definitions, temperature 0, `llama-swap/hy-memory-30b-a3b`: 65 drafts, the
-field present on **every** draft in both wordings, and **60 of 65 labelled `detail`**
-(92 %). The two wordings agreed with each other on every chunk — 18/19 vs 15/16 `detail` on
-the audit chunk, 14/15 vs 13/15 on the implementation chunk — so the variation tracks the
-*content*, not the phrasing. Nothing to rank with: a bank where 92 % of facts are `detail`
-evicts in recency order anyway, one layer of indirection later.
+There is no relevance tier. There used to be one, derived from a `confidence` field the
+extract prompt asked for, and it was removed after two measurements and one paper:
 
-The reason is structural rather than a prompt bug: the extractor emits durable technical
-facts by construction, so any property meaning "this is a technical fact" applies to nearly
-all of them. A discriminating signal has to come from *cross-fact* evidence — which facts
-the agent actually reads back through `hy_recall`, or which ones keep being restated and
-retrieved as reconcile candidates — not from asking the writer to classify each fact in
-isolation. That is not implemented; recency is the policy until something like it is.
+- **Confidence saturates, so the tier did too.** `relevanceOf(confidence ≥ 0.8)` → `high`,
+  and the prompt asked for explicitness ("how sure you are that the fact is explicitly
+  established") after already telling the model to extract only what the chunk explicitly
+  establishes. Result: 965 of 996 facts `high`, one session 163 of 166 at exactly `1.0`. The
+  one session with `medium` facts (`01a14a46`, 31 at `0.5`) shows the model *can* grade; it
+  is simply not being asked to grade importance. So the rank collapsed to `createdAt` in
+  practice and the pool already behaved as "the newest `poolMaxTokens / 72` facts".
+- **A second judgement was tried and rejected.** The obvious repair is a property orthogonal
+  to confidence — how long the fact stays true, `decision → high` / `state → medium` /
+  `detail → low`, where "detail" means the repository could tell you the same thing.
+  Measured on three real chunks (an implementation window, an audit report, a session tail),
+  two wordings, temperature 0, `llama-swap/hy-memory-30b-a3b`: 65 drafts, the field present
+  on **every** draft, and **60 of 65 labelled `detail`** (92 %). Both wordings agreed on
+  every chunk (18/19 vs 15/16 on the audit chunk), so the variation tracks the content, not
+  the phrasing.
+- **The writer was never trained to grade its own output.** The paper's reward is
+  behavioural: trap probes for facts that must not be stored, and a token-growth penalty for
+  storing too much. Selectivity is a property of *what it chooses to write*, not a number it
+  can attach to a draft it already decided to write.
+
+The reason is structural rather than a prompt bug: the extractor emits durable technical facts
+by construction, so any property meaning "this is a technical fact" applies to nearly all of
+them. A discriminating signal has to come from *cross-fact* evidence — which facts the agent
+reads back through `hy_recall`, or which ones keep being restated and retrieved as reconcile
+candidates — not from asking the writer to classify each fact in isolation. That is not
+implemented, so `BankEntry` has no ranking field at all: `enforceBudget` and `renderMemory`
+sort by `createdAt`, and recency is the policy until something like it exists.
 
 ### Retention
 
@@ -432,7 +474,36 @@ Per dense chunk (484/486/503 scale), from the harness:
 | compaction | model call or fold | fold | fold (unchanged) |
 
 The extract call is the cost, and it is unavoidable for any writer model. The reconcile
-call is small because retrieval keeps the shown bank at ≤12 entries.
+call is small because retrieval keeps the shown bank at ≤12 entries. Measured on one chunk
+(10.9 k-token window, 5.5 k-token extract call) the token counts are identical across routes
+and only wall time differs: **local `hy-memory-30b-a3b` 30.3 s, `remote/hy-memory-30b-a3b`
+137 s** — 4–5× on the same payload, so a 5-chunk corpus is ~4 min local and ~18 min through
+the proxy.
+
+### Transport is a measured variable
+
+A writer that serves 20 k-token extracts over a proxy is a distributed system, and three of
+its failures were ours to fix (all in `EXPERIMENTS.md` with sources):
+
+- **Node's undici aborts a long HTTP/2 wait at 300 s** (`headersTimeout`), and a
+  non-streaming llama.cpp response sends headers only when generation completes. That hidden
+  cap — not our 600 s timeout — killed every remote extract over five minutes; chunk 016 failed
+  three times before the cap was raised on the dispatcher. `dev/raw-writer.ts` now sets
+  `headersTimeout`/`bodyTimeout` from the call timeout. **pi's own completions path rides the
+  same fetch stack**, so a production extract over 300 s may hit it too; that is an open
+  question, not a fixed one.
+- **A wedged llama-server is permanent.** llama-server does not cancel generation when the
+  client disconnects, so abandoned requests hold context slots until exhaustion, and on
+  AMD/RDNA-class backends a client abort while another request is in flight deadlocks the
+  whole server — `/health` dies too and SIGTERM is ignored. Only SIGKILL recovers it, and
+  llama-swap's own defenses are startup-only. `ops/llama-watchdog` is a systemd timer that
+  probes the server directly (health + tiny completion, bypassing the proxy queue) and
+  SIGKILLs a wedged instance, busy-safe: a server answering through the proxy mid-decode is
+  never killed.
+- **A client-side abort leaves work behind.** llama-swap keeps processing the abandoned
+  request, so an immediate retry collides with it (`429 concurrency_limit`); the runner backs
+  off 45 s between attempts, and the production path classifies the failure before it shrinks
+  anything (`src/failures.ts`).
 
 ## Status
 
@@ -468,6 +539,29 @@ Against the same model under the tool protocol at `temp 0`:
 | 486 | 18 recorded, 80 duplicates, 296 700 in tok, 248 s | 10 bank writes, 24 133 in tok, 28.4 s |
 | 503 | 39 recorded, 340 duplicates, 315 264 in tok, 889 s | 21 bank writes, 26 577 in tok, 51.8 s |
 
+
+## Measured arms
+
+Two runs on the 12-chunk extended corpus, local writer, temp 0, judge blind and per-op
+(`dev/judge.ts` + `dev/rubric.md`; seeds 7 and 11; the writer is never the judge):
+
+| axis | baseline s7 / s11 | perDraft s7 / s11 |
+|---|---|---|
+| ops | 182 / 182 | 177 / 177 |
+| supported full / partial / unsupported | 138/44/0 · 124/48/0 | 133/44/0 · 130/47/0 |
+| durable / marginal / noise | 119/36/27 · 109/33/30 | 112/27/38 · 119/30/28 |
+| mean specificity | 2.79 / 2.61 | 2.81 / 2.76 |
+| missed durable facts | 102 / 100 | 100 / 93 |
+
+Zero unsupported writes in every pass. The seed-7 noise bump (+11) was disproven by seed 11
+(−2): noise seed variance on this axis (±10) dominates the arm difference. The row that
+shapes what comes next is the last: **the bank misses ~6 durable facts per chunk**, and the
+judge's misses concentrate on constraints and metrics stated inside tool output rather than in
+user turns. Coverage, not precision, is the failure mode. The earlier 5-chunk `baseline-remote`
+run agrees from the other side: 63 drafts produced **62 ADDs, 1 UPDATE, 0 DELETEs**, and 40 %
+of drafts found zero candidates at a 26-entry bank — a bank that can only grow, on a corpus
+that held few supersessions.
+
 ## Findings the first run produced
 
 1. **The model copies rendered labels, not ids.** Its first UPDATE targets were
@@ -493,15 +587,23 @@ Results and judge verdicts are in `RESULTS.md`.
 
 ## Not yet proven
 
-1. **Bank quality vs the incumbent's memory.** The PoC produces a bank; whether those
-   facts beat `qfn-coder-llamacpp`'s observations after 20 chunks needs the same judge
-   treatment the harness already applies.
-2. **UPDATE/DELETE behaviour at scale.** With 12 candidates shown, does the model still
-   pick the right target once the bank has hundreds of entries? Retrieval quality becomes
-   the limiting factor, not the model.
-3. **Retrieval is lexical.** `candidatesPerDraft()` uses token overlap. A real embedding index
-   (the upstream Hy-Memory harness uses one) would retrieve better; lexical is the honest
-   starting point for a local-first extension.
-4. **Compaction takeover at scale.** `dev/compact-test.py` exercises
+1. **Bank quality vs the incumbent's memory, end to end.** The arms above judge the bank the
+   writer produced; whether the compaction summary built from it beats
+   `qfn-coder-llamacpp`'s observations *in a real session* still needs the same judge
+   treatment applied to what the reader model actually sees.
+2. **DELETE never fires.** Across the 5-chunk baseline and both 12-chunk arms the model wrote
+   exactly one UPDATE per run and zero DELETEs: reconciliation in practice means "ADD a newer
+   statement", which the supersede chain absorbs. Whether that is the corpus (few
+   supersessions in a coding session) or the writer's bias at temperature 0 is unresolved.
+3. **Retrieval is lexical.** `candidatesPerDraft()` uses token overlap; a draft whose wording
+   does not share tokens with the entry that should be superseded retrieves nothing and
+   becomes an ADD. A real embedding index (the upstream Hy-Memory harness uses one) would
+   retrieve better; lexical is the honest starting point for a local-first extension.
+4. **Chunk size is unmeasured against the paper's training distribution.** Our chunks carry
+   the same number of turns (~10) but 13–24 k prompt tokens against the paper's 4 096-token
+   OPD budget, and their annotation study says extra context makes facts *less* specific.
+   A split-window arm is the experiment that decides whether `maxChunkTokens: 24000` should
+   come down.
+5. **Compaction takeover at scale.** `dev/compact-test.py` exercises
    `session_before_compact` in a real RPC session, but at n=1; sessions that compact
    repeatedly with a live bank are not yet measured.

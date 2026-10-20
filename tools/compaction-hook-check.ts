@@ -62,7 +62,6 @@ const extractRecord = {
 			task: "writer",
 			statement: "the writer model answers on the primary endpoint",
 			keys: ["writer"],
-			confidence: 1,
 			refs: [0],
 			sourceEntryIds: ["e-src-1"],
 		},

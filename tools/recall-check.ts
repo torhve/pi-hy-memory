@@ -75,7 +75,6 @@ const extractRecord = {
 			task: "llama-swap",
 			statement: "llama-swap serves the writer model locally at 127.0.0.1:8080",
 			keys: ["llama-swap"],
-			confidence: 1,
 			refs: [0],
 			sourceEntryIds: ["e-src-1"],
 		},

@@ -9,7 +9,6 @@
  */
 
 import { createHash } from "node:crypto";
-import { relevanceOf } from "./protocol.js";
 import { type BankEntry, type Draft, estimateTokens, type LedgerRecord, type ReconcileOp } from "./types.js";
 
 export function newId(seed: string): string {
@@ -28,8 +27,6 @@ export function entryFromDraft(
 		task: draft.task,
 		statement: draft.statement,
 		keys: draft.keys,
-		confidence: draft.confidence,
-		relevance: relevanceOf(draft.confidence, draft.refs.length),
 		sourceEntryIds: draft.refs.map((r) => refs[r]).filter(Boolean),
 		chunkId,
 		createdAt,
@@ -98,7 +95,7 @@ export function applyOps(
 
 /**
  * Pool budget. Deterministic, auditable, no model call:
- * keep high relevance first, then recency; supersede the rest.
+ * keep the newest facts that fit; supersede the rest.
  * Superseded entries stay in the ledger and stay recallable.
  */
 export function enforceBudget(bank: BankEntry[], maxTokens: number): { dropped: BankEntry[] } {
@@ -106,20 +103,11 @@ export function enforceBudget(bank: BankEntry[], maxTokens: number): { dropped: 
 	const total = active.reduce((sum, e) => sum + e.tokenCount, 0);
 	if (total <= maxTokens) return { dropped: [] };
 
-	// Rank, then keep what fits. The tie-break is recency, not insertion order:
-	// measured on session 01a14c10 the bank filled with 69 facts that are all
-	// relevance=high, confidence=1.0, so the ranking collapsed to a stable sort
-	// over insertion order and the *newest* facts were the ones dropped — the
-	// opposite of what a memory that tracks current state should do.
-	const rank = (e: BankEntry): number => {
-		const rel = e.relevance === "high" ? 3 : e.relevance === "medium" ? 2 : 1;
-		return rel * 1000 + e.confidence * 100;
-	};
-	const ordered = [...active].sort((a, b) => {
-		const byRank = rank(b) - rank(a);
-		if (byRank !== 0) return byRank;
-		return a.createdAt < b.createdAt ? 1 : a.createdAt > b.createdAt ? -1 : 0;
-	});
+	// Recency is the only rank, and it has to be explicit: a stable sort over
+	// insertion order dropped the *newest* facts — measured on session 01a14c10,
+	// four of them real implementation facts — the opposite of what a memory that
+	// tracks current state should do.
+	const ordered = [...active].sort((a, b) => (a.createdAt < b.createdAt ? 1 : a.createdAt > b.createdAt ? -1 : 0));
 
 	let kept = 0;
 	const keepIds = new Set<string>();
@@ -176,8 +164,6 @@ export function foldLedger(records: LedgerRecord[]): BankEntry[] {
 				task: draft.task,
 				statement: draft.statement,
 				keys: draft.keys,
-				confidence: draft.confidence,
-				relevance: relevanceOf(draft.confidence, draft.refs.length),
 				sourceEntryIds: draft.sourceEntryIds,
 				chunkId: record.chunkId,
 				createdAt: record.createdAt,

@@ -118,8 +118,7 @@ async function main(): Promise<void> {
 			`  in ${inTok} tok | out ${outTok} tok | wall ${wall.toFixed(1)}s (extract ${write.usage.extract.wallS.toFixed(1)}s, reconcile ${write.usage.reconcile.wallS.toFixed(1)}s)`,
 		);
 		console.log(`  bank active ${active} / total ${bank.length}`);
-		for (const entry of write.report.added)
-			console.log(`    + [${entry.id}] ${entry.relevance} ${entry.statement}`);
+		for (const entry of write.report.added) console.log(`    + [${entry.id}] ${entry.statement}`);
 		for (const { entry, target } of write.report.updated)
 			console.log(`    ~ [${entry.id}] <- ${target}: ${entry.statement}`);
 		for (const del of write.report.deleted) console.log(`    - [${del.target}] ${del.reason}`);

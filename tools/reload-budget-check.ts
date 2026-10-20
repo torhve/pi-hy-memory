@@ -36,7 +36,6 @@ const chunk = (seq: number, n: number, chars: number, task = "t"): LedgerRecord[
 		task,
 		statement: `fact ${seq}.${i} ${"x".repeat(chars)}`,
 		keys: ["k"],
-		confidence: 0.9,
 		refs: [1],
 		sourceEntryIds: [`entry-${seq}-${i}`],
 	}));

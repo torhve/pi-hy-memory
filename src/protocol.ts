@@ -3,7 +3,7 @@
  * The model proposes; code decides what enters the bank.
  */
 
-import type { BankEntry, Draft, ExtractResult, ReconcileOp, ReconcileResult, Relevance } from "./types.js";
+import type { BankEntry, Draft, ExtractResult, ReconcileOp, ReconcileResult } from "./types.js";
 import { isId } from "./types.js";
 
 const MAX_STATEMENT_CHARS = 420;
@@ -87,12 +87,6 @@ function normalizeKey(value: string): string {
 		.slice(0, 48);
 }
 
-export function relevanceOf(confidence: number, refCount: number): Relevance {
-	if (confidence >= 0.8 && refCount >= 1) return "high";
-	if (confidence >= 0.5) return "medium";
-	return "low";
-}
-
 export function parseDrafts(raw: string, sourceIds: string[]): ExtractResult {
 	const data = parseJsonObject(raw) as any;
 	const list = Array.isArray(data?.drafts) ? data.drafts : [];
@@ -120,11 +114,6 @@ export function parseDrafts(raw: string, sourceIds: string[]): ExtractResult {
 			rejected.push({ reason: "no valid source refs", draft: item });
 			continue;
 		}
-		const confidence = Math.max(0, Math.min(1, Number(item.confidence ?? 0.5)));
-		if (!Number.isFinite(confidence)) {
-			rejected.push({ reason: "confidence not a number", draft: item });
-			continue;
-		}
 		const task =
 			sanitizeStatement(String(item.task ?? ""), idSet).slice(0, MAX_TASK_CHARS) ||
 			statement.slice(0, MAX_TASK_CHARS);
@@ -140,7 +129,7 @@ export function parseDrafts(raw: string, sourceIds: string[]): ExtractResult {
 			.trim();
 		if (seen.has(dedupeKey)) continue;
 		seen.add(dedupeKey);
-		drafts.push({ task, statement, keys, confidence, refs: [...new Set(refs)] });
+		drafts.push({ task, statement, keys, refs: [...new Set(refs)] });
 	}
 	return { drafts, rejected };
 }
@@ -320,7 +309,6 @@ export function renderBankForReconcile(entries: BankEntry[]): string {
 	if (entries.length === 0) return "Existing bank entries: (none)";
 	return `Existing bank entries:\n${entries.map((e) => `<id>${e.id}</id> (${e.task}) ${e.statement}`).join("\n")}`;
 }
-
 export function renderDraftsForReconcile(drafts: Draft[], zeroCandidate?: Set<number>): string {
 	if (drafts.length === 0) return "New drafts: (none)";
 	return (
@@ -328,7 +316,7 @@ export function renderDraftsForReconcile(drafts: Draft[], zeroCandidate?: Set<nu
 		drafts
 			.map(
 				(d, i) =>
-					`${i}: (${d.task}) ${d.statement} [confidence ${d.confidence}]${zeroCandidate?.has(i) ? " [bank consulted: no matching entries]" : ""}`,
+					`${i}: (${d.task}) ${d.statement}${zeroCandidate?.has(i) ? " [bank consulted: no matching entries]" : ""}`,
 			)
 			.join("\n")
 	);

@@ -33,7 +33,6 @@ this file so two runs are comparable word-for-word.
       "bankAfter":  { "active": 56, "tokens": 4020 },
       "bankGrowthRatio": 0.028,         // (Δ bank tokens) / chunk tokens; the quantity the
                                         // upstream RL reward taxes (w_pen 0.3 against growth)
-      "confidence": [1.0, 1.0, 0.7],    // per accepted draft, pre-bank
       "usage": {
         "extract":   { "inTokens": 20113, "outTokens": 1420, "wallS": 231.5 },
         "reconcile": { "inTokens": 2400,  "outTokens": 210,  "wallS": 17.3 },
@@ -54,7 +53,6 @@ Ledger-only rows for chunks completed before a restart carry
 |---|---|---|
 | starved-draft share | Σ zeroCandidateDrafts ÷ Σ drafts | Tier-1 fix (≤ 10 %) |
 | op hygiene | Σ rejectedOps + downgradedOps + omittedDrafts ÷ drafts | Tier-1 must not regress |
-| confidence spread | share of drafts at exactly 1.0 | E1 (from > 95 % to ≤ 80 %) |
 | bank growth | mean bankGrowthRatio per chunk | E2 bloat guard, 4.1 |
 | cost | Σ extract.inTokens, Σ wall | cost model, remote vs local |
 | durable yield | judge output (1.4), joined by chunkId | every quality gate |

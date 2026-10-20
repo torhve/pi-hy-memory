@@ -23,7 +23,6 @@ const draftOf = (i: number) => ({
 	task: `task ${i}`,
 	statement: `statement number ${i} about something durable`,
 	keys: [`k${i}`],
-	confidence: 1,
 	refs: [i],
 	sourceEntryIds: [],
 });

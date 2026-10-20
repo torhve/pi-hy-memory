@@ -30,7 +30,6 @@ function main(): void {
 		const observations = entries.map((entry) => ({
 			id: entry.id,
 			content: entry.statement,
-			relevance: entry.relevance,
 			sourceEntryIds: entry.sourceEntryIds ?? [],
 			tokens: entry.tokenCount ?? Math.round(entry.statement.length / 4),
 		}));

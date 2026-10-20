@@ -6,8 +6,6 @@
  * mutating a live object. The model never sees ids that only exist in the ledger.
  */
 
-export type Relevance = "high" | "medium" | "low";
-
 export const ID_PATTERN = /^[a-f0-9]{12}$/;
 
 /** One durable statement in the bank. */
@@ -17,8 +15,6 @@ export type BankEntry = {
 	task: string;
 	statement: string;
 	keys: string[];
-	confidence: number;
-	relevance: Relevance;
 	/** Session entry ids this statement is grounded in. Provenance, not progress. */
 	sourceEntryIds: string[];
 	/** Capture/chunk this entry was written from. */
@@ -38,7 +34,6 @@ export type Draft = {
 	task: string;
 	statement: string;
 	keys: string[];
-	confidence: number;
 	/** Numeric refs as they appear in the serialized chunk, e.g. 7 -> [7]. */
 	refs: number[];
 };

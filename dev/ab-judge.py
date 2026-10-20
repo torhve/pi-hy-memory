@@ -103,7 +103,6 @@ def arm_hy(session_id):
             continue
         obs.append({
             "content": entry.get("statement", ""),
-            "relevance": "medium",
             "sourceEntryIds": entry.get("sourceEntryIds", []),
         })
     return obs, bank_path
@@ -133,13 +132,11 @@ def arm_blackhole(entries):
             continue
         active.append({
             "content": obs.get("content", ""),
-            "relevance": obs.get("relevance", "medium"),
             "sourceEntryIds": obs.get("sourceEntryIds", []),
         })
     for ref in reflections.values():
         active.append({
             "content": ref.get("content", ""),
-            "relevance": "high",
             "sourceEntryIds": ref.get("supportingObservationIds", []),
         })
     stats = {"recorded": len(observations), "dropped": len(dropped), "reflections": len(reflections)}

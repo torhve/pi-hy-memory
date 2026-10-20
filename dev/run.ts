@@ -304,7 +304,6 @@ async function main(): Promise<void> {
 			bankBefore: before,
 			bankAfter: after,
 			bankGrowthRatio: Number(((after.tokens - before.tokens) / capture.estimateChunkTokens).toFixed(3)),
-			confidence: write.drafts.map((d) => d.confidence),
 			usage: {
 				extract: write.usage.extract,
 				reconcile: write.usage.reconcile,
@@ -366,7 +365,6 @@ function summarize(
 		bankBefore: before,
 		bankAfter: after,
 		bankGrowthRatio: chunkTokens ? Number(((after.tokens - before.tokens) / chunkTokens).toFixed(3)) : null,
-		confidence: drafts.map((d) => d.confidence),
 		usage: {
 			extract: extract.usage,
 			reconcile: o.usage,

@@ -6,7 +6,7 @@
  * (the writer's exact input) and the write ops that chunk produced (ADD/UPDATE
  * statements, DELETE reasons, with old statements resolved from the bank state
  * the ledger fold held before the chunk). It never sees writer prompts,
- * confidences, keys or endpoints, and the writer model is rejected as judge.
+ * keys or endpoints, and the writer model is rejected as judge.
  *
  * Judge model: temperature 0; the rubric (dev/rubric.md) travels with every
  * call, so each chunk verdict is self-contained and reproducible.

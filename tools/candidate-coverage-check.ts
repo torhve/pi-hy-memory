@@ -24,8 +24,6 @@ const entry = (id: string, statement: string): BankEntry => ({
 	task: "t",
 	statement,
 	keys: [],
-	confidence: 1,
-	relevance: "high",
 	sourceEntryIds: [],
 	chunkId: "c0",
 	createdAt: "2026-01-01T00:00:00.000Z",
@@ -46,7 +44,6 @@ const drafts = Array.from({ length: 12 }, (_, i) => ({
 	task: `task ${i}`,
 	statement: `shared probe marker dossier ${words[(28 + i) % 10]}${28 + i} ledger`,
 	keys: [],
-	confidence: 1,
 	refs: [i],
 }));
 
@@ -78,7 +75,6 @@ const crowdedDrafts = Array.from({ length: 20 }, (_, i) => ({
 	task: `task ${i}`,
 	statement: `shared probe marker dossier ${words[(i % 5) * 7]}${(i % 5) * 7} ledger`,
 	keys: [],
-	confidence: 1,
 	refs: [i],
 }));
 const crowded = candidatesPerDraft(bank, crowdedDrafts, 8);
@@ -98,7 +94,7 @@ assert(
 // Zero-candidate drafts change nothing about the shown set.
 const noCandidate = candidatesPerDraft(
 	bank,
-	[{ task: "zz", statement: "unrelated zebra quantum sandwich", keys: [], confidence: 1, refs: [] }],
+	[{ task: "zz", statement: "unrelated zebra quantum sandwich", keys: [], refs: [] }],
 	8,
 );
 assert(selectShownPerDraft(noCandidate, 12).length === 0, "no candidates, nothing shown");

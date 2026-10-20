@@ -48,7 +48,6 @@ const drafts = {
 			task: "t",
 			statement: "a perfectly good durable fact that passes validation",
 			keys: ["k"],
-			confidence: 0.9,
 			refs: [0],
 		},
 	],

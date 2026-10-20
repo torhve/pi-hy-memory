@@ -24,13 +24,12 @@ Extract only what the chunk explicitly establishes:
 Do not infer. Do not speculate about intent. Do not restate the transcript.
 
 Return ONLY a JSON object. No prose, no code fence:
-{"drafts":[{"task":"short subject","statement":"one self-contained sentence","keys":["keyword","keyword"],"confidence":0.0,"refs":[7,9]}]}
+{"drafts":[{"task":"short subject","statement":"one self-contained sentence","keys":["keyword","keyword"],"refs":[7,9]}]}
 
 Rules:
 - "statement" must be readable without the transcript and must not quote source references.
 - One draft per distinct fact. Merge restatements of the same fact into one draft.
 - "refs" are the numeric source references of the lines the fact comes from.
-- "confidence" is how sure you are that the fact is explicitly established and still useful later: 1.0 explicit and durable, 0.0 uncertain.
 - Prefer few precise drafts over many partial ones. A draft that only restates a step of the transcript is not durable.
 - If nothing is durable, return {"drafts":[]}.`;
 
