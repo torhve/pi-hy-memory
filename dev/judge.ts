@@ -206,7 +206,7 @@ async function main(): Promise<void> {
 		...route,
 		temperature: 0,
 		maxTokens: 16000,
-		chatTemplateKwargs: { reasoning_effort: "no_think", thinking: false, enable_thinking: false },
+		chatTemplateKwargs: { reasoning_effort: "none", thinking: false, enable_thinking: false },
 	});
 	const verdicts: ChunkVerdict[] = [];
 	let totalOps = 0;

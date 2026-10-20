@@ -156,7 +156,7 @@ async function main(): Promise<void> {
 		apiKey: route.apiKey,
 		model: route.model,
 		maxTokens: 8000,
-		chatTemplateKwargs: { reasoning_effort: "no_think" },
+		chatTemplateKwargs: { reasoning_effort: "none" },
 		timeoutMs: 600_000,
 	});
 
@@ -225,7 +225,7 @@ async function main(): Promise<void> {
 		prefix.push(r);
 	}
 	console.log(
-		`run=${runId} model=${route.model} origin=${route.origin} temp=0 kwargs=no_think timeout=600s candidates=${renderMode} limit=${candidateLimit}`,
+		`run=${runId} model=${route.model} origin=${route.origin} temp=0 kwargs=none timeout=600s candidates=${renderMode} limit=${candidateLimit}`,
 	);
 	console.log(
 		`corpus=${corpus.length} chunks, ledger has ${doneChunk.size} complete, ${extractOf.size - doneChunk.size} resumable`,

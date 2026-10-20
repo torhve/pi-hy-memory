@@ -3,7 +3,7 @@
 Design + proof of concept. Reference architecture:
 [`pi-observational-memory`](https://github.com/elpapi42/pi-observational-memory) V3
 (sibling: [`pi-blackhole`](https://github.com/k0valik/pi-blackhole)). Model: `hy-memory-30b-a3b` on the local
-llama-swap (hybrid Q4_K_M, 131 072 ctx, `reasoning_effort=no_think`, `temp 0.0`).
+llama-swap (hybrid Q4_K_M, 131 072 ctx, `reasoning_effort=none`, `temp 0.0`).
 
 ## Thesis
 
@@ -93,7 +93,7 @@ replayed against the captured production payloads).
 turn_end
   ├─ due? raw source tokens since last hy.extract watermark ≥ observeAfterTokens
   ├─ serialize chunk      [Source entry id: 3334369c]  ->  [7]      (ids hidden from model)
-  ├─ 1) extract           chunk -> drafts JSON          (temp 0, no_think, no tools)
+  ├─ 1) extract           chunk -> drafts JSON          (temp 0, reasoning suppressed, no tools)
   ├─ retrieve             per draft: best bank entries by lexical overlap; shown set is
   │                        every draft's best match first, then round-robin, cap 12; a draft
   │                        with no match is marked "bank consulted: no matching entries"
@@ -265,7 +265,7 @@ was actually present in the chunk removed by exact match, bracketed numeric refs
 | model repeats the same batch | one call per chunk; repeats cannot happen. |
 | internal ids leak into memory text | the model never sees an id. |
 | 100+ observations per chunk flood the pool | reconcile is asked to *merge*, and `enforceBudget` caps the pool deterministically. |
-| chain-of-thought dumped into visible content | the writer asks pi's registry for the model and passes `samplingParams.chat_template_kwargs = {reasoning_effort: no_think}`, which pi-ai merges into the request body after the provider's own fields. No dependency on how a provider marks the model. |
+| chain-of-thought dumped into visible content | the writer asks pi's registry for the model and passes `samplingParams.chat_template_kwargs = {reasoning_effort: none}`, which pi-ai merges into the request body after the provider's own fields. No dependency on how a provider marks the model. |
 
 ## What happens when the bank fills
 

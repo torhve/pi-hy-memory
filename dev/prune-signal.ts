@@ -71,9 +71,10 @@ async function run(): Promise<void> {
 	// Evenly spaced sample across the whole bank (the newest facts would bias toward
 	// "keep", the oldest toward "closed"): separates "cannot judge" from "cannot scale".
 	const sample = Number(arg("--sample", "0"));
-	// llama.cpp style writers take `no_think`; the flash-next endpoint only accepts
+	// `none` is the value both engines accept: llama.cpp ignores a reasoning effort it does
+	// not recognise, the Strata engine answers 400 for one. The flash-next endpoint only accepts
 	// none/low/medium/high and rejects anything else with a 400.
-	const reasoning = arg("--reasoning", "no_think");
+	const reasoning = arg("--reasoning", "none");
 	const records = readFileSync(ledgerPath, "utf8")
 		.split("\n")
 		.filter(Boolean)

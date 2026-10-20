@@ -59,7 +59,7 @@ export interface WriterOptions {
 	maxTokens?: number;
 	/**
 	 * Merged into the request body last, so it can override named fields. This is
-	 * how llama.cpp's `chat_template_kwargs` (e.g. `{"reasoning_effort":"no_think"}`)
+	 * how llama.cpp's `chat_template_kwargs` (e.g. `{"reasoning_effort":"none"}` — llama.cpp ignores an unknown value, the Strata engine rejects one with 400)
 	 * reaches the server even though the provider marks the model as non-reasoning.
 	 */
 	samplingParams?: Record<string, unknown>;

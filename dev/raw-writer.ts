@@ -54,7 +54,7 @@ export function rawWriter(options: RawWriterOptions): Writer {
 			[compat ? "max_tokens" : "max_completion_tokens"]: options.maxTokens ?? 8000,
 		};
 		if (!compat && options.chatTemplateKwargs !== false) {
-			body.chat_template_kwargs = options.chatTemplateKwargs ?? { reasoning_effort: "no_think" };
+			body.chat_template_kwargs = options.chatTemplateKwargs ?? { reasoning_effort: "none" };
 		}
 		return { ...body, ...(options.extraBody ?? {}) };
 	};

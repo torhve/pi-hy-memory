@@ -89,7 +89,7 @@ nothing backs off between turns. The audit records `write_cooldown { waitS }` an
 | `model` | `hy-memory-30b-a3b` | writer model from **your pi model list**: `provider/modelId`, or a bare id |
 | `maxTokens` | `8000` | output cap per call |
 | `timeoutMs` | `480000` | total wall-clock cap per call; raise it for a CPU-offloaded writer |
-| `chatTemplateKwargs` | `false` | llama.cpp only: e.g. `{reasoning_effort:no_think}`. Omitted by default because other providers reject unknown fields |
+| `chatTemplateKwargs` | `false` | llama.cpp only: e.g. `{reasoning_effort:none}`. The accepted values are `none`, `low`, `medium`, `high` — llama.cpp ignores a value it does not recognise, the Strata engine answers **400** for one. Omitted by default because other providers reject unknown fields |
 | `extraBody` | `{}` | extra request fields, merged last (`samplingParams` in pi-ai terms) |
 | `fallback` | `false` | `{model, maxTokens?, timeoutMs?}` — a second model id, used when the primary is unavailable |
 | `fallbackCooldownS` | `300` | stay on the fallback this long after a failover (cleared only by a **primary** answer) |

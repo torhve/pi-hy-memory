@@ -166,7 +166,7 @@ async function main(): Promise<void> {
 		apiKey: route.apiKey,
 		model: route.model,
 		maxTokens: 8000,
-		chatTemplateKwargs: { reasoning_effort: "no_think" },
+		chatTemplateKwargs: { reasoning_effort: "none" },
 		timeoutMs: 600_000,
 	});
 	console.log(`route model=${route.model} target=${target} tok/window`);

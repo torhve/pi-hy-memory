@@ -65,7 +65,7 @@ async function main(): Promise<void> {
 		apiKey: process.env.POC_KEY,
 		model: process.env.POC_MODEL ?? "hy-memory-30b-a3b",
 		maxTokens: numArg("--max-tokens", 8000),
-		chatTemplateKwargs: { reasoning_effort: "no_think" },
+		chatTemplateKwargs: { reasoning_effort: "none" },
 	});
 
 	const files = readdirSync(CAPTURE_DIR)
@@ -81,7 +81,7 @@ async function main(): Promise<void> {
 	const bank: BankEntry[] = [];
 	const rows: string[] = [];
 
-	console.log(`model=${writer.model} origin=${origin} temp=0 kwargs=no_think`);
+	console.log(`model=${writer.model} origin=${origin} temp=0 kwargs=none`);
 	console.log(`captures=${files.length} pool=${pool} tokens\n`);
 
 	for (const file of files) {

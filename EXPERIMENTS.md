@@ -532,3 +532,32 @@ agreement gate measures the judge, not the writer.
 
 Failover is unchanged and still real: primary `remote/hy-memory-30b-a3b` (strata-poly) and
 fallback `hy-memory-30b-a3b` (llama.cpp hybrid) are different engines on different hardware.
+
+## Finding: `no_think` is not a reasoning effort (2026-10-21)
+
+`chatTemplateKwargs: {reasoning_effort: "no_think"}` was the value in the shipped config, the
+README and the dev harness. Probed against both profiles on the same box:
+
+| engine | `reasoning_effort: "no_think"` | `reasoning_effort: "none"` |
+|---|---|---|
+| strata-poly | **HTTP 400** — `unknown reasoning effort 'no_think': use none, low, medium or high` | 200 |
+| llama.cpp `b11583` | 200, **ignored** | 200 |
+
+`no_think` is a Qwen prompt directive, not a member of the `none / low / medium / high` enum. So
+it never did anything on llama.cpp — the writer's chat template has no `reasoning_effort`
+variable, and llama.cpp discards kwargs it does not know — and it is a hard client error on the
+Strata engine.
+
+That matters more than a wrong log line, for two reasons:
+
+- `isFailoverError` deliberately does **not** fail over on 400: a client-shaped rejection means
+  the request is wrong, not the model. A 400 writer call therefore fails, leaves the watermark
+  where it is, and retries the same broken request forever.
+- `dev/raw-writer.ts` has retried every 400 without `chat_template_kwargs` since 0.1.0. So every
+  dev measurement in this file ran with the kwarg dropped, and none of them ever measured the
+  reasoning suppression they thought they were measuring. Harmless for a non-reasoning writer,
+  but the harness hid a live failure.
+
+Fixed to `none` in the config, README, DESIGN, `src/llm.ts` and the dev harness. Left as a
+historical label only in `dev/export-judge.ts`, which describes what the captured payloads were
+sent with.
