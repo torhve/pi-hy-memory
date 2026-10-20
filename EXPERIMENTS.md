@@ -433,3 +433,36 @@ that particular server to stop thinking, and the answer budget being shared with
 The endpoint had already told us its vocabulary when an earlier call sent `no_think`:
 *"unknown reasoning effort 'no_think': use none, low, medium or high"* — pi's levels are
 `off, minimal, low, medium, high, xhigh, max`, and `off` is not a value that server accepts.
+
+### …and what fixed it (2026-10-21)
+
+Same session, same model. Two changes, in order, each measured separately.
+
+| arm | what the request said | stop | output tok | verdict | ids cited | sections |
+|---|---|---|---|---|---|---|
+| 4 | `enable_thinking: false` top level (`thinkingFormat: qwen`) | `length` | 2 000 | rejected | 0/64 | 0/6 |
+| 5 | `reasoning_effort: "none"` (`thinkingLevelMap.off`) | `length` | 2 000 | truncated | 34/64 | 5/6 |
+| 6 | `chat_template_kwargs.enable_thinking: false` (`qwen-chat-template`) | `length` | 2 000 | truncated | 38/64 | 6/6 |
+| 7 | arm 6 with 4 000 tokens | `length` | 4 000 | truncated | 49/64 | 6/6 |
+| 8 | arm 7 **plus the budget named in the prompt** | **`stop`** | **1 847** | **accepted** | 34/64 | 6/6 |
+| 9 | arm 8 at a 2 500-token cap | `stop` | 1 848 | accepted | 22/64 | 6/6 |
+
+Arm 4 is the interesting negative: `enable_thinking` is the *obvious* Qwen switch and this
+server ignored it. The two that worked speak two different dialects — an OpenAI-style
+`reasoning_effort` and a chat-template kwarg — and only one of them is what pi auto-detects.
+
+Arm 7 → 8 is the one that mattered. Raising the cap from 2 000 to 4 000 did not help: the model
+wrote 12 333 characters and stopped mid-line anyway, because nothing told it there was a limit.
+Naming the limit in the prompt — *"the whole checkpoint must fit inside about 4 000 tokens, and
+it must finish"* — made it stop by itself at 1 847 tokens, **less than half the cap**, with the
+same section coverage and no invented ids. Arm 9 shows the cap is a ceiling and not a target: at
+2 500 the answer was the same length.
+
+The accepted checkpoint (5 783 characters) is not a summary of a transcript. It carries the
+commit hashes, the mutation-test results ("mutation A → 6 fail"), the reason a refactor was
+skipped ("~8–9 props to remove 30–40 lines increases review surface"), and unfinished work
+marked blocked for a specific reason. That is the thing the render cannot write.
+
+Estimator note: 4 000 server output tokens corresponded to 1 441–3 078 tokens by `estimateTokens`
+(`chars / 4`) depending on arm. For markdown dense with hex ids and code identifiers the estimate
+under-counts by roughly 30 %, which matters for `hifiDeltaTokens` and `hifiTailTokens` too.

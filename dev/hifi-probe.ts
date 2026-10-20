@@ -79,11 +79,17 @@ const thinkingFormat = arg("--thinking-format", "");
 const offValue = arg("--off-value", "");
 const budgetField = arg("--thinking-budget-field", "");
 
-const facts = hifiFacts(bank, { lastSeq: 0, maxTokens: deltaTokens, estimate: estimateTokens });
+// A second boundary: `--previous` is the checkpoint the last one produced and `--last-seq`
+// the chunk it covered, so the facts offered here are exactly the ones that checkpoint
+// dropped — which is the self-healing claim, tested against a real model rather than a faux.
+const previousPath = arg("--previous", "");
+const previous = previousPath ? readFileSync(previousPath, "utf8") : "";
+const lastSeq = Number(arg("--last-seq", "0"));
+const facts = hifiFacts(bank, { lastSeq, previous, maxTokens: deltaTokens, estimate: estimateTokens });
 const tailEntries = selectTail(branch, tailTokens);
 const tail = tailEntries.map((e) => renderEntry(e, SETTING_DEFAULTS.maxEntryChars)).filter(Boolean);
 const files = fileOperations(branch);
-const prompt = buildHifiPrompt({ facts, tail: tail.join("\n"), files, budgetTokens: maxTokens });
+const prompt = buildHifiPrompt({ previous, facts, tail: tail.join("\n"), files, budgetTokens: maxTokens });
 
 const route = await resolveRoute(arg("--model", "hy-memory/hy-memory-30b-a3b"));
 const model: Model<any> = {
