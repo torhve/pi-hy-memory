@@ -25,7 +25,7 @@ gate.
       per chunk, generous per-call timeout (600 s, remote is slow), writing
       `out/<runId>/{bank.json, ledger.jsonl, raw/, metrics.json}`. Done when a run survives a
       mid-run kill and resumes without re-paying finished chunks.
-- [ ] 1.3 Define the metrics contract in `dev/metrics.md` and emit it from 1.2:
+- [x] 1.3 Define the metrics contract in `dev/metrics.md` and emit it from 1.2:
       drafts accepted/rejected + reasons; per-draft candidate coverage (drafts with 0 shown
       candidates); ADD/UPDATE/DELETE counts; rejected + downgraded ops; active bank
       count/tokens; bank-growth ratio (Δ bank tokens ÷ estimated chunk tokens); confidence
@@ -39,9 +39,9 @@ gate.
       (attempted vs verified preserved). `JUDGE_ORIGIN/JUDGE_MODEL/JUDGE_KEY` env; randomized
       order + seed; never the writer model as judge. Done when the baseline bank scores
       reproducibly across two seeds (same verdicts, score delta < 5 %).
-- [ ] 1.5 Run `baseline-<date>` on `captures-dev/` with the current `src/prompts.ts` and
+- [x] 1.5 Run `baseline-<date>` on `captures-dev/` with the current `src/prompts.ts` and
       current protocol; record aggregate numbers (no private text) in `EXPERIMENTS.md`.
-- [ ] 1.6 Optional speed/cost arm: rerun one chunk via the local llama-swap fallback route and
+- [x] 1.6 Optional speed/cost arm: rerun one chunk via the local llama-swap fallback route and
       record remote-vs-local wall and token cost for run planning.
 
 ### 2. Tier-1 protocol fixes (measured against the baseline)
