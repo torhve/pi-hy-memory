@@ -10,11 +10,17 @@
  *
  * The gate is stricter than the ordinary trigger on purpose. A turn would have
  * handled a 12 000-token window anyway; an idle drain is only for a backlog the
- * user is not about to pay off, and it must not fire on an unhealthy writer, a
- * held primary, a cooldown, or a session the user switched off.
+ * user is not about to pay off, and it must not fire over an in-flight write, a held
+ * primary, a cooldown, or a session the user switched off. A writer that has failed
+ * is probed, not vetoed: while a session stays quiet nothing else ever tries again.
  */
 
-import { IDLE_DRAIN_TRIGGER_FACTOR, type IdleDrainInput, shouldIdleDrain } from "../src/chain.js";
+import {
+	IDLE_DRAIN_TRIGGER_FACTOR,
+	IDLE_PROBE_MAX_FAILURES,
+	type IdleDrainInput,
+	shouldIdleDrain,
+} from "../src/chain.js";
 
 let failures = 0;
 const check = (name: string, actual: unknown, expected: unknown): void => {
@@ -66,7 +72,10 @@ check("/hy off stays silent", decide({ sessionActive: false }).reason, "session 
 // 4. Nothing may overlap a write or a writer that is already struggling.
 check("in-flight write blocks", decide({ inFlight: true }).reason, "write in flight");
 check("awaiting reconcile blocks", decide({ pendingExtract: true }).reason, "extract awaiting reconcile");
-check("unhealthy writer blocks", decide({ failures: 2 }).reason, "writer unhealthy");
+check("a failed writer is probed, not vetoed", decide({ failures: 2 }).reason, "idle with a large backlog");
+check("probe cap is small", IDLE_PROBE_MAX_FAILURES <= 3, true);
+check("past the probe cap it stops", decide({ failures: IDLE_PROBE_MAX_FAILURES + 1 }).reason, "writer unhealthy");
+check("a cooldown spaces the probes", decide({ failures: 2, coolingDown: true }).reason, "write cooling down");
 check("held primary blocks", decide({ primaryDown: true }).reason, "primary writer held");
 check("cooldown blocks", decide({ coolingDown: true }).reason, "write cooling down");
 check("nothing renderable blocks", decide({ entryCount: 0 }).reason, "nothing renderable");

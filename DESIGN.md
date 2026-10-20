@@ -156,9 +156,14 @@ ticking check that starts one write when the session has been quiet that long *a
 window is at least `IDLE_DRAIN_TRIGGER_FACTOR = 4` times `observeAfterTokens`. The factor is
 the whole design: a 12 000-token window is a backlog the next turn pays off anyway, and a
 timer that drains it spends writer time the user is not asking for. The gate reuses every
-chain guard — no in-flight write, no persisted extract awaiting its reconcile, `failures == 0`,
-no held primary, no cooldown, and never for a session switched off with `/hy off` — and the
-chain rule then decides whether to follow the drain, so an idle catch-up is bounded at three
+chain guard — no in-flight write, no persisted extract awaiting its reconcile, no held
+primary, no active cooldown, and never for a session switched off with `/hy off`. A writer
+that has failed is probed rather than vetoed, up to `IDLE_PROBE_MAX_FAILURES = 3` consecutive
+failures: the first live run of this feature parked session `01a15860` permanently after one
+write failed at 20:08:11Z (invalid JSON out of the writer) and it emitted no further events at
+all, because a veto on `failures` plus a session that never runs a turn means nothing ever
+tries again — the cooldown ladder is what protects a dead endpoint, not the veto.
+The chain rule then decides whether to follow the drain, so an idle catch-up is bounded at three
 writes per tick. The timer is `unref()`'d so it never holds a process open, and it is cleared
 on `session_shutdown`. (`tools/idle-drain-check.ts`)
 

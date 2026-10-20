@@ -64,6 +64,14 @@ export function shouldChainWrite(input: ChainInput): ChainDecision {
  */
 export const IDLE_DRAIN_TRIGGER_FACTOR = 4;
 
+/**
+ * How many consecutive write failures an idle session may still be probed through.
+ * The cooldown already spaces attempts out (30 s, doubling, capped at 10 min); this
+ * bounds the waste when the endpoint is simply gone. After that the session waits for
+ * a turn — which is also the only evidence that the user is back and wants the memory.
+ */
+export const IDLE_PROBE_MAX_FAILURES = 3;
+
 export type IdleDrainInput = {
 	enabled: boolean;
 	/** `/hy off` is remembered per session; an off session must stay silent. */
@@ -97,8 +105,8 @@ export type IdleDrainDecision = { drain: boolean; reason: string };
  *
  * The gate is deliberately stricter than the ordinary trigger: an idle drain is
  * for a backlog the user is not about to pay off themselves, so it needs
- * `IDLE_DRAIN_TRIGGER_FACTOR` times the trigger, a healthy writer, and no work
- * already in flight.
+ * `IDLE_DRAIN_TRIGGER_FACTOR` times the trigger, no work already in flight, and a
+ * writer no more than `IDLE_PROBE_MAX_FAILURES` failures into its cooldown ladder.
  */
 export function shouldIdleDrain(input: IdleDrainInput): IdleDrainDecision {
 	if (!input.enabled) return { drain: false, reason: "disabled" };
@@ -107,7 +115,10 @@ export function shouldIdleDrain(input: IdleDrainInput): IdleDrainDecision {
 	if (input.idleMs < input.idleAfterMs) return { drain: false, reason: "session not idle" };
 	if (input.inFlight) return { drain: false, reason: "write in flight" };
 	if (input.pendingExtract) return { drain: false, reason: "extract awaiting reconcile" };
-	if (input.failures > 0) return { drain: false, reason: "writer unhealthy" };
+	// A failed write must not park an idle session for good: while the session stays
+	// quiet nothing else ever tries again, so the cooldown is what protects a dead
+	// endpoint and an unhealthy writer gets a bounded number of probes instead.
+	if (input.failures > IDLE_PROBE_MAX_FAILURES) return { drain: false, reason: "writer unhealthy" };
 	if (input.primaryDown) return { drain: false, reason: "primary writer held" };
 	if (input.coolingDown) return { drain: false, reason: "write cooling down" };
 	if (input.entryCount === 0) return { drain: false, reason: "nothing renderable" };
