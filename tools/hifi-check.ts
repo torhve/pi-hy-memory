@@ -323,7 +323,7 @@ const compact = async (responses: Parameters<typeof faux.setResponses>[0], optio
 			signal: new AbortController().signal,
 		},
 		ctx,
-	)) as { compaction?: { summary: string } };
+	)) as { compaction?: { summary: string; details?: Record<string, unknown> } };
 };
 
 /** A checkpoint that cites the id the request actually offered, so attribution is real. */
@@ -361,6 +361,16 @@ const citing =
 		"the recall affordance is ours, not the model's",
 		(out?.compaction?.summary ?? "").includes("use the recall tool with an id"),
 		true,
+	);
+	check(
+		"the checkpoint is written by the session model, not the writer",
+		(out?.compaction?.details as any)?.summaryModel,
+		`${checkpointModel.provider}/${checkpointModel.id}`,
+	);
+	check(
+		"and the two models are named separately, not conflated",
+		(out?.compaction?.details as any)?.writerModel,
+		"test/writer",
 	);
 }
 

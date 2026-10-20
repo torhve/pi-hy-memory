@@ -1040,7 +1040,11 @@ export default function piHyMemory(pi: ExtensionAPI): void {
 				details: {
 					hyMemory: true,
 					facts: active.length,
-					model: config.model,
+					// Two different models, and a single "model" key here would misattribute
+					// one to the other: the writer extracts facts into the bank, and the
+					// checkpoint is always written by the model the session is running.
+					writerModel: config.model,
+					summaryModel: checkpoint && ctx.model ? `${ctx.model.provider}/${ctx.model.id}` : null,
 					hifi: checkpoint
 						? { idsKept: checkpoint.idsKept, idsGiven: checkpoint.idsGiven, ms: checkpoint.ms }
 						: undefined,
