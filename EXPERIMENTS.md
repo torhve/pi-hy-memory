@@ -65,6 +65,7 @@ Corpus run ≈ 18 min remote vs ≈ 4 min local (local also avoids per-call cost
 ## Judge
 
 `dev/judge.ts` + `dev/rubric.md`, blind per-op judging, op order shuffled per
-seed, judge model `remote/qwen3.6-35b-q4ks` (never the writer model), temp 0.
+seed, judge model local `qwen3.8-27b-q6` (never the writer model; the 35B MoE
+judges tried first crashed llama-swap's upstream), temp 0.
 
 - seeds 7 / 11 on `baseline-remote`: _pending_

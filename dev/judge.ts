@@ -163,7 +163,7 @@ async function main(): Promise<void> {
 		return fallback;
 	};
 	const runId = flag("run");
-	const judgeModel = process.env.JUDGE_MODEL ?? flag("model", "remote/qwen3.6-35b-q4ks");
+	const judgeModel = process.env.JUDGE_MODEL ?? flag("model", "qwen3.8-27b-q6");
 	if (judgeModel.includes("hy-memory")) {
 		throw new Error("the writer model may never judge its own writes");
 	}

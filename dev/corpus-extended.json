@@ -1,0 +1,17 @@
+{
+	"note": "Extended arm for Tier-1 gates: 12 chronological chunks from the dense session; bank grows to ~150+ active entries so the 12-entry shown cap actually bites.",
+	"chunks": [
+		{ "path": "01a1510e-f644-7470-9b40-f0b6ea29f8e6/hy-01a1510e-001.json", "category": "session start, planning" },
+		{ "path": "01a1510e-f644-7470-9b40-f0b6ea29f8e6/hy-01a1510e-002.json", "category": "dense implementation" },
+		{ "path": "01a1510e-f644-7470-9b40-f0b6ea29f8e6/hy-01a1510e-003.json", "category": "dense implementation" },
+		{ "path": "01a1510e-f644-7470-9b40-f0b6ea29f8e6/hy-01a1510e-005.json", "category": "dense implementation, wide window (120 entries)" },
+		{ "path": "01a1510e-f644-7470-9b40-f0b6ea29f8e6/hy-01a1510e-006.json", "category": "dense implementation, widest window (166 entries)" },
+		{ "path": "01a1510e-f644-7470-9b40-f0b6ea29f8e6/hy-01a1510e-007.json", "category": "dense implementation, many drafts" },
+		{ "path": "01a1510e-f644-7470-9b40-f0b6ea29f8e6/hy-01a1510e-011.json", "category": "long window (19.7k est tokens)" },
+		{ "path": "01a1510e-f644-7470-9b40-f0b6ea29f8e6/hy-01a1510e-012.json", "category": "follow-up work (baseline corpus chunk)" },
+		{ "path": "01a1510e-f644-7470-9b40-f0b6ea29f8e6/hy-01a1510e-014.json", "category": "dense implementation, low-draft (8)" },
+		{ "path": "01a1510e-f644-7470-9b40-f0b6ea29f8e6/hy-01a1510e-016.json", "category": "dense implementation, many-draft (22 drafts / 60 entries)" },
+		{ "path": "01a1510e-f644-7470-9b40-f0b6ea29f8e6/hy-01a1510e-017.json", "category": "dense implementation, wide window (162 entries)" },
+		{ "path": "01a1510e-f644-7470-9b40-f0b6ea29f8e6/hy-01a1510e-018.json", "category": "session late phase" }
+	]
+}
