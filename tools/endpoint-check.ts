@@ -45,7 +45,7 @@ const registry = (
 	options: { refreshAdds?: unknown[]; complete?: (opts: unknown) => unknown; fail?: string } = {},
 ) => {
 	let list = [...models];
-	const calls = { refresh: 0, complete: [] as unknown[] };
+	const calls = { refresh: 0, complete: [] as unknown[], contexts: [] as unknown[] };
 	const self = {
 		getAll: () => list,
 		async refresh() {
@@ -53,8 +53,9 @@ const registry = (
 			if (options.refreshAdds) list = [...list, ...options.refreshAdds];
 			return {};
 		},
-		async complete(_m: unknown, _c: unknown, opts: unknown) {
+		async complete(_m: unknown, c: unknown, opts: unknown) {
 			calls.complete.push(opts);
+			calls.contexts.push(c);
 			if (options.fail === "throw") throw new Error("HTTP 503 Service Unavailable");
 			if (options.fail) {
 				return {
@@ -173,6 +174,23 @@ check("5xx is failover-eligible", isFailoverError(rejectedError));
 // 7. Client-shaped errors are not retried on another model.
 check("a 400 is not failover", !isFailoverError(new WriterError("reconcile hy-004: HTTP 400 bad field", 400)));
 check("unparseable output is not failover", !isFailoverError(new WriterError("extract hy-005: Expected ',' or ']'")));
+
+// 8. The chunk reaches the registry exactly as the session holds it.
+//
+// The writer sends what the session contains. Nothing on the way out rewrites memory
+// text — not a control character, not a line an endpoint might dislike. Whatever a
+// server cannot cope with is the server's to fix, and it shows up in the audit as a
+// failure rather than behind a substitution the reader of the memory never sees.
+const verbatim = "progress 2/2 ────────\r done\nnext line\ttabbed";
+const plain = registry([model("llama-swap", "hy-memory-30b-a3b")]);
+await createWriter(plain.registry, { model: "llama-swap/hy-memory-30b-a3b" }).complete(
+	"system\r prompt",
+	verbatim,
+	"extract hy-006",
+);
+const sent = plain.calls.contexts[0] as { systemPrompt?: string; messages?: { content?: string }[] };
+check("the chunk is sent unchanged", sent.messages?.[0]?.content === verbatim);
+check("the system prompt is sent unchanged", sent.systemPrompt === "system\r prompt");
 
 console.log(failures === 0 ? "ok: writer (registry)" : `${failures} failure(s)`);
 process.exit(failures === 0 ? 0 : 1);
