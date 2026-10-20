@@ -553,6 +553,15 @@ ours:
 - **Never the writer model.** `ctx.model` — the executor's own model. The writer is forbidden
   from grading its own output, and a summary is grading.
 
+- **Reasoning is off for the checkpoint, and the model entry must say how.** Reasoning and the
+  answer share one output budget. Measured on a quantised Qwen build: inheriting the session's
+  thinking level produced 2 000 output tokens, one `thinking` block and no answer — repeatedly,
+  and again at 6 000. `hifiThinkingLevel` defaults to `off`, but pi only sends a reasoning field
+  when the model entry names the switch *that server* understands:
+  `compat.thinkingFormat: "qwen-chat-template"` (→ `chat_template_kwargs.enable_thinking: false`)
+  and `thinkingLevelMap: { off: "none" }` (→ `reasoning_effort: "none"`) both produced real
+  checkpoints; a top-level `enable_thinking: false` was ignored. `hifiMaxTokens` is 4 000 because
+  2 000 truncated a good 1 508-token answer.
 Off by default for the reason the feature exists: it puts a model call at the slowest moment in
 the session. It is the same cost class as vanilla pi, which makes exactly such a call, but it is
 not free the way the render is. `/hy-memory hifi` toggles it per session so the comparison can

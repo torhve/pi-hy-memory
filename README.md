@@ -80,7 +80,8 @@ nothing backs off between turns. The audit records `write_cooldown { waitS }` an
 | `candidateLimit` | `24` | bank entries shown to the reconcile call, and the per-draft retrieval depth. Was 12: measured on the extended corpus, 12 starved 2.2 % of drafts once the bank passed ~110 entries; 24 starves none for +24 % reconcile input tokens |
 | `candidateRenderMode` | `perDraft` | how the `candidateLimit` window is chosen: `perDraft` guarantees every draft its own best bank match before the cap fills; `union` shows the score-sorted union (legacy) |
 | `hifiCompaction` | `false` | ask the **session model** (never the writer) to write the compaction checkpoint — Goal / Constraints / Progress / Decisions / Next steps / Critical context — from the bank delta plus the kept tail. A truncated, section-less, or id-less answer is rejected and the render is used instead. Off by default: the render is free and cannot fail |
-| `hifiMaxTokens` | `2000` | output cap for the checkpoint |
+| `hifiMaxTokens` | `4000` | output cap for the checkpoint. Reasoning shares this cap with the answer: a 64-fact delta wrote 1 470–1 508 tokens of checkpoint and was still cut off at 2 000 |
+| `hifiThinkingLevel` | `off` | `"off"` asks the model not to think for the checkpoint, `"inherit"` uses the session's level. Off by default because a model that thinks at a checkpoint can spend the whole output budget without answering |
 | `hifiTailTokens` | `6000` | how much of the kept tail the checkpoint call may read as context |
 | `hifiDeltaTokens` | `6000` | how many tokens of facts it may read. Facts sent = newer than the last checkpoint, or user-stated, or dropped by the last checkpoint |
 | `hifiTimeoutMs` | `120000` | wall-clock cap for the checkpoint call; a timeout falls back to the render |
@@ -239,7 +240,7 @@ Progress, Key decisions, Next steps, Critical context), but built from the bank 
 kept tail rather than from the whole transcript:
 
 ```json
-{ "hifiCompaction": true, "hifiMaxTokens": 2000, "hifiTailTokens": 6000 }
+{ "hifiCompaction": true, "hifiMaxTokens": 4000, "hifiTailTokens": 6000 }
 ```
 
 or `/hy-memory hifi` to try it in the current session.
@@ -247,6 +248,21 @@ or `/hy-memory hifi` to try it in the current session.
 It is opt-in because it puts a model call at the slowest moment in a session. It is *not*
 slower than vanilla pi, which makes exactly such a call — it is slower than the render, which
 costs nothing and cannot fail.
+
+**A local reasoning model has to be told to stop thinking.** Measured on a quantised Qwen
+build over a 5 895-entry session: inheriting the session's thinking level returned 2 000 output
+tokens, one `thinking` block and no answer — three times, and again when the cap was raised to
+6 000. Reasoning and the answer share a single output budget, and pi only sends a reasoning
+field when the model entry says how *that server* switches reasoning off. So:
+
+- `hifiThinkingLevel` defaults to `off`: the checkpoint asks for no reasoning even when the
+  session is thinking deeply.
+- the model entry still has to name the switch. `compat.thinkingFormat: "qwen-chat-template"`
+  sends `chat_template_kwargs.enable_thinking: false` and worked — 6/6 sections, 38 of 64 ids
+  cited, no invented ids. `thinkingLevelMap: { "off": "none" }` sends `reasoning_effort: "none"`
+  and also worked (5/6 sections, 34/64). A top-level `enable_thinking: false`
+  (`compat.thinkingFormat: "qwen"`) was ignored by that server.
+- `hifiMaxTokens` is 4 000 because 2 000 truncated a good checkpoint at 1 508 tokens.
 
 What it guarantees:
 
@@ -258,13 +274,12 @@ What it guarantees:
   new, if the user stated it, or if the previous checkpoint dropped it.
 - **The writer model is never used.** The checkpoint is written by the executor's model; the
   writer is not allowed to grade its own output.
-
 `dev/hifi-probe.ts` runs one real checkpoint from a real session file and reports request size,
 wall time, ids kept and whether the answer would have been accepted:
 
 ```bash
 npx tsx dev/hifi-probe.ts --session ~/.pi/agent/sessions/<project>/<file>.jsonl \
-  --model qwen-flash-next/qwen3.8-flash-next-iq3_xxs --reasoning none
+  --model <provider>/<id> --reasoning off --thinking-format qwen-chat-template --max-tokens 4000
 ```
 ## Footer
 

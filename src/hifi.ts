@@ -133,6 +133,17 @@ export function withRecallNote(checkpoint: string): string {
 	return checkpoint.includes("recall tool") ? checkpoint : `${checkpoint.trim()}\n\n${HIFI_RECALL_NOTE}`;
 }
 
+/**
+ * The reasoning level the checkpoint call should use.
+ *
+ * Separate from the session's level on purpose: reasoning and the answer share one output
+ * budget, so a session that thinks deeply can spend the whole checkpoint budget thinking.
+ * "inherit" is there for a model where that is the point.
+ */
+export function hifiReasoning(level: "off" | "inherit", sessionLevel: string | undefined): string {
+	return level === "inherit" ? (sessionLevel ?? "off") : "off";
+}
+
 export interface HifiCallOptions {
 	model: Model<any>;
 	prompt: string;

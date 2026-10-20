@@ -18,6 +18,7 @@
 import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import type { SimpleStreamOptions } from "@earendil-works/pi-ai";
 import { fauxAssistantMessage, registerFauxProvider } from "@earendil-works/pi-ai/compat";
 
 const dir = mkdtempSync(join(tmpdir(), "hy-hifi-"));
@@ -35,7 +36,7 @@ writeFileSync(
 	}),
 );
 
-const { buildHifiPrompt, checkHifi, hifiFacts } = await import("../src/hifi.js");
+const { buildHifiPrompt, checkHifi, hifiFacts, hifiReasoning } = await import("../src/hifi.js");
 const { estimateTokens } = await import("../src/types.js");
 const { default: piHyMemory } = await import("../src/index.js");
 
@@ -274,11 +275,15 @@ const compact = async (responses: Parameters<typeof faux.setResponses>[0], optio
 };
 
 /** A checkpoint that cites the id the request actually offered, so attribution is real. */
-const citing = (body: (id: string) => string) => (context: { messages?: { content?: unknown }[] }) => {
-	const id = promptOf(context).match(/\[([0-9a-f]{12})\]/)?.[1] ?? "noid";
-	seen.push(promptOf(context));
-	return fauxAssistantMessage(body(id), { stopReason: "stop" });
-};
+const asked: { reasoning?: string }[] = [];
+const citing =
+	(body: (id: string) => string) =>
+	(context: { messages?: { content?: unknown }[] }, options?: SimpleStreamOptions) => {
+		const id = promptOf(context).match(/\[([0-9a-f]{12})\]/)?.[1] ?? "noid";
+		seen.push(promptOf(context));
+		asked.push({ reasoning: options?.reasoning });
+		return fauxAssistantMessage(body(id), { stopReason: "stop" });
+	};
 
 // 1. A good checkpoint replaces the render.
 {
@@ -297,6 +302,9 @@ const citing = (body: (id: string) => string) => (context: { messages?: { conten
 			.at(-1)?.idsKept,
 		1,
 	);
+	check("the checkpoint call does not think by default", asked.at(-1)?.reasoning, undefined);
+	check("and it can be told to inherit the session's level", hifiReasoning("inherit", "medium"), "medium");
+	check("with off as the floor", hifiReasoning("inherit", undefined), "off");
 	check(
 		"the recall affordance is ours, not the model's",
 		(out?.compaction?.summary ?? "").includes("use the recall tool with an id"),

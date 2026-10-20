@@ -38,7 +38,7 @@ import {
 } from "./entries.js";
 import { nextFailoverState } from "./failover.js";
 import { failureClass, shrinksChunk, writeCooldownMs } from "./failures.js";
-import { buildHifiPrompt, checkHifi, hifiFacts, hifiSummary, withRecallNote } from "./hifi.js";
+import { buildHifiPrompt, checkHifi, hifiFacts, hifiReasoning, hifiSummary, withRecallNote } from "./hifi.js";
 import { createWriter, type Writer } from "./llm.js";
 import { writeChunk } from "./pipeline.js";
 import { renderFileOperations, renderMemory, summaryBudget } from "./render.js";
@@ -936,7 +936,10 @@ export default function piHyMemory(pi: ExtensionAPI): void {
 					prompt: buildHifiPrompt({ previous: state.hifi?.text, facts, tail: tail.text, files }),
 					maxTokens: config.hifiMaxTokens,
 					timeoutMs: config.hifiTimeoutMs,
-					reasoning: ctx.thinkingLevel,
+					// Not the session's level by default: reasoning and the answer share one
+					// output budget, and a model that thinks at a checkpoint can spend it
+					// without producing one.
+					reasoning: hifiReasoning(config.hifiThinkingLevel, ctx.thinkingLevel),
 					signal: event.signal,
 				});
 				const verdict = checkHifi(answer.text, facts, answer.stopReason === "length", {

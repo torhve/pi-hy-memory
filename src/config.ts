@@ -31,8 +31,19 @@ export type HyConfig = {
 	 * model call at the slowest moment in the session.
 	 */
 	hifiCompaction: boolean;
-	/** Output cap for the checkpoint. */
+	/**
+	 * Output cap for the checkpoint. Measured: a 64-fact delta from a 408-fact bank wrote
+	 * 1 470–1 508 tokens of checkpoint and was still cut off at 2 000, so the old default
+	 * truncated a good answer. Reasoning shares this cap with the answer.
+	 */
 	hifiMaxTokens: number;
+	/**
+	 * Whether the checkpoint call thinks. "off" asks the model not to; "inherit" uses the
+	 * session's own level. "off" is the default because reasoning and the answer share one
+	 * output budget, and a model that thinks at a checkpoint spends it without answering —
+	 * measured three times on a local Qwen build before any fix was applied.
+	 */
+	hifiThinkingLevel: "off" | "inherit";
 	/** How much of the kept tail the model may read as context. */
 	hifiTailTokens: number;
 	/** How many tokens of new facts the model may read. */
@@ -104,7 +115,8 @@ export const SETTING_DEFAULTS: HyConfig = {
 	keepRecentTokens: 6000,
 	candidateLimit: 24,
 	hifiCompaction: false,
-	hifiMaxTokens: 2000,
+	hifiMaxTokens: 4000,
+	hifiThinkingLevel: "off",
 	hifiTailTokens: 6000,
 	hifiDeltaTokens: 6000,
 	hifiTimeoutMs: 120_000,
