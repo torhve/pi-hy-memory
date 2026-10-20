@@ -1,0 +1,12 @@
+[Unit]
+Description=llama-watchdog: SIGKILL wedged llama-server instances (llama-swap cold-starts on the next request)
+Documentation=https://github.com/ggml-org/llama.cpp/issues/27604
+
+[Service]
+Type=oneshot
+# Same user as llama-swap: pgrep must see the child processes and kill must be permitted.
+User=llamaswap
+Group=llamaswap
+ExecStart=/usr/local/bin/llama-watchdog.sh
+# Probe timeouts are bounded by LLAMA_WATCHDOG_PROBE_TIMEOUT; keep the unit well above it.
+TimeoutStartSec=120

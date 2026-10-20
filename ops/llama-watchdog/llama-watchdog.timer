@@ -1,0 +1,10 @@
+[Unit]
+Description=Probe every llama-server port's /health every 30s
+
+[Timer]
+OnBootSec=60s
+OnUnitActiveSec=30s
+AccuracySec=5s
+
+[Install]
+WantedBy=timers.target
