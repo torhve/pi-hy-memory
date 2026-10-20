@@ -9,7 +9,7 @@
  * candidates competing for fewer slots than drafts - a cap problem, not a
  * selection-order problem.
  *
- *   npx tsx dev/coverage-report.ts --run <runId> [--corpus dev/corpus-extended.json]
+ *   npx tsx dev/coverage-report.ts --run <runId> [--corpus dev/corpus-extended.json] [--candidate-limit 12]
  */
 
 import { readFileSync } from "node:fs";
@@ -18,12 +18,19 @@ import { foldLedger } from "../src/bank.js";
 import { candidatesPerDraft, selectShownPerDraft } from "../src/protocol.js";
 import type { BankEntry, Draft, LedgerRecord } from "../src/types.js";
 
-function coverage(bank: BankEntry[], drafts: { sourceEntryIds?: string[] }[], mode: "union" | "perDraft") {
-	const perDraft = candidatesPerDraft(bank, drafts as unknown as Draft[], 8);
+function coverage(
+	bank: BankEntry[],
+	drafts: { sourceEntryIds?: string[] }[],
+	mode: "union" | "perDraft",
+	limit: number,
+) {
+	const perDraft = candidatesPerDraft(bank, drafts as unknown as Draft[], limit);
 	const union = new Map<string, BankEntry>();
 	for (const list of perDraft.values()) for (const e of list) if (!union.has(e.id)) union.set(e.id, e);
 	const shown = new Set(
-		(mode === "perDraft" ? selectShownPerDraft(perDraft, 12) : [...union.values()].slice(0, 12)).map((e) => e.id),
+		(mode === "perDraft" ? selectShownPerDraft(perDraft, limit) : [...union.values()].slice(0, limit)).map(
+			(e) => e.id,
+		),
 	);
 	let starved = 0;
 	let none = 0;
@@ -47,6 +54,7 @@ function main(): void {
 	const runId = flag("--run", "");
 	if (!runId) throw new Error("--run <runId> required");
 	const corpusPath = flag("--corpus", "dev/corpus-extended.json");
+	const limit = Number(flag("--candidate-limit", "12"));
 	const corpus = JSON.parse(readFileSync(corpusPath, "utf8")) as { chunks: { path: string; category?: string }[] };
 	const captureIds = new Set(corpus.chunks.map((c) => c.path.split("/").pop()!.replace(".json", "")));
 
@@ -69,8 +77,8 @@ function main(): void {
 			const bankBefore = foldLedger(prefix);
 			const drafts = draftsOf.get(r.chunkId) ?? [];
 			if (drafts.length > 0) {
-				const u = coverage(bankBefore, drafts, "union");
-				const p = coverage(bankBefore, drafts, "perDraft");
+				const u = coverage(bankBefore, drafts, "union", limit);
+				const p = coverage(bankBefore, drafts, "perDraft", limit);
 				const active = bankBefore.filter((e) => e.status === "active").length;
 				const mark = captureIds.has(r.chunkId) ? "" : "  (not in corpus)";
 				console.log(
