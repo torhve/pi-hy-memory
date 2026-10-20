@@ -83,7 +83,7 @@ const facts = hifiFacts(bank, { lastSeq: 0, maxTokens: deltaTokens, estimate: es
 const tailEntries = selectTail(branch, tailTokens);
 const tail = tailEntries.map((e) => renderEntry(e, SETTING_DEFAULTS.maxEntryChars)).filter(Boolean);
 const files = fileOperations(branch);
-const prompt = buildHifiPrompt({ facts, tail: tail.join("\n"), files });
+const prompt = buildHifiPrompt({ facts, tail: tail.join("\n"), files, budgetTokens: maxTokens });
 
 const route = await resolveRoute(arg("--model", "hy-memory/hy-memory-30b-a3b"));
 const model: Model<any> = {

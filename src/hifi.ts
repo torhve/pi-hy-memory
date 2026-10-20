@@ -48,9 +48,28 @@ export interface HifiInput {
 	tail: string;
 	/** Deterministic file operations in the summarized range. */
 	files: { readFiles: string[]; modifiedFiles: string[] };
+	/**
+	 * The output cap the answer has to fit inside, said out loud. A model that is not told it
+	 * has a limit writes until the stream is cut: measured at 12 333 characters, stopping
+	 * mid-line in the last section, which discards the whole answer.
+	 */
+	budgetTokens?: number;
 }
 
 const line = (e: BankEntry): string => `[${e.id}] (${e.task}) ${e.statement}`;
+
+/**
+ * The length rule, stated with the actual number in it.
+ *
+ * pi's own prompt ends with "Keep each section concise" and gets a budget of 0.8 × its
+ * reserve tokens. A model handed neither writes until the stream is cut — measured at
+ * 12 333 characters, stopping mid-line in the last section — and a cut-off checkpoint is
+ * rejected, which throws away every fact it had correctly cited.
+ */
+const budgetRule = (budgetTokens: number | undefined): string =>
+	budgetTokens
+		? `\n- Keep each section concise. The whole checkpoint must fit inside about ${budgetTokens} tokens, and it must finish: an answer cut off mid-line is discarded, and every fact in it is discarded with it. Prefer fewer, denser lines over completeness.`
+		: "";
 
 /**
  * Build the request. Budgets are per part, and the parts are ordered so the cheapest, most
@@ -74,7 +93,7 @@ export function buildHifiPrompt(input: HifiInput): string {
 	}
 	const sections = HIFI_SECTIONS.map((s) => `## ${s}`).join("\n");
 	parts.push(
-		`Write the checkpoint with exactly these sections:\n\n${sections}\n\nRules:\n- Merge the new facts into the previous checkpoint instead of appending a second copy of the same state.\n- Progress: mark work finished, and keep unfinished work under Progress as unfinished. Do not invent completion.\n- Constraints & preferences: keep everything the user stated, verbatim where it matters.\n- Key decisions: keep the decision and its reason; drop the discussion that produced it.\n- Next steps: only steps the conversation actually commits to.\n- Critical context: gotchas, constraints, and exact identifiers a continuation would otherwise rediscover the hard way.\n- Cite a fact id on any line that comes from a fact. Do not invent ids.`,
+		`Write the checkpoint with exactly these sections:\n\n${sections}\n\nRules:\n- Merge the new facts into the previous checkpoint instead of appending a second copy of the same state.\n- Progress: mark work finished, and keep unfinished work under Progress as unfinished. Do not invent completion.\n- Constraints & preferences: keep everything the user stated, verbatim where it matters.\n- Key decisions: keep the decision and its reason; drop the discussion that produced it.\n- Next steps: only steps the conversation actually commits to.\n- Critical context: gotchas, constraints, and exact identifiers a continuation would otherwise rediscover the hard way.\n- Cite a fact id on any line that comes from a fact. Do not invent ids.${budgetRule(input.budgetTokens)}`,
 	);
 	return parts.join("\n\n");
 }

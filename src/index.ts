@@ -933,7 +933,13 @@ export default function piHyMemory(pi: ExtensionAPI): void {
 					model: ctx.model,
 					apiKey: auth.apiKey,
 					headers: auth.headers,
-					prompt: buildHifiPrompt({ previous: state.hifi?.text, facts, tail: tail.text, files }),
+					prompt: buildHifiPrompt({
+						previous: state.hifi?.text,
+						facts,
+						tail: tail.text,
+						files,
+						budgetTokens: config.hifiMaxTokens,
+					}),
 					maxTokens: config.hifiMaxTokens,
 					timeoutMs: config.hifiTimeoutMs,
 					// Not the session's level by default: reasoning and the answer share one

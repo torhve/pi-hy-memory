@@ -73,6 +73,7 @@ const prompt = buildHifiPrompt({
 	facts: [bank[1], bank[2]],
 	tail: "user: keep going\nassistant: done",
 	files: { readFiles: ["src/a.ts"], modifiedFiles: ["src/b.ts"] },
+	budgetTokens: 4000,
 });
 check("previous checkpoint is offered", prompt.includes("<previous-summary>\n## Goal\nold checkpoint"), true);
 check("new facts carry their ids", prompt.includes("[bbbb2222] (task-bbbb2222) fact bbbb2222 statement"), true);
@@ -86,6 +87,17 @@ check(
 	true,
 );
 check("ids are required, not suggested", prompt.includes("Do not invent ids."), true);
+check(
+	"the model is told its output budget, with the number in it",
+	prompt.includes("must fit inside about 4000 tokens"),
+	true,
+);
+check("and told that running out discards the answer", prompt.includes("cut off mid-line is discarded"), true);
+check(
+	"no budget, no invented limit",
+	buildHifiPrompt({ facts: [], tail: "", files: { readFiles: [], modifiedFiles: [] } }).includes("about"),
+	false,
+);
 check(
 	"no empty part leaves an empty tag",
 	buildHifiPrompt({ facts: [], tail: "", files: { readFiles: [], modifiedFiles: [] } }).includes(
