@@ -561,3 +561,7 @@ That matters more than a wrong log line, for two reasons:
 Fixed to `none` in the config, README, DESIGN, `src/llm.ts` and the dev harness. Left as a
 historical label only in `dev/export-judge.ts`, which describes what the captured payloads were
 sent with.
+
+Validated after the fix: the same chunk through strata-poly with `reasoning_effort: none` gave
+7 drafts, 0 rejected ops, 108.6 s — inside the 92–106 s spread above. Across five strata runs
+the draft counts are 6, 7, 7, 8, 7 (mean 7.0), which is the same mean llama.cpp produced.
