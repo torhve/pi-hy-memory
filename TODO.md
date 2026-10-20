@@ -22,7 +22,7 @@ gate.
       producing; flag any missing category and take it from another recent session state dir.
       Done when ≥ 3 capture files validate.
 - [x] 1.2 Write `dev/run.ts` (or extend `poc.ts`): corpus runner with named run ids, resumable
-      per chunk, generous per-call timeout (600 s, remote is slow), writing
+      per chunk, generous per-call timeout (600 s, the remote route is slow), writing
       `out/<runId>/{bank.json, ledger.jsonl, raw/, metrics.json}`. Done when a run survives a
       mid-run kill and resumes without re-paying finished chunks.
 - [x] 1.3 Define the metrics contract in `dev/metrics.md` and emit it from 1.2:

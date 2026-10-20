@@ -134,13 +134,20 @@ async function main(): Promise<void> {
 	// The store ceiling for this arm; the summary cap is the shipped default, since
 	// these captures are replayed as single chunks and compaction is not exercised.
 	const pool = numArg("--pool", 60000);
-	const modelSpec = process.env.POC_MODEL ?? "remote/hy-memory-30b-a3b";
+	// No default writer id: the id in a model list is an alias for a specific machine,
+	// and a committed default would name it. Set POC_MODEL to a provider/modelId from
+	// your own pi model list.
+	const modelSpec = process.env.POC_MODEL;
+	if (!modelSpec) {
+		console.error("POC_MODEL is required: a provider/modelId from your own pi model list.");
+		process.exit(1);
+	}
 	const renderMode = arg("--candidate-render-mode", "union") as "union" | "perDraft";
 	// Shown cap and per-draft retrieval depth are the same number in `writeChunk`
 	// (`candidateLimit`), so one flag moves both.
 	const candidateLimit = numArg("--candidate-limit", 12);
 	const route = process.env.POC_ORIGIN
-		? { origin: process.env.POC_ORIGIN, apiKey: process.env.POC_KEY, model: process.env.POC_MODEL ?? modelSpec }
+		? { origin: process.env.POC_ORIGIN, apiKey: process.env.POC_KEY, model: modelSpec }
 		: await resolveRoute(modelSpec);
 
 	if (process.argv.includes("--probe")) {

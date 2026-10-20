@@ -72,7 +72,7 @@ replayed against the captured production payloads).
 | V3 component | here | why |
 |---|---|---|
 | append-only ledger as source of truth (`om.observations.recorded` …) | `hy.extract`, `hy.ops` records | crash-safe, replayable, no live object to corrupt. |
-| `coversUpToId` progress watermark | same field on both record types, plus `hy.gap` when a compaction cut past it | decouples "what has been seen" from "what is provenance", and keeps a lost range visible instead of silently covered. |
+| `coversUpToId` progress watermark | same field on `hy.extract` / `hy.ops`, plus `hy.gap` for the window `/hy off` leaves unread — a compaction that would cut past the watermark defers instead (see *When it cannot be faithful*) | decouples "what has been seen" from "what is provenance", and keeps a lost range visible instead of silently covered. |
 | deterministic compaction fold + render, no model call | identical | this is V3's best idea: compaction becomes a string build. |
 | `recall` tool keyed by 12-hex id | identical | memory stays evidence-backed. |
 | supersede/tombstone semantics (drops never delete history) | `status: active \| superseded` + `supersedes` / `supersededBy` | the model's DELETE/UPDATE needs a non-destructive home. |
@@ -330,6 +330,17 @@ re-applied at the next write against whatever cap is current, and the ledger sta
 history of what the writer decided. `loadState` therefore re-applies `enforceBudget`
 straight after folding and audits `budget_reapplied`, so a reload cannot leave the bank,
 the footer bar or the summary above the current cap (`tools/reload-budget-check.ts`).
+
+**Durability has two copies, and a record type must exist in both.** Coverage is rebuilt on
+`session_start` from whichever ledger copy holds more records: the session's own custom entries
+(`ledgerFromSession`) or the mirror at `sessions/<id>.ledger.jsonl`. Both directions of lag are
+real — a write can finish after pi closed the session, so the mirror is the fallback, and records
+can reach the session without a later mirror, so the session copy is the one that overtakes.
+Anything that carries *coverage* therefore has to be written as a session entry as well as
+mirrored, because the copy that wins is the one that can hold write records. `hy.gap` was the one
+record type that was not, and a `/hy on` discard was undone by the next reload: 450 694 tokens
+discarded at 17:08 on `01a15860`, 428 612 pending again by 17:26, with the session copy holding
+55 records against the mirror's 46 (`tools/gap-reload-check.ts`).
 
 **The summary budget adds the real prefixes to the pool.** `enforceBudget` counts fact text (`tokenCount`);
 a rendered line adds `[id] (task) `, measured at +14.2 tokens per fact on a 91-fact
