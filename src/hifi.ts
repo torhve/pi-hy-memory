@@ -92,10 +92,26 @@ export interface HifiCheck {
  * refuses to persist one for the same reason — the part that fell off is usually the part that
  * said what to do next.
  */
-export function checkHifi(text: string, given: BankEntry[], truncated: boolean): HifiCheck {
+export function checkHifi(
+	text: string,
+	given: BankEntry[],
+	truncated: boolean,
+	options: { outputTokens?: number } = {},
+): HifiCheck {
 	const idsGiven = new Set(given.map((e) => e.id));
 	const idsKept = [...idsGiven].filter((id) => text.includes(`[${id}]`)).length;
-	if (!text.trim()) return { ok: false, reason: "empty answer", idsKept, idsGiven: idsGiven.size };
+	// "Empty" and "no text" are different failures and need different fixes. A model that
+	// answers nothing is a transport or prompt problem; a model that spends the entire
+	// output budget on reasoning and emits no answer is a budget problem, and it looks
+	// identical from the outside unless the token count is reported. Measured on
+	// qwen3.8-flash-next: 2 000 output tokens, stop "length", zero text blocks.
+	if (!text.trim()) {
+		const reason =
+			(options.outputTokens ?? 0) > 0
+				? `no text in the answer (${options.outputTokens} output tokens, all of it reasoning or tool calls)`
+				: "empty answer";
+		return { ok: false, reason, idsKept, idsGiven: idsGiven.size };
+	}
 	if (truncated) return { ok: false, reason: "answer was truncated", idsKept, idsGiven: idsGiven.size };
 	const missing = HIFI_SECTIONS.filter((s) => !text.includes(s));
 	if (missing.length > 0)
@@ -132,6 +148,8 @@ export interface HifiCallOptions {
 	 */
 	apiKey?: string;
 	headers?: Record<string, string | null>;
+	/** Diagnostic hook: the provider payload exactly as it is about to be sent. */
+	onPayload?: (payload: unknown) => void;
 }
 
 export interface HifiResult {
@@ -160,6 +178,7 @@ export async function hifiSummary(options: HifiCallOptions): Promise<HifiResult>
 				signal: controller.signal,
 				apiKey: options.apiKey,
 				headers: options.headers,
+				onPayload: options.onPayload,
 				reasoning: options.reasoning && options.reasoning !== "off" ? (options.reasoning as never) : undefined,
 			},
 		);

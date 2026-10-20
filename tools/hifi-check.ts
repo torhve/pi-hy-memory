@@ -161,6 +161,11 @@ check("and counts the ids it kept", checkHifi(good, bank, false).idsKept, 2);
 check("truncation is a failure", checkHifi(good, bank, true).reason, "answer was truncated");
 check("an empty answer is a failure", checkHifi("", bank, false).reason, "empty answer");
 check(
+	"but a budget eaten by reasoning is named as such",
+	checkHifi("", bank, true, { outputTokens: 2000 }).reason,
+	"no text in the answer (2000 output tokens, all of it reasoning or tool calls)",
+);
+check(
 	"invented structure is a failure",
 	checkHifi("## Goal\nonly this [cccc3333]", bank, false).reason,
 	"missing sections: Constraints & preferences, Progress, Key decisions, Next steps, Critical context",

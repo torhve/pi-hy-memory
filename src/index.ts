@@ -939,7 +939,9 @@ export default function piHyMemory(pi: ExtensionAPI): void {
 					reasoning: ctx.thinkingLevel,
 					signal: event.signal,
 				});
-				const verdict = checkHifi(answer.text, facts, answer.stopReason === "length");
+				const verdict = checkHifi(answer.text, facts, answer.stopReason === "length", {
+					outputTokens: answer.usage?.output ?? 0,
+				});
 				if (verdict.ok) {
 					checkpoint = {
 						text: answer.text,

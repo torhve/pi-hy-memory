@@ -87,8 +87,19 @@ console.log(
 );
 console.log(`request: ${estimateTokens(prompt)} input tokens (facts ${facts.length}, tail ${tail.length} lines)`);
 
-const result = await hifiSummary({ model, prompt, maxTokens, timeoutMs: 240_000, reasoning, apiKey: route.apiKey });
-const verdict = checkHifi(result.text, facts, result.stopReason === "length");
+const payload: Record<string, any> = {};
+const result = await hifiSummary({
+	model,
+	prompt,
+	maxTokens,
+	timeoutMs: 240_000,
+	reasoning,
+	apiKey: route.apiKey,
+	onPayload: (raw) => Object.assign(payload, raw as Record<string, any>),
+});
+const verdict = checkHifi(result.text, facts, result.stopReason === "length", {
+	outputTokens: result.usage?.output ?? 0,
+});
 
 const outDir = arg("--out", "out/hifi");
 mkdirSync(outDir, { recursive: true });
@@ -105,6 +116,16 @@ console.log(
 		`output ${result.usage?.output ?? 0} tokens, checkpoint ${estimateTokens(result.text)} tokens`,
 );
 console.log(`verdict: ${verdict.ok ? "accepted" : `REJECTED — ${verdict.reason}`}`);
+console.log(`thinking tokens: ${result.usage?.reasoning ?? "not reported"} of ${result.usage?.output ?? 0} output`);
+const body = (payload.body ?? payload) as Record<string, any>;
+console.log(
+	`payload reasoning fields: ${JSON.stringify({
+		reasoning_effort: body.reasoning_effort,
+		chat_template_kwargs: body.chat_template_kwargs,
+		enable_thinking: body.enable_thinking,
+		max_tokens: body.max_tokens,
+	})}`,
+);
 console.log(
 	`ids: ${verdict.idsKept}/${verdict.idsGiven} offered facts cited, ${cited.length} citations, ${invented.length} invented`,
 );
