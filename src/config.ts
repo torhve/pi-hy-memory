@@ -73,7 +73,7 @@ export const SETTING_DEFAULTS: HyConfig = {
 	maxEntryChars: 3000,
 	poolMaxTokens: 6000,
 	keepRecentTokens: 6000,
-	candidateLimit: 12,
+	candidateLimit: 24,
 	candidateRenderMode: "perDraft",
 	waitForWriteOnSettle: true,
 	model: "hy-memory-30b-a3b",

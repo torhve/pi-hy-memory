@@ -73,7 +73,7 @@ nothing backs off between turns. The audit records `write_cooldown { waitS }` an
 | `maxEntryChars` | `3000` | per-entry truncation inside a chunk, so one huge tool output cannot consume the whole budget |
 | `poolMaxTokens` | `6000` | cap on the *active* bank (the *second* footer bar); see DESIGN.md § "What happens when the bank fills". ~72 tokens per fact, and the rendered summary is ~1.2× the cap |
 | `keepRecentTokens` | `6000` | raw entries kept verbatim by a compaction. The cut is clamped back to the write watermark so nothing unread is dropped, but only by up to `maxChunkTokens`; past that the compaction is handed back to pi (see "Compaction: who decides when") |
-| `candidateLimit` | `12` | bank entries shown to the reconcile call |
+| `candidateLimit` | `24` | bank entries shown to the reconcile call, and the per-draft retrieval depth. Was 12: measured on the extended corpus, 12 starved 2.2 % of drafts once the bank passed ~110 entries; 24 starves none for +24 % reconcile input tokens |
 | `candidateRenderMode` | `perDraft` | how the `candidateLimit` window is chosen: `perDraft` guarantees every draft its own best bank match before the cap fills; `union` shows the score-sorted union (legacy) |
 | `model` | `hy-memory-30b-a3b` | writer model from **your pi model list**: `provider/modelId`, or a bare id |
 | `maxTokens` | `8000` | output cap per call |

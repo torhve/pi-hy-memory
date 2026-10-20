@@ -106,9 +106,9 @@ Corpus run ≈ 18 min remote vs ≈ 4 min local (local also avoids per-call cost
 seed, judge model local `qwen3.8-27b-q6` (never the writer model; the 35B MoE
 judges tried first crashed llama-swap's upstream), temp 0.
 
-Judge transport: judging must never evict the writer model from the taranis
+Judge transport: judging must never evict the writer model from the shared
 llama-swap (a shared-instance judge run was killed for exactly that). The
-standing judge route is now the separate tre machine's llama.cpp endpoint
+standing judge route is now a separate machine's llama.cpp endpoint
 (`qwen3.8-flash-next-iq3_xxs`, reasoning suppressed with `no_think`, 168k ctx)
 via `JUDGE_ORIGIN` / `JUDGE_KEY` / `JUDGE_MODEL`, taken from pi's own
 `models.json` at runtime. Judges and writer arms therefore run concurrently.
@@ -138,7 +138,7 @@ starved drafts 38/185 = 20.5 % → 4/179 = 2.2 %; the residual is pure cap
 arithmetic on chunk 016 (27 candidate-having drafts, 12 slots). Reconcile
 input tokens 35,527 → 33,201 (−6.5 %).
 
-Blind judge (tre `qwen3.8-flash-next-iq3_xxs`, seeds 7 and 11):
+Blind judge (remote `qwen3.8-flash-next-iq3_xxs`, seeds 7 and 11):
 
 | axis | baseline s7 / s11 | perDraft s7 / s11 |
 | --- | --- | --- |
@@ -180,10 +180,12 @@ less context produces *more specific* facts (two-chunk context: +25 % proper nou
 prompt tokens, i.e. 13–24 k stored tokens.
 
 Extract-only arm (`dev/split-chunk.ts`): the same capture extracted once whole, then
-split at entry boundaries into ~4 500-token windows. Route `hy-memory-30b-a3b` (local
-llama-swap), temp 0, `no_think`, current `src/prompts.ts` (post-`confidence`), per-window
-`maxTokens` 8 000. Reconcile is deliberately out of scope: this compares what the writer
-*saw*.
+split at entry boundaries into ~4 500-token windows. Route: whichever endpoint
+`resolveRoute("hy-memory-30b-a3b")` picks — the remote one, because both LAN writer hosts
+were down for this run; temp 0, `no_think`, current `src/prompts.ts` (post-`confidence`),
+per-window `maxTokens` 8 000. Both arms share the route, so the comparison holds; the
+absolute wall times are that route's, not the local instance's ~30 s/chunk. Reconcile is
+deliberately out of scope: this compares what the writer *saw*.
 
 | capture | entries | tokens | full facts | split facts | anchors/fact full→split | numbers/fact full→split | in tok full→split | wall full→split | full facts re-found |
 |---|---|---|---|---|---|---|---|---|---|
@@ -216,3 +218,40 @@ worse (PASS, −56 %).
 pending window is written as consecutive chunks, oldest entries first, drained by the
 existing chain (≤2 per turn) — no new mechanism. Not yet run end-to-end at 6 000 with
 reconcile, which is where narrower chunks could cost updates.
+
+## Run: candidate limit 12 vs 24 (`limit12` / `limit24`, 2026-10-20)
+
+Six-chunk subset of the extended corpus (`dev/corpus-limit.json`: 001, 011, 014, 016, 017,
+018 — the chunks with the largest banks, 016 being the 27-candidate case), same prompt
+(post-`confidence`), same route, temp 0, `no_think`, per-draft render, pool 12 000. Only
+`--candidate-limit` differs. No judge: the question is op mix and cost, both ledger facts.
+
+| axis | limit 12 | limit 24 |
+|---|---|---|
+| drafts | 86 | 86 |
+| ADD / UPDATE / DELETE / SKIP | 77 / 9 / 0 / 0 | 75 / 11 / 0 / 0 |
+| drafts with no candidate at all | 20 | 20 |
+| starved (candidates, none shown) | 0 | 0 |
+| rejected / downgraded ops | 0 / 6 | 0 / 7 |
+| reconcile input tokens | 16 777 | 20 766 (+24 %) |
+| extract input tokens | 108 765 | 108 765 |
+| wall, both calls | 206 s | 209 s |
+| bank after | 77 active / 5 979 tok | 75 active / 5 869 tok |
+
+Offline replay of the *full* 12-chunk ledger, which is where the cap actually binds (this
+subset starts from an empty bank, so 016 sees 30 entries instead of 109):
+
+| limit | perDraft starved | shown tokens/chunk |
+|---|---|---|
+| 12 | 4 (2.2 %) | 982 |
+| 16 | 1 (0.6 %) | 1 288 |
+| 24 | **0** | 1 746 |
+| 32 | 0 | 2 085 |
+
+Reading: the live arm shows the direction without the magnitude — +2 UPDATEs (9 → 11), a
+slightly smaller bank, and no wall-clock cost — because this subset never has enough
+candidates on screen for the cap to bite. The replay is what justifies 24: it removes the
+last starved drafts for ~770 extra shown tokens per chunk. `no-candidate` drafts do not move
+at any limit, because that is lexical retrieval finding nothing, not the cap.
+
+**Shipped**: `candidateLimit` 12 → **24**.

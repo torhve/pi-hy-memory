@@ -120,16 +120,20 @@ recall tool
 Two model calls per chunk. No turn budget, no completion signal, no third agent.
 
 **Every draft gets its own candidates.** The reconcile call is shown at most
-`candidateLimit` (12) bank entries, and the original selection was the score-sorted union of
-every draft's matches — so a draft whose matches fell outside the cap arrived blind and became
-an unconditional ADD. Measured on a 12-chunk extended corpus: **38 of 185 drafts (20.5 %)
+`candidateLimit` bank entries, and the original selection was the score-sorted union of every
+draft's matches — so a draft whose matches fell outside the cap arrived blind and became an
+unconditional ADD. Measured on a 12-chunk extended corpus: **38 of 185 drafts (20.5 %)
 starved**. `candidateRenderMode: "perDraft"` (the default) shows each draft's best match
 first, fills the remaining slots round-robin, and marks drafts with no match at all
 explicitly. Starved drafts 20.5 % → **2.2 %**, reconcile input tokens −6.5 %, and the blind
-judge found no regression (zero unsupported writes, noise inside seed variance). The residual
-is pure cap arithmetic: chunk 016 had 27 candidate-bearing drafts for 12 slots. `union`
-remains selectable. SKIP is in the vocabulary but dormant: the plumbing is verified by
-`tools/skip-op-check.ts`, and the model used it **zero times** in both arms at temperature 0.
+judge found no regression (zero unsupported writes, noise inside seed variance). What was
+left was pure cap arithmetic — chunk 016 had 27 candidate-bearing drafts for 12 slots — so
+`candidateLimit` is now **24**: replaying that ledger at 24 starves none (16 → 1, 24 → 0 of
+179) for ~770 more shown tokens per chunk (+24 % reconcile input), and a live 6-chunk A/B on
+the same prompt moved UPDATEs 9 → 11 with the bank slightly smaller (77/5 979 → 75/5 869
+tokens). `union` remains selectable. SKIP is in the vocabulary but dormant: the plumbing is
+verified by `tools/skip-op-check.ts`, and the model used it **zero times** in any arm at
+temperature 0.
 
 **A completed write may chain one more.** The trigger runs on `turn_end` and returns
 early while a write is in flight, so a chunk that landed mid-turn left its backlog waiting
@@ -486,8 +490,9 @@ The paper's chunk is "about ten turns" with a 4 096-token OPD prompt budget, and
 annotation study found *less* context produces more specific facts. Our captures carry the
 same number of turns but **13–24 k tokens**, so `maxChunkTokens: 24000` was the one setting
 outside the training distribution. Measured with `dev/split-chunk.ts` (extract-only arm, three
-captures, the same prompt and route: one whole chunk versus the same text split at entry
-boundaries into ~4 500-token windows):
+captures, the same prompt and route — the remote writer endpoint, both LAN instances being
+down that day — one whole chunk versus the same text split at entry boundaries into
+~4 500-token windows):
 
 | | full chunk | split windows |
 |---|---|---|
