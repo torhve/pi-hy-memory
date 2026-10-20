@@ -195,9 +195,11 @@ first inside each, never duplicated:
 | current state | everything else | the rest |
 
 Unused share spills forward, so a session with no user-stated facts still fills the summary.
-Lines are printed chronologically afterwards, so the newest fact is the last line the model
-reads, and the omission tail says how many were hidden (each is reachable with
-`hy_recall <id>`).
+Lines are printed under `## Current state` (younger than `foundationAfterChunks`) and then
+`## Earlier`, chronological inside each, so live state comes before history; the omission tail
+says how many were hidden (each is reachable with `hy_recall <id>`). A compaction also appends
+the `<read-files>` / `<modified-files>` block, derived from `read` / `write` / `edit` tool calls
+rather than from a model — the same lists pi's own summary carries.
 
 Why not recency alone: measured on the longest production session (32 chunks, 408 facts,
 29 357 tokens of bank), a newest-first 6 000-token summary kept 84 facts and the oldest was

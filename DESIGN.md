@@ -406,6 +406,12 @@ Shares are budgets, and unused budget spills forward, so a session with no user-
 still fills the summary. Admission is a bin-packing walk inside each slice (one long fact does
 not block three short ones), and the omission tail still reports the total.
 
+The *display* is a different split from the selection: facts are printed under `## Current
+state` (younger than `foundationAfterChunks`) and then `## Earlier`, chronological inside each,
+so the reader gets live state before history. A compaction also appends pi's deterministic
+`<read-files>` / `<modified-files>` block, computed from `read` / `write` / `edit` tool calls
+(bounded to 40 paths per list) out of the same budget.
+
 The measurement that justifies it is the one above: same 6 000-token cap, reach 7 → 20 chunks,
 122 facts instead of 84. Whether that is *better* is a judge question, not a count, and that
 gate has not run yet: the blind judge needs the LAN endpoint, which was down for this pass.
@@ -480,6 +486,65 @@ The pruner is age-based on file mtime, keys sessions by their `<sessionId>.<kind
 always keeps the running session plus the 10 newest — so a quiet week never deletes the bank a
 session is about to resume from. Measured motivation: 92 sessions, 1.2 MB, no cleanup, because
 the bank must be kept per session to stay a fold of the ledger.
+
+## What pi's own compaction does
+
+Worth reading before claiming to replace it (`pi-coding-agent/dist/core/compaction/`). It is
+not "summarise the history"; it is a checkpoint protocol.
+
+| part | pi |
+|---|---|
+| trigger | `contextTokens > contextWindow − reserveTokens` (reserve 16 384) |
+| cut | keep `keepRecentTokens` (20 000), walking back from the end and snapping to a turn boundary; a mid-turn cut summarises the turn prefix separately and appends it as `**Turn Context (split turn):**` |
+| call | one `completeSimple`, `maxTokens = min(0.8 × reserve, model max)` ≈ 13 107. System prompt: "You are a context summarization assistant … Do NOT continue the conversation." |
+| shape | seven fixed sections: **Goal, Constraints & Preferences, Progress (Done / In Progress / Blocked), Key Decisions, Next Steps, Critical Context**, with "preserve exact file paths, function names, and error messages" |
+| incrementality | with a previous summary present the call receives `<previous-summary>` plus only the new messages, under an update prompt: "PRESERVE all existing information … move In Progress → Done … if something is no longer relevant, you may remove it" |
+| deterministic extras | `<read-files>` / `<modified-files>` extracted from `read` / `write` / `edit` tool calls — no model involved |
+| input hygiene | conversation serialised to text, tool results truncated to 2 000 chars, **thinking omitted**, so the request cannot exceed the context it summarises |
+| failure policy | `finish_reason=length` is an error — a truncated summary is never persisted; a tool call in the answer is an error; retries via `retryAssistantCall`, `cacheRetention: "none"` |
+
+**Where pi is ahead, and we adopted it.** *Orientation*: Goal / In Progress / Next Steps /
+Blocked is what a continuation actually needs, and a list of facts does not say what the
+session is doing. So the render now labels age groups — `## Current state` then `## Earlier`,
+newest first, chronological inside each — and carries the same `<read-files>` /
+`<modified-files>` block, computed from the same tool calls, out of the summary budget rather
+than added on top of it. `fileOperations()` in `src/entries.ts` is a straight re-implementation
+because pi's extractor is internal to its compaction module.
+
+**Where we are ahead, and pi cannot follow without giving up its design.** *Fidelity*: every
+line carries a 12-hex id and a `hy_recall` path, so a summary claim is attributable and
+auditable; pi's prose is neither. *Conflict handling*: our bank supersedes (UPDATE / DELETE
+chains), so "when two lines conflict the later wins" is a structural fact; pi's "PRESERVE all
+existing information" is precisely how a summary accretes stale claims — the stale-state
+confusion failure we measure. *Cost*: no call at all, so a compaction can never fail, block, or
+bill. *Input*: pi re-reads the cut history (up to ~150 k tokens); we read the bank (29 k in the
+longest measured session).
+
+**What "better" would have to mean.** Not "more prose": the three arms have to be judged at a
+real boundary — pi's summary, our render, and a hi-fi summary — on the axes that fail first in
+long sessions: constraints from the first third, current state, and transitions. Expect pi to
+win orientation and lose transitions; anything we ship has to beat it on both.
+
+### Hi-fi compaction (opt-in, not built)
+
+The obvious use of the executor's remaining context, and the shape to build if the judge gate
+fails for the deterministic render:
+
+- **Sections from pi, material from the bank.** Goal / Constraints / Progress / Decisions /
+  Next Steps, with constraints and decisions taken from the user-grounded and superseded facts
+  instead of being rediscovered in 150 k tokens of transcript.
+- **Input is the delta, not the history**: previous hi-fi summary + facts written since the
+  last boundary + the kept tail. A few thousand tokens, cheaper than pi's own call.
+- **Attribution survives**: every id stays in the text, so a claim can be traced to a fact and
+  a fact to its source entries.
+- **Same failure rules as pi**: a length-truncated answer is a failure, and any error falls
+  back to the deterministic render (which is why the fallback exists).
+- **Never the writer model.** This is the executor's own model; the writer is forbidden from
+  grading its own output, and that rule does not change because the task got bigger.
+
+Opt-in reason: it reintroduces a model call at the slowest moment in the session. It is the
+same cost class as vanilla pi (which makes exactly such a call), but it is not free the way the
+render is — and the render stays the default until the judge says otherwise.
 
 ## Compaction threshold — what the incumbents do
 

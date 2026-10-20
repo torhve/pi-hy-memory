@@ -73,6 +73,49 @@ export function renderEntry(entry: SessionEntry, maxChars: number): string | und
 	return undefined;
 }
 
+/**
+ * File operations in a range of entries, extracted from tool calls — the reader's
+ * cheapest orientation cue, and one no model has to produce.
+ *
+ * pi computes the same two lists for its own summaries (`compaction/utils.ts`), from
+ * the same `read` / `write` / `edit` calls, and appends them as `<read-files>` /
+ * `<modified-files>` tags. Ours are derived here so the fact summary can carry them
+ * too: after a compaction the model knows which files were touched, without spending
+ * a token of summary budget on prose about it.
+ */
+export function fileOperations(entries: SessionEntry[]): { readFiles: string[]; modifiedFiles: string[] } {
+	const read = new Set<string>();
+	const written = new Set<string>();
+	const op = (name: unknown, args: unknown): void => {
+		const path = (args as { path?: unknown })?.path;
+		if (typeof path !== "string" || !path) return;
+		if (name === "read") read.add(path);
+		else if (name === "write" || name === "edit") written.add(path);
+	};
+	for (const entry of entries) {
+		if (!entry) continue;
+		// codemode records the calls on the script's result
+		if (entry.type === "message" && (entry.message as { role?: string })?.role === "toolResult") {
+			for (const call of (
+				entry.message as { nestedCalls?: { calls?: { name?: unknown; arguments?: unknown }[] } }
+			).nestedCalls?.calls ?? [])
+				op(call.name, call.arguments);
+			continue;
+		}
+		if (entry.type !== "message" || (entry.message as { role?: string })?.role !== "assistant") continue;
+		const content = (entry.message as { content?: unknown }).content;
+		if (!Array.isArray(content)) continue;
+		for (const block of content) {
+			if (block && typeof block === "object" && (block as { type?: unknown }).type === "toolCall") {
+				op((block as { name?: unknown }).name, (block as { arguments?: unknown }).arguments);
+			}
+		}
+	}
+	const modifiedFiles = [...written].sort();
+	const readFiles = [...read].filter((f) => !written.has(f)).sort();
+	return { readFiles, modifiedFiles };
+}
+
 export type ChunkBuild = SerializedChunk & { droppedEntries: number; chars: number };
 
 /** The message role an entry carries, for provenance (`user` is the durable class). */

@@ -21,7 +21,7 @@
  * the newest lines.
  */
 
-import { renderMemory, selectForSummary, summaryBudget } from "../src/render.js";
+import { renderFileOperations, renderMemory, selectForSummary, summaryBudget } from "../src/render.js";
 
 const estimate = (s: string): number => Math.max(1, Math.round(s.length / 4));
 
@@ -122,6 +122,8 @@ check("and it is counted as omitted", /1 more fact not shown/.test(skip), skip.m
 //     foundation compete for two slots; recency alone would keep the two newest and
 //     drop the foundation, which is the long-session failure (oldest kept: 7 chunks
 //     on the 32-chunk production session).
+const adjacent = (id: string, chunkSeq: number, createdAt: string) =>
+	({ ...(fact(id, 200, createdAt) as Record<string, unknown>), chunkSeq, fromUser: false }) as never;
 const old = (id: string, chunkSeq: number, fromUser: boolean, createdAt: string) =>
 	({ ...(fact(id, 200, createdAt) as Record<string, unknown>), chunkSeq, fromUser }) as never;
 const strat = [
@@ -180,6 +182,24 @@ check(
 	"while every fact stays active",
 	big.every((e: any) => e.status === "active"),
 );
+
+// (h) Age groups are labelled, and the file block is bounded.
+const groups = renderMemory(
+	[adjacent("old-fact", 1, "2026-01-01T00:00:00Z"), adjacent("new-fact", 99, "2026-01-01T00:10:00Z")],
+	overhead + 400,
+	{ foundationAfterChunks: 8 },
+);
+check("current state is labelled", groups.includes("## Current state"));
+check("earlier facts get their own section", groups.includes("## Earlier"));
+check("newest group comes first", groups.indexOf("## Current state") < groups.indexOf("## Earlier"));
+
+const files = renderFileOperations({
+	readFiles: Array.from({ length: 45 }, (_, i) => `src/read-${i}.ts`),
+	modifiedFiles: ["src/a.ts", "src/b.ts"],
+});
+check("file lists are bounded", files.includes("… 5 more"));
+check("modified files are listed", files.includes("<modified-files>\nsrc/a.ts"));
+check("empty lists render nothing", renderFileOperations({ readFiles: [], modifiedFiles: [] }) === "");
 
 console.log(failures === 0 ? "ok: render budget, admission, and stratified selection" : `${failures} failure(s)`);
 process.exit(failures === 0 ? 0 : 1);

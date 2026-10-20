@@ -29,6 +29,7 @@ import {
 	compactionBoundary,
 	coverageWindow,
 	entryTokens,
+	fileOperations,
 	renderEntry,
 	resumeAfterLostCursor,
 	serializeEntries,
@@ -38,7 +39,7 @@ import { nextFailoverState } from "./failover.js";
 import { failureClass, shrinksChunk, writeCooldownMs } from "./failures.js";
 import { createWriter, type Writer } from "./llm.js";
 import { writeChunk } from "./pipeline.js";
-import { renderMemory, summaryBudget } from "./render.js";
+import { renderFileOperations, renderMemory, summaryBudget } from "./render.js";
 import { pruneSessions } from "./state.js";
 import { createStatusBar } from "./status.js";
 import { type BankEntry, type Draft, estimateTokens, type LedgerRecord } from "./types.js";
@@ -851,12 +852,19 @@ export default function piHyMemory(pi: ExtensionAPI): void {
 			return undefined;
 		}
 
+		// File operations are deterministic and free (pi computes the same lists for its
+		// own summaries), and they orient a reader faster than prose about them. Their
+		// cost comes out of the summary budget rather than being added on top.
+		const files = fileOperations(entries);
+		const fileBlock = renderFileOperations(files);
+		const fileTokens = fileBlock ? estimateTokens(fileBlock) + 4 : 0;
 		const summary = renderMemory(
 			state.bank,
-			summaryBudget(config.summaryMaxTokens, state.bank),
+			Math.max(500, summaryBudget(config.summaryMaxTokens, state.bank) - fileTokens),
 			selection(state.bank),
 		);
 		if (!summary.trim()) return undefined;
+		const withFiles = fileBlock ? `${summary}\n\n${fileBlock}` : summary;
 
 		const firstKeptIndex = choice.firstKeptIndex;
 		// Prefer pi's count: ours renders unclipped text, which is the stored branch
@@ -872,17 +880,23 @@ export default function piHyMemory(pi: ExtensionAPI): void {
 			tokensBeforeEstimate: estimate,
 			keptEntries: entries.length - firstKeptIndex,
 			boundary: choice.boundary,
-			summaryTokens: estimateTokens(summary),
+			summaryTokens: estimateTokens(withFiles),
+			fileOps: { read: files.readFiles.length, modified: files.modifiedFiles.length },
 		});
 		mirror();
 		void ctx;
 		return {
 			compaction: {
-				summary,
+				summary: withFiles,
 				firstKeptEntryId: entries[firstKeptIndex]?.id ?? entries[entries.length - 1].id,
 				tokensBefore,
-				estimatedTokensAfter: estimateTokens(summary) + choice.used,
-				details: { hyMemory: true, facts: active.length, model: config.model },
+				estimatedTokensAfter: estimateTokens(withFiles) + choice.used,
+				details: {
+					hyMemory: true,
+					facts: active.length,
+					model: config.model,
+					...files,
+				},
 			},
 		};
 	});

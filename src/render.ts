@@ -16,13 +16,15 @@
 
 import type { BankEntry } from "./types.js";
 
-const HEADER = `These are the durable memories of this session, maintained continuously by the memory writer.
+const INTRO = `These are the durable memories of this session, maintained continuously by the memory writer.
 
-- Each line is one fact. When two lines conflict, the later one reflects the current state.
+- Each line is one fact. Sections are ordered newest first; inside a section the later line is the more recent state.
 - Work described as completed should not be redone unless the user asks to revisit it.
-- [id] references are exact: use the recall tool with that id to read the source evidence behind a fact.
+- [id] references are exact: use the recall tool with that id to read the source evidence behind a fact.`;
 
-## Facts`;
+/** Section labels; a bank with one age group shows only the first. */
+const CURRENT = "## Current state";
+const EARLIER = "## Earlier";
 
 /**
  * Budget for `renderMemory` given the summary cap.
@@ -88,8 +90,9 @@ export function selectForSummary(
 	// can exceed it.
 	// Ceil the fixed parts and the per-line cost: with rounding in both directions the
 	// rendered string could exceed `maxTokens` by a token or two (measured: 221/220).
-	const reserve = Math.ceil(TAIL(99).length / 4);
-	const budget = Math.max(1, maxTokens - Math.ceil(HEADER.length / 4) - reserve);
+	const reserve = Math.ceil(TAIL(99).length / 4) + 4;
+	const fixed = INTRO.length + CURRENT.length + EARLIER.length;
+	const budget = Math.max(1, maxTokens - Math.ceil(fixed / 4) - reserve);
 
 	const taken = new Set<string>();
 	const shown: BankEntry[] = [];
@@ -126,12 +129,34 @@ export function renderMemory(bank: BankEntry[], maxTokens = 4000, options: Selec
 	const active = bank.filter((e) => e.status === "active");
 	if (active.length === 0) return "";
 	const { shown, omitted } = selectForSummary(bank, maxTokens, options);
-	// Print chronologically, so the model reads the story in order and the newest
-	// fact is the last line it sees. Selection order above is only about who wins the
-	// budget.
-	const body = shown.map((entry) => `[${entry.id}] (${entry.task}) ${entry.statement}`).join("\n");
+	const horizon = options.foundationAfterChunks ?? 8;
+	const latest = active.reduce((max, e) => Math.max(max, e.chunkSeq ?? 0), 0);
+	// Two age groups, newest first, chronological inside each: the reader gets the
+	// live state before the history, and the "later line wins" rule still holds where
+	// a contradiction is possible — inside a group.
+	const chronological = shown
+		.slice()
+		.sort((a, b) => (a.createdAt < b.createdAt ? -1 : a.createdAt > b.createdAt ? 1 : 0));
+	const current = chronological.filter((e) => latest - (e.chunkSeq ?? 0) < horizon);
+	const earlier = chronological.filter((e) => latest - (e.chunkSeq ?? 0) >= horizon);
+	const line = (e: BankEntry): string => `[${e.id}] (${e.task}) ${e.statement}`;
+	const sections: string[] = [];
+	if (current.length > 0) sections.push(`${CURRENT}\n${current.map(line).join("\n")}`);
+	if (earlier.length > 0) sections.push(`${EARLIER}\n${earlier.map(line).join("\n")}`);
 	const tail = omitted > 0 ? TAIL(omitted) : "";
-	return `${HEADER}\n${body}${tail}`;
+	return `${INTRO}\n\n${sections.join("\n\n")}${tail}`;
+}
+
+/** `<read-files>` / `<modified-files>`, bounded, appended to a summary like pi does. */
+export function renderFileOperations(ops: { readFiles: string[]; modifiedFiles: string[] }, maxPerList = 40): string {
+	const fmt = (label: string, files: string[]): string => {
+		if (files.length === 0) return "";
+		const shown = files.slice(0, maxPerList);
+		const rest = files.length - shown.length;
+		return `<${label}>\n${shown.join("\n")}${rest > 0 ? `\n… ${rest} more` : ""}\n</${label}>`;
+	};
+	const parts = [fmt("read-files", ops.readFiles), fmt("modified-files", ops.modifiedFiles)].filter(Boolean);
+	return parts.join("\n\n");
 }
 
 export function supersededTrail(bank: BankEntry[]): string {
