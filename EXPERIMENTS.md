@@ -287,3 +287,38 @@ write time and this session predates the split (0 of 408 facts). The blind judge
 the older reach actually help the reader?) is pending — the judge endpoint was down.
 
 Gate as written: oldest kept moves 7 → 20+ chunks at an equal cap. PASS.
+
+## Diagnosis: why transitions misfire (2026-10-20)
+
+Offline over the 44 production session ledgers (1 588 drafts, 131 ops records). No model
+calls: every number here is a replay of what the writer actually did.
+
+**Q1 — is retrieval the bottleneck?** No. The key-exact scoring experiment (any draft key
+equal to an entry key → 1.0; a key appearing in the entry text → 0.75; ties to the newer
+entry) moved "a subject-matching candidate was shown" from 725/1 588 (45.7 %) to 730
+(46.0 %): 7 drafts gained a match, 2 lost one, 838 shown sets changed. Reverted — 100 % of
+drafts already carry model-emitted keys, and the old flat 0.5 lift was already enough. The
+real retrieval gap is lexical blindness: **28.5 % of drafts retrieve nothing at all**, which
+key scoring cannot fix.
+
+**Q2 — are our guards rejecting legitimate updates?** No, mostly. 133 updates were
+downgraded to ADD: 79 by the per-draft target guard ("target not retrieved for this draft")
+and 54 by `sameSubject`. Of the 54 auditable per-draft rejections, only **7 (13 %)** would
+have passed `sameSubject` — the other 47 were wrong-subject targets the model reached for
+while looking at a flat candidate list. The guards are doing their job. The exception is
+`sameSubject` itself: 8 of its 54 rejections hit a removal draft, which is the one class
+where "restate every part that is still true" cannot apply.
+
+**Q3 — so where do removal drafts end up?** 109 drafts mention a removal or obsolescence:
+
+| outcome | count |
+|---|---|
+| ADD, with a subject-matching candidate on screen | 59 |
+| downgraded UPDATE→ADD (8 sameSubject, 18 per-draft guard) | 26 |
+| UPDATE | 13 |
+| nothing retrieved | 9 |
+| omitted | 2 |
+
+The plumbing works; the model simply prefers ADD, and our own "the draft must restate every
+part of the candidate that is still true" rule gives it a reason to: a removal draft
+restates nothing. That is the hypothesis the prompt A/B below tests.

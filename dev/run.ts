@@ -32,6 +32,7 @@ import { writeChunk } from "../src/pipeline.js";
 import { candidatesPerDraft, selectShownPerDraft } from "../src/protocol.js";
 import { renderMemory } from "../src/render.js";
 import type { SerializedChunk } from "../src/serialize.js";
+import { rolesFromText } from "../src/serialize.js";
 import type { BankEntry, Draft, LedgerRecord } from "../src/types.js";
 import { rawWriter } from "./raw-writer.js";
 
@@ -237,7 +238,14 @@ async function main(): Promise<void> {
 			console.log(`skip ${chunkId} (already in ledger)`);
 			continue;
 		}
-		const chunk: SerializedChunk = { text: capture.text, refs: capture.refs, entryCount: capture.entryCount };
+		// Roles come back from the rendered prefixes, so `fromUser` (the summary's
+		// constraint slice) behaves in replay exactly as it does in production.
+		const chunk: SerializedChunk = {
+			text: capture.text,
+			refs: capture.refs,
+			entryCount: capture.entryCount,
+			roles: rolesFromText(capture.text),
+		};
 		const resumeRecord = extractOf.get(chunkId);
 		const before = bankStats(bank);
 		const started = Date.now();
