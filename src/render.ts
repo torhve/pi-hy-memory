@@ -53,6 +53,13 @@ export type SelectionOptions = {
 	constraintShare?: number;
 	/** Share of the budget reserved for old, never-superseded facts. */
 	foundationShare?: number;
+	/**
+	 * Charge the budget for the header and omission tail the render prints. True by
+	 * default: they are part of the summary, so they are part of its budget. A caller
+	 * that uses the *selection* without the render — hi-fi puts the chosen facts in its
+	 * own tags — sets it false rather than paying for text it never prints.
+	 */
+	reserveFixed?: boolean;
 };
 
 const newestFirst = (a: BankEntry, b: BankEntry): number =>
@@ -90,8 +97,12 @@ export function selectForSummary(
 	// can exceed it.
 	// Ceil the fixed parts and the per-line cost: with rounding in both directions the
 	// rendered string could exceed `maxTokens` by a token or two (measured: 221/220).
-	const reserve = Math.ceil(TAIL(99).length / 4) + 4;
-	const fixed = INTRO.length + CURRENT.length + EARLIER.length;
+	// `reserveFixed: false` is for a caller that uses the selection without the render:
+	// the header and the omission tail are part of *our* summary, so they are part of its
+	// budget, but a caller that puts the chosen facts somewhere else (the hi-fi request
+	// puts them in its own tags) should not pay for text it does not print.
+	const reserve = options.reserveFixed === false ? 0 : Math.ceil(TAIL(99).length / 4) + 4;
+	const fixed = options.reserveFixed === false ? 0 : INTRO.length + CURRENT.length + EARLIER.length;
 	const budget = Math.max(1, maxTokens - Math.ceil(fixed / 4) - reserve);
 
 	const taken = new Set<string>();

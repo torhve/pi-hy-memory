@@ -525,26 +525,38 @@ real boundary — pi's summary, our render, and a hi-fi summary — on the axes 
 long sessions: constraints from the first third, current state, and transitions. Expect pi to
 win orientation and lose transitions; anything we ship has to beat it on both.
 
-### Hi-fi compaction (opt-in, not built)
+### Hi-fi compaction (built, off by default)
 
-The obvious use of the executor's remaining context, and the shape to build if the judge gate
-fails for the deterministic render:
+`src/hifi.ts`, `hifiCompaction: false`. The shape is pi's checkpoint protocol; the material is
+ours:
 
-- **Sections from pi, material from the bank.** Goal / Constraints / Progress / Decisions /
-  Next Steps, with constraints and decisions taken from the user-grounded and superseded facts
-  instead of being rediscovered in 150 k tokens of transcript.
-- **Input is the delta, not the history**: previous hi-fi summary + facts written since the
-  last boundary + the kept tail. A few thousand tokens, cheaper than pi's own call.
-- **Attribution survives**: every id stays in the text, so a claim can be traced to a fact and
-  a fact to its source entries.
-- **Same failure rules as pi**: a length-truncated answer is a failure, and any error falls
-  back to the deterministic render (which is why the fallback exists).
-- **Never the writer model.** This is the executor's own model; the writer is forbidden from
-  grading its own output, and that rule does not change because the task got bigger.
+- **Sections from pi, material from the bank.** Goal / Constraints & preferences / Progress /
+  Key decisions / Next steps / Critical context. Constraints are not re-derived from the
+  transcript: every user-stated fact is re-offered at every boundary however old it is,
+  because a constraint that drops out of a checkpoint is a constraint the model breaks later.
+- **Input is a delta, not the history.** The previous checkpoint, the facts newer than it, the
+  kept tail (the *newest* entries that fit `hifiTailTokens` — `selectTail`, because a tail is
+  read for orientation and `serializeEntries` deliberately keeps the oldest for coverage
+  contiguity), and the file lists. Measured on a 6 110-entry session: a request of a few
+  thousand tokens against a branch of ~150 k.
+- **Self-healing delta.** A fact is sent if it is new, or user-stated, or *absent from the
+  previous checkpoint*. That third condition is what stops a weak summary from silently
+  deleting a fact for the rest of the session: the next boundary offers it again.
+- **Attribution survives.** The prompt requires an id on every line that came from a fact and
+  forbids inventing ids; `checkHifi` counts the ids that survived, and an answer that cites
+  none is rejected.
+- **pi's failure rules, then our fallback.** `stopReason: "length"`, a provider error, an empty
+  answer, a missing section, or no surviving id is a *failure*, not a shorter summary — the
+  audit records which (`hifi_ok` / `hifi_rejected` / `hifi_failed`) and the deterministic
+  render is used instead. `summaryKind` in the `compact` audit says which path produced the
+  persisted summary, so the two paths stay comparable in the same log.
+- **Never the writer model.** `ctx.model` — the executor's own model. The writer is forbidden
+  from grading its own output, and a summary is grading.
 
-Opt-in reason: it reintroduces a model call at the slowest moment in the session. It is the
-same cost class as vanilla pi (which makes exactly such a call), but it is not free the way the
-render is — and the render stays the default until the judge says otherwise.
+Off by default for the reason the feature exists: it puts a model call at the slowest moment in
+the session. It is the same cost class as vanilla pi, which makes exactly such a call, but it is
+not free the way the render is. `/hy-memory hifi` toggles it per session so the comparison can
+be made on real work rather than in the abstract.
 
 ## Compaction threshold — what the incumbents do
 

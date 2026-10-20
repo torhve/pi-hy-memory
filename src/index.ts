@@ -32,11 +32,13 @@ import {
 	fileOperations,
 	renderEntry,
 	resumeAfterLostCursor,
+	selectTail,
 	serializeEntries,
 	type Window,
 } from "./entries.js";
 import { nextFailoverState } from "./failover.js";
 import { failureClass, shrinksChunk, writeCooldownMs } from "./failures.js";
+import { buildHifiPrompt, checkHifi, hifiFacts, hifiSummary, withRecallNote } from "./hifi.js";
 import { createWriter, type Writer } from "./llm.js";
 import { writeChunk } from "./pipeline.js";
 import { renderFileOperations, renderMemory, summaryBudget } from "./render.js";
@@ -112,6 +114,12 @@ type SessionState = {
 	primaryDownUntil: number;
 	inFlight: boolean;
 	pending: Promise<void> | null;
+	/**
+	 * The last model-written checkpoint, and the chunk sequence it covered. The next
+	 * hi-fi call gets this text as `<previous-summary>` and only the facts newer than
+	 * `seq`, which is what keeps the request delta-sized instead of whole-bank.
+	 */
+	hifi?: { text: string; seq: number; at: string };
 	stats: {
 		writes: number;
 		drafts: number;
@@ -309,6 +317,10 @@ export default function piHyMemory(pi: ExtensionAPI): void {
 				`${base}.summary.md`,
 				`${renderMemory(state.bank, summaryBudget(config.summaryMaxTokens, state.bank), selection(state.bank))}\n`,
 			);
+			// The last checkpoint, so the next one is a delta rather than a full rewrite
+			// after a restart. Without this the self-healing delta still works, it just
+			// re-offers the whole bank once.
+			if (state.hifi) writeFileSync(`${base}.hifi.json`, JSON.stringify(state.hifi, null, 1));
 			writeFileSync(
 				`${base}.stats.json`,
 				JSON.stringify(
@@ -354,6 +366,17 @@ export default function piHyMemory(pi: ExtensionAPI): void {
 			});
 		}
 		const lastGap = [...effective].reverse().find((r) => r.type === "hy.gap");
+		// A checkpoint from before a restart is still the newest summary this session has.
+		let restoredHifi: SessionState["hifi"];
+		try {
+			const raw = JSON.parse(
+				readFileSync(join(SESSIONS_DIR, `${sessionId}.hifi.json`), "utf8"),
+			) as SessionState["hifi"];
+			if (raw && typeof raw.text === "string" && raw.text.trim() && typeof raw.seq === "number")
+				restoredHifi = raw;
+		} catch {
+			/* no checkpoint yet */
+		}
 		chained = 0;
 		const offForSession = isOffForSession(sessionId);
 		state = {
@@ -371,6 +394,7 @@ export default function piHyMemory(pi: ExtensionAPI): void {
 			primaryDownUntil: 0,
 			inFlight: false,
 			pending: null,
+			hifi: restoredHifi,
 			stats: {
 				writes: 0,
 				drafts: 0,
@@ -818,7 +842,7 @@ export default function piHyMemory(pi: ExtensionAPI): void {
 	 * the session ran. If the bank is empty, return nothing and let pi compact as
 	 * it normally would.
 	 */
-	pi.on("session_before_compact", (event, ctx) => {
+	pi.on("session_before_compact", async (event, ctx) => {
 		if (!config.enabled || !state) return undefined;
 		const active = state.bank.filter((e) => e.status === "active");
 		if (active.length === 0) return undefined;
@@ -852,21 +876,113 @@ export default function piHyMemory(pi: ExtensionAPI): void {
 			return undefined;
 		}
 
+		const firstKeptIndex = choice.firstKeptIndex;
+
 		// File operations are deterministic and free (pi computes the same lists for its
 		// own summaries), and they orient a reader faster than prose about them. Their
 		// cost comes out of the summary budget rather than being added on top.
 		const files = fileOperations(entries);
 		const fileBlock = renderFileOperations(files);
 		const fileTokens = fileBlock ? estimateTokens(fileBlock) + 4 : 0;
-		const summary = renderMemory(
+		const rendered = renderMemory(
 			state.bank,
 			Math.max(500, summaryBudget(config.summaryMaxTokens, state.bank) - fileTokens),
 			selection(state.bank),
 		);
-		if (!summary.trim()) return undefined;
-		const withFiles = fileBlock ? `${summary}\n\n${fileBlock}` : summary;
+		// The deterministic render is both the default and the fallback: hi-fi is an
+		// upgrade attempt, never a dependency.
+		const fallback = fileBlock ? `${rendered}\n\n${fileBlock}` : rendered;
+		if (!fallback.trim()) return undefined;
 
-		const firstKeptIndex = choice.firstKeptIndex;
+		/**
+		 * Hi-fi: ask the executor's own model for a checkpoint (goal, constraints,
+		 * progress, next steps) built from the bank delta plus the kept tail. Opt-in,
+		 * because it puts a model call at the slowest moment in the session; it is the
+		 * same cost class as vanilla pi, which makes such a call anyway.
+		 *
+		 * The writer model is never used here even if it is configured: the writer may
+		 * not grade its own output, and a summary is grading.
+		 */
+		let checkpoint: { text: string; idsKept: number; idsGiven: number; ms: number; usage?: unknown } | undefined;
+		if (config.hifiCompaction && ctx.model) {
+			const facts = hifiFacts(state.bank, {
+				lastSeq: state.hifi?.seq ?? 0,
+				previous: state.hifi?.text,
+				maxTokens: config.hifiDeltaTokens,
+				estimate: estimateTokens,
+				selection: {
+					foundationAfterChunks: config.foundationAfterChunks,
+					constraintShare: config.summaryConstraintShare,
+					foundationShare: config.summaryFoundationShare,
+				},
+			});
+			// The tail is read for orientation, so it is the *newest* entries that fit
+			// the budget — serializeEntries alone would keep the oldest of the range.
+			const tail = serializeEntries(selectTail(entries.slice(firstKeptIndex), config.hifiTailTokens), {
+				maxTokens: config.hifiTailTokens,
+				maxEntryChars: config.maxEntryChars,
+			});
+			const started = Date.now();
+			try {
+				// pi resolves auth for its own summarizer; an extension has to ask for
+				// the same resolution or a model keyed from the provider config fails
+				// at the provider with "No API key for provider".
+				const auth = await ctx.modelRegistry.getApiKeyAndHeaders(ctx.model);
+				if (!auth.ok) throw new Error(`hi-fi auth: ${auth.error}`);
+				const answer = await hifiSummary({
+					model: ctx.model,
+					apiKey: auth.apiKey,
+					headers: auth.headers,
+					prompt: buildHifiPrompt({ previous: state.hifi?.text, facts, tail: tail.text, files }),
+					maxTokens: config.hifiMaxTokens,
+					timeoutMs: config.hifiTimeoutMs,
+					reasoning: ctx.thinkingLevel,
+					signal: event.signal,
+				});
+				const verdict = checkHifi(answer.text, facts, answer.stopReason === "length");
+				if (verdict.ok) {
+					checkpoint = {
+						text: answer.text,
+						idsKept: verdict.idsKept,
+						idsGiven: verdict.idsGiven,
+						ms: answer.ms,
+						usage: answer.usage,
+					};
+					state.hifi = { text: answer.text, seq: state.chunkSeq, at: new Date().toISOString() };
+					audit("hifi_ok", {
+						sessionId: state.sessionId,
+						reason: event.reason,
+						model: `${ctx.model.provider}/${ctx.model.id}`,
+						factsSent: verdict.idsGiven,
+						idsKept: verdict.idsKept,
+						tokens: estimateTokens(answer.text),
+						outTokens: answer.usage?.output ?? 0,
+						ms: answer.ms,
+					});
+				} else {
+					audit("hifi_rejected", {
+						sessionId: state.sessionId,
+						reason: event.reason,
+						why: verdict.reason,
+						stopReason: answer.stopReason,
+						factsSent: verdict.idsGiven,
+						idsKept: verdict.idsKept,
+						ms: answer.ms,
+					});
+				}
+			} catch (error) {
+				audit("hifi_failed", {
+					sessionId: state.sessionId,
+					reason: event.reason,
+					error: error instanceof Error ? error.message : String(error),
+					ms: Date.now() - started,
+				});
+			}
+		}
+
+		// The checkpoint is the model's prose; the reminder that its ids are lookupable is
+		// ours to add, because a good checkpoint will not have written it itself.
+		const summary = checkpoint ? withRecallNote(checkpoint.text) : fallback;
 		// Prefer pi's count: ours renders unclipped text, which is the stored branch
 		// rather than the request pi builds.
 		const estimate = entries.reduce((sum, e) => sum + entryTokens(e), 0);
@@ -880,21 +996,26 @@ export default function piHyMemory(pi: ExtensionAPI): void {
 			tokensBeforeEstimate: estimate,
 			keptEntries: entries.length - firstKeptIndex,
 			boundary: choice.boundary,
-			summaryTokens: estimateTokens(withFiles),
+			summaryTokens: estimateTokens(summary),
+			summaryKind: checkpoint ? "hifi" : "render",
 			fileOps: { read: files.readFiles.length, modified: files.modifiedFiles.length },
 		});
 		mirror();
 		void ctx;
 		return {
 			compaction: {
-				summary: withFiles,
+				summary,
 				firstKeptEntryId: entries[firstKeptIndex]?.id ?? entries[entries.length - 1].id,
 				tokensBefore,
-				estimatedTokensAfter: estimateTokens(withFiles) + choice.used,
+				estimatedTokensAfter: estimateTokens(summary) + choice.used,
+				usage: checkpoint?.usage as never,
 				details: {
 					hyMemory: true,
 					facts: active.length,
 					model: config.model,
+					hifi: checkpoint
+						? { idsKept: checkpoint.idsKept, idsGiven: checkpoint.idsGiven, ms: checkpoint.ms }
+						: undefined,
 					...files,
 				},
 			},
@@ -1056,11 +1177,12 @@ export default function piHyMemory(pi: ExtensionAPI): void {
 
 	pi.registerCommand("hy", {
 		description:
-			"pi-hy-memory: [status] bank size and cost, [summary] the facts a compaction renders, [off] stop memory work for this session, [on] resume it",
+			"pi-hy-memory: [status] bank size and cost, [summary] the facts a compaction renders, [hifi] toggle the model-written checkpoint, [off] stop memory work for this session, [on] resume it",
 		getArgumentCompletions: (prefix) =>
 			[
 				{ value: "status", label: "status", description: "bank size, cost so far, session switch" },
 				{ value: "summary", label: "summary", description: "the facts a compaction would render" },
+				{ value: "hifi", label: "hifi", description: "toggle the model-written compaction checkpoint" },
 				{ value: "off", label: "off", description: "stop writing memory for this session (remembered)" },
 				{ value: "on", label: "on", description: "resume; the window accumulated while off is discarded" },
 			].filter((item) => item.value.startsWith(prefix.trim().toLowerCase())),
@@ -1125,6 +1247,24 @@ export default function piHyMemory(pi: ExtensionAPI): void {
 				pushStatus();
 				ctx.ui.notify(
 					`pi-hy-memory: on. Writing resumes from now; ${skipped?.entries ?? 0} entries (${skipped?.tokens ?? 0} tokens) that accumulated while off are not remembered.`,
+					"info",
+				);
+				return;
+			}
+
+			if (arg === "hifi") {
+				config.hifiCompaction = !config.hifiCompaction;
+				audit("hifi_toggled", {
+					sessionId: live.sessionId,
+					on: config.hifiCompaction,
+					model: ctx.model ? `${ctx.model.provider}/${ctx.model.id}` : undefined,
+				});
+				const last = live.hifi;
+				ctx.ui.notify(
+					`pi-hy-memory: hi-fi compaction ${config.hifiCompaction ? "on" : "off"} for this session. ` +
+						(config.hifiCompaction
+							? `The next compaction asks ${ctx.model ? `${ctx.model.provider}/${ctx.model.id}` : "the session model"} for a checkpoint and falls back to the render if it is unusable.${last ? ` Last checkpoint: ${estimateTokens(last.text)} tokens at ${last.at}.` : ""}`
+							: `Compactions render the bank again.${last ? ` Last checkpoint (${estimateTokens(last.text)} tokens at ${last.at}) stays in context until the next compaction.` : ""}`),
 					"info",
 				);
 				return;

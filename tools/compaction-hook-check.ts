@@ -101,8 +101,8 @@ const start = (sessionId: string, branch: unknown[]) => {
 	return ctx;
 };
 
-const compact = (ctx: unknown, branch: unknown[], firstKeptEntryId: string, tokensBefore: number) =>
-	(handlers.get("session_before_compact") as (e: unknown, c: unknown) => unknown)(
+const compact = async (ctx: unknown, branch: unknown[], firstKeptEntryId: string, tokensBefore: number) =>
+	(await (handlers.get("session_before_compact") as (e: unknown, c: unknown) => unknown)(
 		{
 			type: "session_before_compact",
 			reason: "threshold",
@@ -111,7 +111,7 @@ const compact = (ctx: unknown, branch: unknown[], firstKeptEntryId: string, toke
 			willRetry: false,
 		},
 		ctx,
-	) as { compaction: { firstKeptEntryId: string; tokensBefore: number } } | undefined;
+	)) as { compaction: { firstKeptEntryId: string; tokensBefore: number } } | undefined;
 
 const readAudit = (): Record<string, unknown>[] =>
 	readFileSync(join(process.env.PI_HY_MEMORY_STATE as string, "audit.ndjson"), "utf8")
@@ -145,7 +145,7 @@ check(
 	const branch = branchWith(400); // ~80 000 estimated tokens pending
 	const ctx = start(sessionId, branch);
 	const proposed = "p367"; // pi keeps its own ~6 000-token tail
-	const out = compact(ctx, branch, proposed, 98765);
+	const out = await compact(ctx, branch, proposed, 98765);
 	check("a shrinking window is not claimed", out, undefined);
 
 	const deferred = readAudit()
@@ -166,7 +166,7 @@ check(
 	const sessionId = "89abcdef";
 	const branch = branchWith(10); // ~2 000 tokens pending, under maxChunkTokens
 	const ctx = start(sessionId, branch);
-	const out = compact(ctx, branch, "p3", 4242);
+	const out = await compact(ctx, branch, "p3", 4242);
 	check("small backlog clamps to the watermark", out?.compaction.firstKeptEntryId, "e-src-1");
 	check(
 		"no gap for a small backlog",

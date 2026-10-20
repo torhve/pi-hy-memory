@@ -171,6 +171,29 @@ export function serializeEntries(
 	return { text, refs, roles, entryCount: kept.length, droppedEntries: dropped, chars: text.length };
 }
 
+/**
+ * The newest entries that fit a token budget — the opposite end of `serializeEntries`,
+ * which deliberately keeps the oldest for coverage contiguity.
+ *
+ * A compaction tail is read for orientation, not re-ingested, so the newest material is
+ * the useful material: it is what the model is about to act on. Walking backwards and
+ * stopping at the budget keeps that material whole and drops the oldest of the kept
+ * range instead.
+ */
+export function selectTail(entries: SessionEntry[], maxTokens: number): SessionEntry[] {
+	let used = 0;
+	let from = entries.length;
+	for (let i = entries.length - 1; i >= 0; i--) {
+		const entry = entries[i];
+		if (!entry?.id) continue;
+		const tokens = entryTokens(entry);
+		if (used + tokens > maxTokens && from < entries.length) break;
+		used += tokens;
+		from = i;
+	}
+	return entries.slice(from);
+}
+
 export type CompactionBoundary = {
 	firstKeptIndex: number;
 	used: number;

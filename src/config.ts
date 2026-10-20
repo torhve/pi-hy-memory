@@ -25,6 +25,20 @@ export type HyConfig = {
 	summaryFoundationShare: number;
 	keepRecentTokens: number;
 	candidateLimit: number;
+	/**
+	 * Ask the executor's own model to write the compaction checkpoint instead of rendering
+	 * the bank. Off by default: the render is free and cannot fail, and this reintroduces a
+	 * model call at the slowest moment in the session.
+	 */
+	hifiCompaction: boolean;
+	/** Output cap for the checkpoint. */
+	hifiMaxTokens: number;
+	/** How much of the kept tail the model may read as context. */
+	hifiTailTokens: number;
+	/** How many tokens of new facts the model may read. */
+	hifiDeltaTokens: number;
+	/** Wall-clock cap for the checkpoint call. */
+	hifiTimeoutMs: number;
 	candidateRenderMode: "union" | "perDraft";
 	waitForWriteOnSettle: boolean;
 	/** Upper bound on how long session_shutdown waits for an in-flight write. */
@@ -89,6 +103,11 @@ export const SETTING_DEFAULTS: HyConfig = {
 	summaryFoundationShare: 0.35,
 	keepRecentTokens: 6000,
 	candidateLimit: 24,
+	hifiCompaction: false,
+	hifiMaxTokens: 2000,
+	hifiTailTokens: 6000,
+	hifiDeltaTokens: 6000,
+	hifiTimeoutMs: 120_000,
 	candidateRenderMode: "perDraft",
 	waitForWriteOnSettle: true,
 	model: "hy-memory-30b-a3b",

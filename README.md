@@ -79,6 +79,11 @@ nothing backs off between turns. The audit records `write_cooldown { waitS }` an
 | `keepRecentTokens` | `6000` | raw entries kept verbatim by a compaction. The cut is clamped back to the write watermark so nothing unread is dropped, but only by up to `maxChunkTokens`; past that the compaction is handed back to pi (see "Compaction: who decides when") |
 | `candidateLimit` | `24` | bank entries shown to the reconcile call, and the per-draft retrieval depth. Was 12: measured on the extended corpus, 12 starved 2.2 % of drafts once the bank passed ~110 entries; 24 starves none for +24 % reconcile input tokens |
 | `candidateRenderMode` | `perDraft` | how the `candidateLimit` window is chosen: `perDraft` guarantees every draft its own best bank match before the cap fills; `union` shows the score-sorted union (legacy) |
+| `hifiCompaction` | `false` | ask the **session model** (never the writer) to write the compaction checkpoint — Goal / Constraints / Progress / Decisions / Next steps / Critical context — from the bank delta plus the kept tail. A truncated, section-less, or id-less answer is rejected and the render is used instead. Off by default: the render is free and cannot fail |
+| `hifiMaxTokens` | `2000` | output cap for the checkpoint |
+| `hifiTailTokens` | `6000` | how much of the kept tail the checkpoint call may read as context |
+| `hifiDeltaTokens` | `6000` | how many tokens of facts it may read. Facts sent = newer than the last checkpoint, or user-stated, or dropped by the last checkpoint |
+| `hifiTimeoutMs` | `120000` | wall-clock cap for the checkpoint call; a timeout falls back to the render |
 | `model` | `hy-memory-30b-a3b` | writer model from **your pi model list**: `provider/modelId`, or a bare id |
 | `maxTokens` | `8000` | output cap per call |
 | `timeoutMs` | `480000` | total wall-clock cap per call; raise it for a CPU-offloaded writer |
@@ -226,6 +231,41 @@ The summary cap is only meaningful next to the session model's window:
 
 The cap is per session, not per model, so a config used across models should be sized
 for the *smallest* window you actually run, or split per project.
+### Optional: the model-written checkpoint
+
+`hifiCompaction` replaces the rendered fact list with a checkpoint written by the **session
+model** — the same sections pi's own compaction produces (Goal, Constraints & preferences,
+Progress, Key decisions, Next steps, Critical context), but built from the bank delta plus the
+kept tail rather than from the whole transcript:
+
+```json
+{ "hifiCompaction": true, "hifiMaxTokens": 2000, "hifiTailTokens": 6000 }
+```
+
+or `/hy-memory hifi` to try it in the current session.
+
+It is opt-in because it puts a model call at the slowest moment in a session. It is *not*
+slower than vanilla pi, which makes exactly such a call — it is slower than the render, which
+costs nothing and cannot fail.
+
+What it guarantees:
+
+- **It never replaces the render with something worse.** A truncated answer, a provider error, a
+  missing section, or an answer that cites no fact id is rejected and the rendered bank is
+  persisted instead. The audit says which happened (`hifi_ok`, `hifi_rejected`, `hifi_failed`)
+  and every `compact` record carries `summaryKind: "hifi" | "render"`.
+- **Facts are not lost by being forgotten.** A fact is re-offered at the next boundary if it is
+  new, if the user stated it, or if the previous checkpoint dropped it.
+- **The writer model is never used.** The checkpoint is written by the executor's model; the
+  writer is not allowed to grade its own output.
+
+`dev/hifi-probe.ts` runs one real checkpoint from a real session file and reports request size,
+wall time, ids kept and whether the answer would have been accepted:
+
+```bash
+npx tsx dev/hifi-probe.ts --session ~/.pi/agent/sessions/<project>/<file>.jsonl \
+  --model qwen-flash-next/qwen3.8-flash-next-iq3_xxs --reasoning none
+```
 ## Footer
 
 ```
