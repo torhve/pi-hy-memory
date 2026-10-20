@@ -31,7 +31,7 @@ gate.
       count/tokens; bank-growth ratio (Δ bank tokens ÷ estimated chunk tokens); confidence
       distribution; in/out tokens and wall seconds per call; endpoint used (primary/fallback).
       Done when `metrics.json` validates against the schema for a full corpus run.
-- [ ] 1.4 Write `dev/judge.ts` + `dev/rubric.md`: self-contained blind judge of a run's bank
+- [x] 1.4 Write `dev/judge.ts` + `dev/rubric.md`: self-contained blind judge of a run's bank
       against the serialized chunk transcripts. Axes: supported/partial/unsupported,
       durable/marginal/noise/missed, plus four upstream-failure-surface axes:
       specificity (concrete anchors present), transition (settled *and* dropped version

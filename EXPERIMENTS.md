@@ -68,4 +68,11 @@ Corpus run ≈ 18 min remote vs ≈ 4 min local (local also avoids per-call cost
 seed, judge model local `qwen3.8-27b-q6` (never the writer model; the 35B MoE
 judges tried first crashed llama-swap's upstream), temp 0.
 
-- seeds 7 / 11 on `baseline-remote`: _pending_
+- seed 7: 63 ops (1 unparsable), full 62 / none 0, durable 61, mean specificity 2.47, noise 0, missed 30.
+- seed 11: 63 ops (3 unparsable), full 60 / none 0, durable 58, mean specificity 2.42, noise 1, missed 29.
+- **Reproducibility (done-when): supported+durability agreement 96.6 % across seeds; mean-
+  specificity delta 2.1 %; missed delta 3.3 %. PASS.**
+- Baseline verdict: the writer's adds are grounded, specific and near-noise-free, but the
+  bank **misses ~6 durable facts per chunk** — coverage, not precision, is the failure mode.
+  Judge misses concentrate on embedded constraints and metrics stated inside tool output
+  rather than user turns.
