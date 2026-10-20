@@ -44,8 +44,8 @@ type JudgedOp = {
 
 type OpVerdict = {
 	opIndex: number;
-	supported: "full" | "partial" | "none";
-	durability: "durable" | "marginal" | "noise";
+	supported: "full" | "partial" | "none" | "unknown";
+	durability: "durable" | "marginal" | "noise" | "unknown";
 	specificity: number; // 0-3: does it carry the anchors a future agent needs?
 	transitionCaptured: boolean; // settled state + what was dropped, when relevant
 	shouldNotStore: boolean;
@@ -141,7 +141,8 @@ function judgeOps(
 	return out;
 }
 
-function parseVerdicts(raw: string, opCount: number): ChunkVerdict | null {
+/** Tolerant parse: keep every well-formed verdict, let the caller backfill gaps. */
+function parseVerdicts(raw: string, opCount: number): { verdicts: OpVerdict[]; missed: MissedFact[] } | null {
 	let data: { verdicts?: OpVerdict[]; missed?: MissedFact[] };
 	try {
 		data = JSON.parse(raw);
@@ -149,9 +150,27 @@ function parseVerdicts(raw: string, opCount: number): ChunkVerdict | null {
 		return null;
 	}
 	if (!Array.isArray(data.verdicts)) return null;
-	const verdicts = data.verdicts.filter((v) => Number.isInteger(v.opIndex) && v.opIndex >= 0 && v.opIndex < opCount);
-	if (verdicts.length !== opCount) return null;
-	return { chunkId: "", seed: 0, ops: verdicts, missed: Array.isArray(data.missed) ? data.missed.slice(0, 5) : [] };
+	const seen = new Set<number>();
+	const verdicts = data.verdicts.filter((v) => {
+		const ok = Number.isInteger(v.opIndex) && v.opIndex >= 0 && v.opIndex < opCount && !seen.has(v.opIndex);
+		if (ok) seen.add(v.opIndex);
+		return ok;
+	});
+	if (verdicts.length === 0) return null;
+	return { verdicts, missed: Array.isArray(data.missed) ? data.missed : [] };
+}
+
+function unknownVerdict(opIndex: number): OpVerdict {
+	return {
+		opIndex,
+		supported: "unknown",
+		durability: "unknown",
+		specificity: -1,
+		transitionCaptured: true,
+		shouldNotStore: false,
+		fidelityIssue: null,
+		note: "judge produced no verdict for this op",
+	};
 }
 
 async function main(): Promise<void> {
@@ -182,7 +201,7 @@ async function main(): Promise<void> {
 	const route = process.env.JUDGE_ORIGIN
 		? { origin: process.env.JUDGE_ORIGIN, apiKey: process.env.JUDGE_KEY, model: judgeModel }
 		: await resolveRoute(judgeModel);
-	const writer = rawWriter({ ...route, temperature: 0, maxTokens: 4000 });
+	const writer = rawWriter({ ...route, temperature: 0, maxTokens: 8000 });
 	const verdicts: ChunkVerdict[] = [];
 	let totalOps = 0;
 	let noise = 0;
@@ -197,31 +216,71 @@ async function main(): Promise<void> {
 			continue;
 		}
 		const { order: opsView, perm } = shuffled(ops, seed + verdicts.length);
-		const opsBlock = opsView
-			.map(
-				(o, i) =>
-					`[${i}] ${o.op}: ${o.text}${o.oldText ? `\n    (replacing: ${o.oldText})` : ""}${o.reason ? `\n    (stated reason: ${o.reason})` : ""}`,
-			)
-			.join("\n");
-		const user = `<rubric>\n${rubric().trim()}\n</rubric>\n\n<transcript>\n${file.text.trim()}\n</transcript>\n\n<write-ops>\n${opsBlock}\n</write-ops>`;
-		const res = await writer.complete(JUDGE_SYSTEM, user, "judge");
-		const verdict = parseVerdicts(res.content, ops.length);
-		if (!verdict) {
-			console.error(`${file.chunkId}: judge produced no parseable verdict`);
-			continue;
+		const blocks: { view: JudgedOp[]; perm: number[] }[] = [];
+		const BLOCK = 10;
+		for (let i = 0; i < opsView.length; i += BLOCK) {
+			blocks.push({ view: opsView.slice(i, i + BLOCK), perm: perm.slice(i, i + BLOCK) });
 		}
-		verdict.chunkId = file.chunkId;
-		verdict.seed = seed;
-		verdict.ops = verdict.ops
-			.map((v) => ({ ...v, opIndex: perm[v.opIndex] }))
-			.sort((a, b) => a.opIndex - b.opIndex);
-		verdicts.push(verdict);
-		totalOps += verdict.ops.length;
-		noise += verdict.ops.filter((v) => v.shouldNotStore || v.durability === "noise").length;
-		unsupported += verdict.ops.filter((v) => v.supported === "none").length;
-		missed += verdict.missed.length;
+		const chunkOps: OpVerdict[] = [];
+		const missedSeen = new Set<string>();
+		const missedHere: MissedFact[] = [];
+		for (const [b, block] of blocks.entries()) {
+			const opsBlock = block.view
+				.map(
+					(o, i) =>
+						`[${i}] ${o.op}: ${o.text}${o.oldText ? `\n    (replacing: ${o.oldText})` : ""}${o.reason ? `\n    (stated reason: ${o.reason})` : ""}`,
+				)
+				.join("\n");
+			const contextNote =
+				blocks.length > 1
+					? `\n(ops block ${b + 1} of ${blocks.length}; judge only these ops; missed-facts optional here)`
+					: "";
+			const user = `<rubric>\n${rubric().trim()}\n</rubric>\n\n<transcript>\n${file.text.trim()}\n</transcript>\n\n<write-ops>\n${opsBlock}\n</write-ops>${contextNote}`;
+			let content = "";
+			try {
+				content = (await writer.complete(JUDGE_SYSTEM, user, "judge")).content;
+			} catch (error) {
+				console.error(
+					`${file.chunkId}: block ${b + 1} call failed: ${String((error as Error)?.message ?? error)}`,
+				);
+			}
+			const parsed = parseVerdicts(content, block.view.length);
+			if (!parsed) {
+				// Keep the raw text for post-mortems; a silent discard hides why.
+				const suffix = blocks.length > 1 ? `-block${b + 1}` : "";
+				try {
+					writeFileSync(
+						join(runDir, `judge-raw-${file.chunkId}${suffix}.txt`),
+						content || "(empty completion)",
+					);
+				} catch {
+					/* diagnostics must not break the run */
+				}
+				console.error(`${file.chunkId}: block ${b + 1} produced no parseable verdict (raw kept)`);
+			}
+			for (let i = 0; i < block.view.length; i++) {
+				const verdict = parsed?.verdicts.find((v) => v.opIndex === i) ?? unknownVerdict(i);
+				chunkOps.push({ ...verdict, opIndex: block.perm[i] });
+			}
+			for (const m of parsed?.missed ?? []) {
+				const key = String(m.statement ?? "")
+					.toLowerCase()
+					.slice(0, 50);
+				if (key && !missedSeen.has(key) && missedHere.length < 10) {
+					missedSeen.add(key);
+					missedHere.push(m);
+				}
+			}
+		}
+		chunkOps.sort((a, b) => a.opIndex - b.opIndex);
+		verdicts.push({ chunkId: file.chunkId, seed, ops: chunkOps, missed: missedHere });
+		const unknown = chunkOps.filter((v) => v.supported === "unknown").length;
+		totalOps += chunkOps.length;
+		noise += chunkOps.filter((v) => v.shouldNotStore || v.durability === "noise").length;
+		unsupported += chunkOps.filter((v) => v.supported === "none").length;
+		missed += missedHere.length;
 		console.log(
-			`${file.chunkId}: ops ${verdict.ops.length} | noise ${noise} | unsupported ${unsupported} | missed ${verdict.missed.length}`,
+			`${file.chunkId}: ops ${chunkOps.length}${unknown ? ` (unknown ${unknown})` : ""} | noise ${noise} | unsupported ${unsupported} | missed ${missedHere.length}`,
 		);
 	}
 
