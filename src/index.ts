@@ -38,7 +38,15 @@ import {
 } from "./entries.js";
 import { nextFailoverState } from "./failover.js";
 import { failureClass, shrinksChunk, writeCooldownMs } from "./failures.js";
-import { buildHifiPrompt, checkHifi, hifiFacts, hifiReasoning, hifiSummary, withRecallNote } from "./hifi.js";
+import {
+	buildHifiPrompt,
+	checkHifi,
+	hifiFacts,
+	hifiReasoning,
+	hifiSummary,
+	recordOffers,
+	withRecallNote,
+} from "./hifi.js";
 import { createWriter, type Writer } from "./llm.js";
 import { writeChunk } from "./pipeline.js";
 import { renderFileOperations, renderMemory, summaryBudget } from "./render.js";
@@ -119,7 +127,7 @@ type SessionState = {
 	 * hi-fi call gets this text as `<previous-summary>` and only the facts newer than
 	 * `seq`, which is what keeps the request delta-sized instead of whole-bank.
 	 */
-	hifi?: { text: string; seq: number; at: string };
+	hifi?: { text: string; seq: number; at: string; attempts?: Record<string, number> };
 	stats: {
 		writes: number;
 		drafts: number;
@@ -908,6 +916,8 @@ export default function piHyMemory(pi: ExtensionAPI): void {
 			const facts = hifiFacts(state.bank, {
 				lastSeq: state.hifi?.seq ?? 0,
 				previous: state.hifi?.text,
+				attempts: state.hifi?.attempts,
+				retryLimit: config.hifiRetryLimit,
 				maxTokens: config.hifiDeltaTokens,
 				estimate: estimateTokens,
 				selection: {
@@ -959,7 +969,14 @@ export default function piHyMemory(pi: ExtensionAPI): void {
 						ms: answer.ms,
 						usage: answer.usage,
 					};
-					state.hifi = { text: answer.text, seq: state.chunkSeq, at: new Date().toISOString() };
+					state.hifi = {
+						text: answer.text,
+						seq: state.chunkSeq,
+						at: new Date().toISOString(),
+						// Only an accepted checkpoint updates the attempt counts. A rejected one
+						// never judged these facts, so they keep their remaining retries.
+						attempts: recordOffers(state.hifi?.attempts, facts, answer.text),
+					};
 					audit("hifi_ok", {
 						sessionId: state.sessionId,
 						reason: event.reason,

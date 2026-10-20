@@ -466,3 +466,39 @@ marked blocked for a specific reason. That is the thing the render cannot write.
 Estimator note: 4 000 server output tokens corresponded to 1 441–3 078 tokens by `estimateTokens`
 (`chars / 4`) depending on arm. For markdown dense with hex ids and code identifiers the estimate
 under-counts by roughly 30 %, which matters for `hifiDeltaTokens` and `hifiTailTokens` too.
+
+### The re-offer is the expensive part, and bounding it buys coverage (2026-10-21)
+
+The second real boundary was accepted (1 955 output tokens, 6/6 sections, no invented ids) but
+cited only **11 of the 71 facts it was offered**. The self-healing rule — re-offer anything the
+last checkpoint dropped — therefore never stops firing, and the delta budget is where it lands.
+
+Composition of the delta on the 408-fact bank, 6 000-token delta budget:
+
+| boundary covers | new facts offered | repeats offered | repeat share of budget |
+|---|---|---|---|
+| last 2 chunks | 16 (1 767 tok) | 52 (4 206 tok) | 70 % |
+| last 4 chunks | 40 (3 602 tok) | 27 (2 387 tok) | 40 % |
+| last 8 chunks | 45 (3 879 tok) | 22 (2 110 tok) | 35 % |
+
+A bound was the obvious fix, and the first measurement said it did nothing: with `retryLimit` 3
+versus unbounded, each boundary still offered ~64–79 facts and still spent the whole 6 000
+tokens. Because 408 active facts cannot fit in 6 000 tokens, the delta is *always* saturated by
+facts the checkpoint has not cited — bounding one set just lets another set in.
+
+So the metric is not cost, it is **how many distinct facts the model ever sees**. Four simulated
+boundaries on the real bank, same budget, citation behaviour emulated at the measured rate
+(~35 of what is shown kept):
+
+| retry limit | distinct facts shown over 4 boundaries |
+|---|---|
+| unbounded | 103 of 408 |
+| 3 | **166 of 408** |
+
+Same tokens, 61 % more of the bank actually offered to the model. Without a bound the same old
+facts keep winning — they are exactly the "old, never-superseded" class the stratified selection
+reserves a share for — and 305 facts are never shown at all. `hifiRetryLimit: 3` retires a fact
+after three attempts, and the fact remains in the bank and recallable.
+
+Caveat kept honest: the four-boundary table is a simulation over the real bank with the model's
+measured citation rate substituted for the model. The single-boundary numbers above are live.

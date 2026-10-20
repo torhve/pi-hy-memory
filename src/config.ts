@@ -48,6 +48,13 @@ export type HyConfig = {
 	hifiTailTokens: number;
 	/** How many tokens of new facts the model may read. */
 	hifiDeltaTokens: number;
+	/**
+	 * How many boundaries a fact the checkpoint dropped is offered again. Bounded because the
+	 * re-offer is the most expensive part of the delta: measured on a 408-fact bank, a boundary
+	 * covering two chunks spent 4 206 of its 6 000 delta tokens on facts already offered and
+	 * already not cited. After this many attempts the fact stays in the bank, recallable.
+	 */
+	hifiRetryLimit: number;
 	/** Wall-clock cap for the checkpoint call. */
 	hifiTimeoutMs: number;
 	candidateRenderMode: "union" | "perDraft";
@@ -119,6 +126,7 @@ export const SETTING_DEFAULTS: HyConfig = {
 	hifiThinkingLevel: "off",
 	hifiTailTokens: 6000,
 	hifiDeltaTokens: 6000,
+	hifiRetryLimit: 3,
 	hifiTimeoutMs: 120_000,
 	candidateRenderMode: "perDraft",
 	waitForWriteOnSettle: true,

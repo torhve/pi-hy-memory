@@ -36,7 +36,7 @@ writeFileSync(
 	}),
 );
 
-const { buildHifiPrompt, checkHifi, hifiFacts, hifiReasoning } = await import("../src/hifi.js");
+const { buildHifiPrompt, checkHifi, hifiFacts, hifiReasoning, recordOffers } = await import("../src/hifi.js");
 const { estimateTokens } = await import("../src/types.js");
 const { default: piHyMemory } = await import("../src/index.js");
 
@@ -154,6 +154,46 @@ check(
 	tight.map((e: any) => e.id),
 	["rule"],
 );
+
+// The re-offer is bounded, because that is what the delta budget paid for.
+{
+	const b = [fact("aaa1111111", 1, false), fact("bbb2222222", 2, false)];
+	const ids = (list: any[]) => list.map((e: any) => e.id);
+	const base = { lastSeq: 99, previous: "", maxTokens: 4000, estimate: estimateTokens };
+	check("a fact no checkpoint has cited is offered", ids(hifiFacts(b, base)).includes("aaa1111111"), true);
+	check(
+		"while it has attempts left",
+		ids(hifiFacts(b, { ...base, attempts: { aaa1111111: 2 }, retryLimit: 3 })).includes("aaa1111111"),
+		true,
+	);
+	check(
+		"and not after its last one",
+		ids(hifiFacts(b, { ...base, attempts: { aaa1111111: 3 }, retryLimit: 3 })).includes("aaa1111111"),
+		false,
+	);
+	check(
+		"the bound never gates a fact that is genuinely new",
+		ids(hifiFacts(b, { ...base, lastSeq: 0, attempts: { aaa1111111: 99 } })).includes("aaa1111111"),
+		true,
+	);
+	check(
+		"nor a constraint the user stated",
+		ids(hifiFacts([fact("usr1111111", 1, true)], { ...base, attempts: { usr1111111: 99 } })).includes("usr1111111"),
+		true,
+	);
+}
+
+// Attempt counts move only for facts the model was actually shown.
+{
+	const shown = fact("aaa1111111", 1, false);
+	const uncited = fact("bbb2222222", 2, false);
+	const before = { bbb2222222: 1, ccc3333333: 2 };
+	const next = recordOffers(before, [shown, uncited], "the checkpoint cites [aaa1111111]");
+	check("a cited fact stops being retried", next.aaa1111111, undefined);
+	check("an uncited one used one attempt", next.bbb2222222, 2);
+	check("one crowded out by the budget keeps its count", next.ccc3333333, 2);
+	check("and the stored map is replaced, not mutated", before.bbb2222222, 1);
+}
 
 /* ------------------------------------------------------------ validation ---- */
 

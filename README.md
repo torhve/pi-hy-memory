@@ -84,6 +84,7 @@ nothing backs off between turns. The audit records `write_cooldown { waitS }` an
 | `hifiThinkingLevel` | `off` | `"off"` asks the model not to think for the checkpoint, `"inherit"` uses the session's level. Off by default because a model that thinks at a checkpoint can spend the whole output budget without answering |
 | `hifiTailTokens` | `6000` | how much of the kept tail the checkpoint call may read as context |
 | `hifiDeltaTokens` | `6000` | how many tokens of facts it may read. Facts sent = newer than the last checkpoint, or user-stated, or dropped by the last checkpoint |
+| `hifiRetryLimit` | `3` | how many boundaries a fact the checkpoint dropped is offered again. Bounded because the re-offer is the expensive part: measured on a 408-fact bank, a boundary covering two chunks spent 4 206 of its 6 000 delta tokens on facts already offered and already not cited. After that the fact is in the bank and recallable |
 | `hifiTimeoutMs` | `120000` | wall-clock cap for the checkpoint call; a timeout falls back to the render |
 | `model` | `hy-memory-30b-a3b` | writer model from **your pi model list**: `provider/modelId`, or a bare id |
 | `maxTokens` | `8000` | output cap per call |

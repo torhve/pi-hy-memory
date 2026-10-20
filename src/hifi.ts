@@ -250,15 +250,29 @@ export function hifiFacts(
 		maxTokens: number;
 		estimate: (text: string) => number;
 		selection?: SelectionOptions;
+		/** How many boundaries each fact has already been offered at without being cited. */
+		attempts?: Record<string, number>;
+		/** How many boundaries a dropped fact is re-offered at before the bank is enough. */
+		retryLimit?: number;
 	},
 ): BankEntry[] {
-	const { lastSeq, previous, maxTokens, selection: selectionOptions } = options;
+	const { lastSeq, previous, maxTokens, selection: selectionOptions, attempts, retryLimit } = options;
 	const active = bank.filter((e) => e.status === "active");
 	// Three reasons a fact is a candidate: it is new since the last checkpoint, the user
 	// stated it, or the last checkpoint dropped it. The third is what makes the feature
 	// self-healing — a fact a weak summary forgot is offered again instead of vanishing.
+	//
+	// It is also the most expensive of the three, and the cost was invisible until it was
+	// measured on a 408-fact bank: a boundary covering two chunks sent 16 new facts (1 767
+	// tokens) and 52 repeats (4 206 tokens) — 70 % of the delta budget spent on facts already
+	// offered and already not cited. Re-offering forever buys orientation on old material by
+	// crowding out the current work the checkpoint exists to describe. A bounded number of
+	// attempts keeps the recovery — a transient miss is still caught — without an unbounded
+	// claim on the budget. After that the fact is in the bank and recallable, which is what
+	// the bank is for.
+	const retrying = (e: BankEntry): boolean => (attempts?.[e.id] ?? 0) < (retryLimit ?? 3);
 	const candidates = active.filter(
-		(e) => (e.chunkSeq ?? 0) > lastSeq || e.fromUser || !(previous ?? "").includes(`[${e.id}]`),
+		(e) => (e.chunkSeq ?? 0) > lastSeq || e.fromUser || (!(previous ?? "").includes(`[${e.id}]`) && retrying(e)),
 	);
 	// Constraints first, absolutely. A user-stated fact missing from a checkpoint is a
 	// constraint the model breaks later, which is the most expensive failure this feature
@@ -290,4 +304,25 @@ export function hifiFacts(
 		},
 	);
 	return [...kept, ...shown].sort((a, b) => (a.createdAt < b.createdAt ? -1 : a.createdAt > b.createdAt ? 1 : 0));
+}
+
+/**
+ * Attempt counts after a checkpoint was accepted.
+ *
+ * A cited fact no longer needs re-offering, so its count is dropped. An offered-but-uncited
+ * fact has used one attempt. A fact that was never offered keeps the count it already had:
+ * it was crowded out by the budget, not judged and set aside, and counting that as an attempt
+ * would let a large bank exhaust a fact's retries without ever showing it to the model.
+ */
+export function recordOffers(
+	attempts: Record<string, number> | undefined,
+	offered: BankEntry[],
+	checkpoint: string,
+): Record<string, number> {
+	const next: Record<string, number> = { ...(attempts ?? {}) };
+	for (const e of offered) {
+		if (checkpoint.includes(`[${e.id}]`)) delete next[e.id];
+		else next[e.id] = (next[e.id] ?? 0) + 1;
+	}
+	return next;
 }
