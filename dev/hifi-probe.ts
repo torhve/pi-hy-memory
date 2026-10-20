@@ -3,8 +3,11 @@
  * Hi-fi probe: one real checkpoint from a real session, on the model you would actually run.
  *
  *   npx tsx dev/hifi-probe.ts --session <pi session .jsonl> [--model <provider/id>]
- *       [--reasoning off] [--thinking-format qwen] [--off-value none] [--thinking-budget-field
- *       thinking_budget] [--tail 6000] [--delta 6000] [--max-tokens 2000] [--out out/hifi]
+ *       [--reasoning off] [--thinking-format qwen-chat-template] [--off-value none]
+ *       [--thinking-budget-field thinking_budget] [--tail 6000] [--delta 6000]
+ *       [--max-tokens 4000] [--out out/hifi]
+ *       [--previous <checkpoint .md>] [--last-seq <chunk>]   # a second boundary: the facts
+ *       the checkpoint above dropped are the ones offered
  *
  * The bank comes from this extension's own ledger for that session, the tail from the newest
  * entries of its branch, and the request is built by `src/hifi.ts` — the same code the

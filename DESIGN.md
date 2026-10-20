@@ -539,9 +539,13 @@ ours:
   read for orientation and `serializeEntries` deliberately keeps the oldest for coverage
   contiguity), and the file lists. Measured on a 6 110-entry session: a request of a few
   thousand tokens against a branch of ~150 k.
-- **Self-healing delta.** A fact is sent if it is new, or user-stated, or *absent from the
-  previous checkpoint*. That third condition is what stops a weak summary from silently
-  deleting a fact for the rest of the session: the next boundary offers it again.
+- **Self-healing delta, bounded.** A fact is sent if it is new, or user-stated, or *absent from
+  the previous checkpoint* — but a re-offered fact only gets `hifiRetryLimit` boundaries before
+  it retires. The third condition is what stops a weak summary from silently deleting a fact,
+  and the bound is what stops it from spending the whole delta budget on facts the model has
+  already declined: measured on a 408-fact bank, unbounded shows 103 distinct facts over four
+  boundaries, bounded shows 166 for the same tokens. A retired fact is not gone — it is in the
+  bank and recallable, which is what the bank is for.
 - **Attribution survives.** The prompt requires an id on every line that came from a fact and
   forbids inventing ids; `checkHifi` counts the ids that survived, and an answer that cites
   none is rejected.
