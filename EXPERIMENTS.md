@@ -322,3 +322,39 @@ where "restate every part that is still true" cannot apply.
 The plumbing works; the model simply prefers ADD, and our own "the draft must restate every
 part of the candidate that is still true" rule gives it a reason to: a removal draft
 restates nothing. That is the hypothesis the prompt A/B below tests.
+
+## Run: transitions prompt clause (2026-10-20) — rejected
+
+Hypothesis from the diagnosis: removal drafts become ADDs because our own "when you
+UPDATE, the draft must restate every part of the candidate that is still true" rule gives
+the writer a reason to avoid UPDATE — a removal restates nothing. So one clause was added
+to the reconcile prompt: *"a draft saying the candidate's subject was removed, deleted,
+renamed, replaced, cancelled or is no longer used IS the update; nothing needs restating."*
+
+12-chunk extended corpus, same model/route/limits, only that clause differs, both arms on
+the fixed JSON path (`repairJson` + one re-ask), 0 failed chunks in either arm:
+
+| | trans-base | trans-clause |
+|---|---|---|
+| drafts | 181 | 179 |
+| ADD / UPDATE / DELETE / SKIP | 150 / 28 / 0 / 0 | 148 / 27 / 0 / 0 |
+| downgraded UPDATE→ADD | 38 | 36 |
+| removal drafts | 24 | 24 |
+| — of those: ADD / UPDATE / omitted | 18 / 5 / 1 | 18 / 5 / 1 |
+| reconciled share | 21 % | 21 % |
+| bank after | 150 facts / 11 157 tok | 148 facts / 11 166 tok |
+
+**No effect.** The model still attempts an UPDATE on roughly two thirds of removal drafts
+(5 accepted + 11 downgraded on both arms), and those attempts are then rejected by
+`sameSubject`, which is behaving correctly: a removal draft does not restate what remains
+true, so replacing the target would lose the facts that are still valid — the
+secondary-fact-loss failure the guard exists for. Adding pressure on the reconcile side
+cannot fix a draft that is not a full replacement, and the extract side is what writes the
+draft.
+
+Reverted; the prompt is unchanged.
+
+What this leaves for the transition problem: the fix has to make the *draft* a full
+replacement ("X was removed; Y and Z remain"), which is an extract-side instruction, or give
+the writer a non-atomic op it does not have (a partial supersede). Both are open. The one
+thing measured here is that prompting the reconcile call harder is not it.
