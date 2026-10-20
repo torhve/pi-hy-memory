@@ -202,7 +202,12 @@ async function main(): Promise<void> {
 	const route = process.env.JUDGE_ORIGIN
 		? { origin: process.env.JUDGE_ORIGIN, apiKey: process.env.JUDGE_KEY, model: judgeModel }
 		: await resolveRoute(judgeModel);
-	const writer = rawWriter({ ...route, temperature: 0, maxTokens: 8000 });
+	const writer = rawWriter({
+		...route,
+		temperature: 0,
+		maxTokens: 16000,
+		chatTemplateKwargs: { reasoning_effort: "no_think", thinking: false, enable_thinking: false },
+	});
 	const verdicts: ChunkVerdict[] = [];
 	let totalOps = 0;
 	let noise = 0;

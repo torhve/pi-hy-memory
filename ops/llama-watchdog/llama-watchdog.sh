@@ -123,7 +123,7 @@ if [ -r "$CG/memory.current" ]; then
 	peak=$(( $(cat "$CG/memory.peak" 2>/dev/null || echo 0) / 1048576 ))
 	anon=$(( $(awk '/^anon /{print $2}' "$CG/memory.stat" 2>/dev/null || echo 0) / 1048576 ))
 	file=$(( $(awk '/^file /{print $2}' "$CG/memory.stat" 2>/dev/null || echo 0) / 1048576 ))
-	top=$(ps -eo rss,comm --sort=-rss 2>/dev/null | awk 'NR==2{printf "%dMB %s", $1, $2}')
+	top=$(ps -eo rss,comm --sort=-rss 2>/dev/null | awk 'NR==2{printf "%dMB %s", $1/1024, $2}')
 	log "mem current=${cur}MB peak=${peak}MB anon=${anon}MB file=${file}MB top=${top}"
 fi
 
