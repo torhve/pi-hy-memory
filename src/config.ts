@@ -69,7 +69,7 @@ export const SETTING_DEFAULTS: HyConfig = {
 	enabled: true,
 	dryRun: false,
 	observeAfterTokens: 6000,
-	maxChunkTokens: 24000,
+	maxChunkTokens: 6000,
 	maxEntryChars: 3000,
 	poolMaxTokens: 6000,
 	keepRecentTokens: 6000,

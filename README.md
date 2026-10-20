@@ -69,10 +69,10 @@ nothing backs off between turns. The audit records `write_cooldown { waitS }` an
 | `enabled` | `true` | turn the extension off without unloading it |
 | `dryRun` | `false` | run the pipeline, append nothing to the session |
 | `observeAfterTokens` | `6000` | pending window that triggers a write, measured on the full entries at chars/4 rather than on the clipped text a chunk would carry. Measured on *stored* text: pi stubs old tool output before sending, so a whole-branch figure runs ~2x pi's count while fresh pending text does not (the *first* footer bar) |
-| `maxChunkTokens` | `24000` | chunk budget per write. Note: estimated at chars/4, and code-heavy chunks tokenise at ~1.4–1.5× that, so a 20 000 budget is ~30 000 real prompt tokens |
+| `maxChunkTokens` | `6000` | chunk budget per write. Estimated at chars/4, and code-heavy chunks tokenise at ~1.4–1.5× that, so 6 000 is ~9 000 real prompt tokens. Was 24 000: one wide window found 41 facts over three captures, five ~4 500-token windows found 120 for +5 % input tokens and half the wall time (see "Chunk size") |
 | `maxEntryChars` | `3000` | per-entry truncation inside a chunk, so one huge tool output cannot consume the whole budget |
 | `poolMaxTokens` | `6000` | cap on the *active* bank (the *second* footer bar); see DESIGN.md § "What happens when the bank fills". ~72 tokens per fact, and the rendered summary is ~1.2× the cap |
-| `keepRecentTokens` | `6000` | raw entries kept verbatim by a compaction. The cut is clamped back to the write watermark so nothing unread is dropped, but only by up to `maxChunkTokens`; a larger backlog is lost and recorded as a gap (see "Compaction: who decides when") |
+| `keepRecentTokens` | `6000` | raw entries kept verbatim by a compaction. The cut is clamped back to the write watermark so nothing unread is dropped, but only by up to `maxChunkTokens`; past that the compaction is handed back to pi (see "Compaction: who decides when") |
 | `candidateLimit` | `12` | bank entries shown to the reconcile call |
 | `candidateRenderMode` | `perDraft` | how the `candidateLimit` window is chosen: `perDraft` guarantees every draft its own best bank match before the cap fills; `union` shows the score-sorted union (legacy) |
 | `model` | `hy-memory-30b-a3b` | writer model from **your pi model list**: `provider/modelId`, or a bare id |

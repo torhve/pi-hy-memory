@@ -480,6 +480,41 @@ and only wall time differs: **local `hy-memory-30b-a3b` 30.3 s, `remote/hy-memor
 137 s** — 4–5× on the same payload, so a 5-chunk corpus is ~4 min local and ~18 min through
 the proxy.
 
+### Chunk size
+
+The paper's chunk is "about ten turns" with a 4 096-token OPD prompt budget, and its own
+annotation study found *less* context produces more specific facts. Our captures carry the
+same number of turns but **13–24 k tokens**, so `maxChunkTokens: 24000` was the one setting
+outside the training distribution. Measured with `dev/split-chunk.ts` (extract-only arm, three
+captures, the same prompt and route: one whole chunk versus the same text split at entry
+boundaries into ~4 500-token windows):
+
+| | full chunk | split windows |
+|---|---|---|
+| captures | 006 / 007 / 012 (17.9–20.1 k tokens each) | 5 windows each |
+| facts | 41 | **120 (2.9×)** |
+| specific anchors per fact | 6.45 | 5.98 |
+| numbers per fact | 2.84 | 2.25 |
+| total numbers | 120 | **267** |
+| generic facts | 3 % | 2 % |
+| input tokens | 66 578 | 70 082 (+5 %) |
+| output tokens | 5 062 | 13 990 |
+| wall | 359 s | **158 s** |
+| full-arm facts also stated by the split arm | — | 33 of 41 (80 %) |
+
+Per-fact density drops slightly — that is the honest cost, and it is the opposite direction
+from the paper's annotation result — but the *total* specific content rises 2.2–2.7×, the
+input cost is flat, and the split arm is twice as real-time because five small prefills beat
+one 20 k one. It is not a superset: a fifth of the wide-window facts (cross-window decisions,
+mostly) are not re-found, so the two arms read the same history differently rather than
+better and worse.
+
+Since the judge's misses are coverage-flavoured (~6 durable facts per chunk), coverage wins:
+`maxChunkTokens` is now **`6000`**, which makes the shipped chunk the size the split arm
+tested. A window larger than that is written in consecutive chunks, oldest entries first, and
+the chain drains the backlog (≤2 per turn) — the same mechanism that already bounded a
+backlog, so no new state is needed.
+
 ### Transport is a measured variable
 
 A writer that serves 20 k-token extracts over a proxy is a distributed system, and three of
@@ -599,11 +634,10 @@ Results and judge verdicts are in `RESULTS.md`.
    does not share tokens with the entry that should be superseded retrieves nothing and
    becomes an ADD. A real embedding index (the upstream Hy-Memory harness uses one) would
    retrieve better; lexical is the honest starting point for a local-first extension.
-4. **Chunk size is unmeasured against the paper's training distribution.** Our chunks carry
-   the same number of turns (~10) but 13–24 k prompt tokens against the paper's 4 096-token
-   OPD budget, and their annotation study says extra context makes facts *less* specific.
-   A split-window arm is the experiment that decides whether `maxChunkTokens: 24000` should
-   come down.
+4. **The 6 000-token default is measured extract-only.** The split-window arm compares what
+   the writer *saw*, not what the bank kept: a corpus run at `maxChunkTokens: 6000` (with its
+   reconcile calls and backlog draining) is not yet done, and it is the run that would show
+   whether narrower chunks cost updates — each write sees a smaller slice of a transition.
 5. **Compaction takeover at scale.** `dev/compact-test.py` exercises
    `session_before_compact` in a real RPC session, but at n=1; sessions that compact
    repeatedly with a live bank are not yet measured.
