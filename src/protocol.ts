@@ -9,8 +9,45 @@ import { isId } from "./types.js";
 const MAX_STATEMENT_CHARS = 420;
 const MAX_TASK_CHARS = 120;
 
-/** Strip fences and pull the first balanced JSON object out of a completion. */
-export function parseJsonObject(raw: string): unknown {
+/**
+ * Repairs for the two malformations observed in production, attempted only after a
+ * strict parse has already failed, so valid output is never rewritten.
+ *
+ * 1. Invalid escapes inside strings. The writer copies code verbatim, so a regex in a
+ *    statement arrives as `/^[\s]*(\d+).../`, and `\s`/`\d` are not legal JSON
+ *    escapes (measured: six in one extract, `Bad escaped character ... position 4825`).
+ * 2. A stray quote after a numeric field: `"draft":5"` (measured on chunk 005 of the
+ *    extended corpus, which then failed three times because the retry reused the same
+ *    persisted drafts).
+ */
+function repairJson(text: string): { text: string; repairs: string[] } {
+	const repairs: string[] = [];
+	// A backslash that does not start a legal escape becomes a literal backslash.
+	const escapes = text.replace(/\\(?![\\"/bfnrtu])/g, () => {
+		if (!repairs.includes("escaped-backslash")) repairs.push("escaped-backslash");
+		return "\\\\";
+	});
+	// `"draft":5"` -> `"draft":5`.
+	const numeric = escapes.replace(/("(?:draft|index)"\s*:\s*-?\d+)\s*"/g, (_m, head: string) => {
+		if (!repairs.includes("quote-after-number")) repairs.push("quote-after-number");
+		return head;
+	});
+	return { text: numeric, repairs };
+}
+
+/**
+ * Repairs applied by the most recent successful parse, for the audit. Cleared on every
+ * strict parse so a stale value can never be attributed to the wrong chunk.
+ */
+let lastRepair: string[] | undefined;
+export function takeJsonRepair(): string[] | undefined {
+	const repairs = lastRepair;
+	lastRepair = undefined;
+	return repairs;
+}
+
+/** Scan out the first balanced object and parse it strictly. */
+function scanJson(raw: string): unknown {
 	let text = raw.trim();
 	text = text.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/i, "");
 	const start = text.indexOf("{");
@@ -34,6 +71,29 @@ export function parseJsonObject(raw: string): unknown {
 		}
 	}
 	throw new Error("unbalanced JSON object in completion");
+}
+
+/**
+ * Strict parse first. Anything else is the model's malformation, and two of those have
+ * been measured — see `repairJson`. The repair has to run before the scan, not after:
+ * a stray quote makes the balanced-brace scanner swallow the rest of the object, which
+ * is why the reported error was "unbalanced" rather than a parse position.
+ */
+export function parseJsonObject(raw: string): unknown {
+	lastRepair = undefined;
+	try {
+		return scanJson(raw);
+	} catch (strictError) {
+		const { text, repairs } = repairJson(raw);
+		if (repairs.length === 0) throw strictError;
+		try {
+			const value = scanJson(text);
+			lastRepair = repairs;
+			return value;
+		} catch {
+			throw strictError;
+		}
+	}
 }
 
 /**

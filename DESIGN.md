@@ -237,6 +237,21 @@ Code rejects an op when: `draft` index out of range or already used, `target` no
 id **in the shown set**, or the action is unknown. A rejected op never corrupts the bank;
 it is counted and logged.
 
+**2b. Malformed output is repaired before it is allowed to fail.** Two shapes have been
+measured in production, and both are nearly-valid JSON rather than a wrong answer:
+
+- a regex copied verbatim into a statement — `"… /^[\s]*(\d+)[\s]*(?:px)?[\s]*$/ …"` —
+  where `\s` and `\d` are not legal JSON escapes (chunk 003, `Bad escaped character …
+  position 4825`, six of them in one extract);
+- a stray quote closing a numeric field, `"draft":5"` (chunk 005, which then failed three
+  times because the retry resumed the same persisted drafts and produced the same string).
+
+`repairJson` runs **only after** a strict parse has failed, so valid output is never
+rewritten; it fixes those two classes and nothing else, and the repair is logged on the
+ledger record (`repaired`) and in the audit. If the output is still unparseable the stage is
+re-asked **once**, with the parse error appended to the request (`retriedJson`), because a
+blind retry reproduces a deterministic malformation. Anything else still fails the write.
+
 **3. Sanitize.** Every statement gets: `[Source entry id: …]` labels removed, any id that
 was actually present in the chunk removed by exact match, bracketed numeric refs removed,
 `sk-…`/`token…`/`Bearer …` secrets masked, whitespace collapsed, 420-char cap.
@@ -421,7 +436,7 @@ per chunk a 200-chunk session carries ~180 k and will hit it. In order of prefer
 |---|---|---|---|
 | 1 | split `bankMaxTokens` / `summaryMaxTokens`; the summary becomes a selection | oldest kept moves 7 → 20+ chunks on the 32-chunk ledger; no regression on current state | shipped |
 | 2 | stratify the selection: constraints / foundations / current | reach 7 → 20 chunks at the same cap; blind judge still pending | shipped |
-| 3 | key-exact retrieval ranking | fewer misses on removal drafts than 93/109 | planned |
+| 3 | key-exact retrieval ranking | fewer misses on removal drafts than 93/109 | rejected (measured 725 → 730 subject matches, 7 gained / 2 lost) |
 | 4 | durable `hy.evict` when the ceiling bites | a reload cannot change the rendered summary | planned |
 | 5 | consolidation pass at the ceiling | judge specificity does not fall | later |
 

@@ -9,6 +9,7 @@
 
 import { writeFileSync } from "node:fs";
 import { type ApplyReport, applyOps, enforceBudget } from "./bank.js";
+import { failureClass } from "./failures.js";
 import { completeWithFallback, type Writer } from "./llm.js";
 import { EXTRACT_SYSTEM, reconcileSystem } from "./prompts.js";
 import {
@@ -19,6 +20,7 @@ import {
 	renderDraftsForReconcile,
 	sameSubject,
 	selectShownPerDraft,
+	takeJsonRepair,
 } from "./protocol.js";
 import { type SerializedChunk, serializeChunk } from "./serialize.js";
 import type { BankEntry, CallUsage, Draft, LedgerRecord, ReconcileOp } from "./types.js";
@@ -31,6 +33,10 @@ export type ChunkWrite = {
 	seen: BankEntry[];
 	ops: ReconcileOp[];
 	rejectedOps: { reason: string; op: unknown }[];
+	/** `repairJson` fixes applied to a completion, per stage (empty when output was valid). */
+	repaired: { extract?: string[]; reconcile?: string[] };
+	/** A completion was unparseable and re-asked once with the parse error attached. */
+	retriedJson: { extract?: boolean; reconcile?: boolean };
 	downgraded: { reason: string; op: unknown }[];
 	report: ApplyReport;
 	usage: { extract: CallUsage; reconcile: CallUsage };
@@ -50,6 +56,27 @@ export type ChunkWrite = {
  * next turn re-chunks the same entries and the write is retried for free — but
  * only if the audit line identifies the stage.
  */
+/**
+ * One corrective re-ask after a completion we could not parse.
+ *
+ * `repairJson` handles the malformations we have measured (a stray quote after a
+ * number, a regex copied into a string). Anything else used to fail the write, and the
+ * *retry* then resumed the same persisted extract and produced the same malformed
+ * reconcile three times over (chunk 005 of the extended corpus). One re-ask with the
+ * parse error appended is bounded, and it is the only case where re-asking helps: a
+ * transport failure is the failover path's job, not this one.
+ */
+function retryNote(error: unknown): string {
+	const message = String((error as Error)?.message ?? error).slice(0, 160);
+	return `\n\nYour previous reply could not be parsed (${message}). Return ONLY the JSON object, no prose and no code fence.`;
+}
+
+const addUsage = (a: CallUsage, b: CallUsage): CallUsage => ({
+	inTokens: a.inTokens + b.inTokens,
+	outTokens: a.outTokens + b.outTokens,
+	wallS: Number((a.wallS + b.wallS).toFixed(1)),
+});
+
 function stage<T>(name: "extract" | "reconcile", chunkId: string, fn: () => T): T {
 	try {
 		return fn();
@@ -114,6 +141,10 @@ export async function writeChunk(
 	let reconcileModel = "";
 	let failover: string | undefined;
 	let drafts: Draft[];
+	let extractRepaired: string[] | undefined;
+	let reconcileRepaired: string[] | undefined;
+	let extractRetried = false;
+	let reconcileRetried = false;
 	let rejected: { reason: string; draft: unknown }[];
 	let extractUsage: CallUsage;
 	if (options.resume) {
@@ -143,7 +174,24 @@ export async function writeChunk(
 		extractModel = `${extract.model.provider}/${extract.model.id}`;
 		failover = extract.failed;
 		if (options.rawDir) writeFileSync(`${options.rawDir}/${chunkId}.extract.txt`, extract.content);
-		({ drafts, rejected } = stage("extract", chunkId, () => parseDrafts(extract.content, chunk.refs)));
+		try {
+			({ drafts, rejected } = stage("extract", chunkId, () => parseDrafts(extract.content, chunk.refs)));
+		} catch (error) {
+			if (failureClass(error) !== "output") throw error;
+			extractRetried = true;
+			const retry = await completeWithFallback(
+				primary,
+				options.fallback ?? null,
+				EXTRACT_SYSTEM,
+				`${chunk.text}${retryNote(error)}`,
+				`extract ${chunkId} (json retry)`,
+				{ preferFallback: options.preferFallback },
+			);
+			extractUsage = addUsage(extract.usage, retry.usage);
+			({ drafts, rejected } = stage("extract", chunkId, () => parseDrafts(retry.content, chunk.refs)));
+			extractEndpoint = retry.endpoint;
+		}
+		extractRepaired = takeJsonRepair();
 		// Provenance the writer never sees: a draft grounded in a user turn is the class
 		// the summary reserves budget for.
 		drafts = drafts.map((draft) => ({
@@ -162,6 +210,7 @@ export async function writeChunk(
 		createdAt,
 		drafts: drafts.map((d) => ({ ...d, sourceEntryIds: d.refs.map((r) => chunk.refs[r]).filter(Boolean) })),
 		rejectedCount: rejected.length,
+		repaired: extractRepaired,
 		usage: extractUsage,
 	};
 	// On a resume the caller already persisted this record; only a fresh extract
@@ -211,9 +260,30 @@ export async function writeChunk(
 		reconcileModel = `${raw.model.provider}/${raw.model.id}`;
 		failover = failover ?? raw.failed;
 		if (options.rawDir) writeFileSync(`${options.rawDir}/${chunkId}.reconcile.txt`, raw.content);
-		const parsed = stage("reconcile", chunkId, () =>
-			parseOps(raw.content, drafts.length, new Set(seen.map((e) => e.id)), allowedTargets),
-		);
+		let content = raw.content;
+		let parsed: ReturnType<typeof parseOps>;
+		try {
+			parsed = stage("reconcile", chunkId, () =>
+				parseOps(content, drafts.length, new Set(seen.map((e) => e.id)), allowedTargets),
+			);
+		} catch (error) {
+			if (failureClass(error) !== "output") throw error;
+			reconcileRetried = true;
+			const retry = await completeWithFallback(
+				primary,
+				options.fallback ?? null,
+				reconcileSystem(seen.length),
+				`${user}${retryNote(error)}`,
+				`reconcile ${chunkId} (json retry)`,
+				{ preferFallback: extractEndpoint === "fallback" },
+			);
+			content = retry.content;
+			reconcileUsage = addUsage(raw.usage, retry.usage);
+			parsed = stage("reconcile", chunkId, () =>
+				parseOps(content, drafts.length, new Set(seen.map((e) => e.id)), allowedTargets),
+			);
+		}
+		reconcileRepaired = takeJsonRepair();
 		ops = parsed.ops;
 		rejectedOps = parsed.rejected;
 		downgradedOps = parsed.downgraded;
@@ -254,6 +324,7 @@ export async function writeChunk(
 			createdAt,
 			ops,
 			rejectedCount: rejectedOps.length,
+			repaired: reconcileRepaired,
 			rejectedOps: rejectedOps.slice(0, 6).map((r) => ({
 				reason: String(r.reason).slice(0, 160),
 				draft:
@@ -289,6 +360,8 @@ export async function writeChunk(
 		ops,
 		rejectedOps,
 		downgraded: downgradedOps,
+		repaired: { extract: extractRepaired, reconcile: reconcileRepaired },
+		retriedJson: { extract: extractRetried || undefined, reconcile: reconcileRetried || undefined },
 		report,
 		usage: { extract: extractUsage, reconcile: reconcileUsage },
 		endpoints: { extract: extractEndpoint, reconcile: reconcileEndpoint },

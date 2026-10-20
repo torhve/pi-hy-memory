@@ -596,6 +596,11 @@ export default function piHyMemory(pi: ExtensionAPI): void {
 					endpoints: result.endpoints,
 					models: result.models,
 					budgetDropped: result.budgetDropped.length,
+					// A malformed completion that `repairJson` had to fix. Counted rather than
+					// hidden: if it climbs, the prompt or the model changed.
+					repaired: result.repaired.extract || result.repaired.reconcile ? result.repaired : undefined,
+					jsonRetried:
+						result.retriedJson.extract || result.retriedJson.reconcile ? result.retriedJson : undefined,
 					budgetDroppedIds: result.budgetDropped.slice(0, 5).map((e) => e.id),
 					failover: result.failover ? result.failover.slice(0, 120) : undefined,
 					active: live.bank.filter((e) => e.status === "active").length,

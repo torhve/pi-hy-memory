@@ -73,6 +73,8 @@ export type LedgerRecord =
 			createdAt: string;
 			drafts: (Draft & { sourceEntryIds: string[] })[];
 			rejectedCount: number;
+			/** Repairs `repairJson` had to apply before this parsed, if any. */
+			repaired?: string[];
 			usage: CallUsage;
 	  }
 	| {
@@ -82,6 +84,8 @@ export type LedgerRecord =
 			createdAt: string;
 			ops: (ReconcileOp & { draftStatement?: string })[];
 			rejectedCount: number;
+			/** Repairs `repairJson` had to apply before this parsed, if any. */
+			repaired?: string[];
 			/** Bounded, so a later reader can see why the model's proposals were refused. */
 			rejectedOps?: { reason: string; draft?: number; target?: string }[];
 			downgradedOps?: { reason: string; draft?: number; target?: string }[];

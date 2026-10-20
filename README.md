@@ -260,6 +260,7 @@ to break silently:
 | `compaction-hook-check` | the hook uses pi's `firstKeptEntryId` and real `tokensBefore`, and a `hy.gap` record reaches the mirrored ledger when the clamp gives way |
 | `ops-guard-check`, `subject-guard-check` | wrong-target and wrong-subject UPDATEs |
 | `redact-check` | credential redaction without damaging identifiers |
+| `json-repair-check` | the two measured malformations (illegal escape, stray quote after a number) parse, content survives, valid output is untouched, and an unparseable reply is re-asked exactly once |
 | `budget-check`, `reload-budget-check` | pool eviction order, reload semantics, summary budget |
 | `render-check` | compaction summary budget, omission reporting, and newest-first admission |
 | `prune-check` | retention deletes old sessions and nothing else |
