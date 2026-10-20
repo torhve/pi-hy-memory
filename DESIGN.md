@@ -184,6 +184,15 @@ writes a `hy.gap { reason: "disabled" }` — the same record compaction uses for
 not avoid — so the ledger still says which entries were never read, and no catch-up burst is
 paid on re-enable. The config's `enabled: false` stays the global kill switch and wins.
 
+That gap has to be a **session entry**, not only a line in the mirror file. Coverage is rebuilt
+on reload from whichever copy of the ledger holds more records — the session's own custom
+entries, or the mirror — and the session copy is the one that can hold `hy.extract` and `hy.ops`
+from writes the mirror never saw. A gap that lives only in the mirror is therefore discarded the
+moment the session copy overtakes it, and the window comes straight back: on `01a15860`
+(2026-10-20) 450 694 tokens were discarded at 17:08 and 428 612 were pending again by 17:26,
+after which 22 compactions in a row — threshold and manual — fell back to pi's own summariser
+because honouring the extension's boundary would have dropped unread history.
+
 **A failure backs off across turns.** `lastFailed` (src/chain.ts) stops a *chain* from
 following a failure, but the trigger still fires once per `turn_end`: with a dead proxy and a
 session producing turns every few seconds that was **508 attempts in 37 minutes** (measured
@@ -677,7 +686,7 @@ and only wall time differs: **local `hy-memory-30b-a3b` 30.3 s, `remote/hy-memor
 137 s** — 4–5× on the same payload, so a 5-chunk corpus is ~4 min local and ~18 min through
 the proxy.
 
-*(2026-10-21: that 137 s is the llama.cpp profile. `remote/hy-memory-30b-a3b` now runs on
+*(2026-10-20: that 137 s is the llama.cpp profile. `remote/hy-memory-30b-a3b` now runs on
 strata-poly and the same chunk takes 92–106 s, but it is not reproducible at temperature 0 —
 see EXPERIMENTS.md, "the writer route moved to strata-poly".)*
 

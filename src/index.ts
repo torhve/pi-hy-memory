@@ -61,6 +61,7 @@ const AUDIT_FILE = join(STATE_DIR, "audit.ndjson");
 const SESSIONS_DIR = join(STATE_DIR, "sessions");
 
 const OPS_RECORD = "hy.ops";
+const GAP_RECORD = "hy.gap";
 
 /**
  * The config file is optional, but a *malformed* file is not: falling back to
@@ -147,10 +148,20 @@ function ledgerFromSession(entries: SessionEntry[]): LedgerRecord[] {
 	const records: LedgerRecord[] = [];
 	for (const entry of entries) {
 		if (entry.type !== "custom") continue;
-		if (entry.customType !== EXTRACT_RECORD && entry.customType !== OPS_RECORD) continue;
 		const data = entry.data as LedgerRecord | undefined;
-		if (data && typeof data.type === "string" && Array.isArray((data as any).drafts ?? (data as any).ops))
-			records.push(data);
+		if (!data || typeof data.type !== "string") continue;
+		// A gap is coverage, not a write: nothing folds it into the bank and no write
+		// path carries it. If it is not read back here, a reload rebuilds coverage
+		// from write records alone and the window `/hy on` discarded comes straight
+		// back. Measured on session 01a15860 (2026-10-20): 450 694 tokens discarded
+		// at 17:08, 428 612 pending again by 17:26, and every compaction after that
+		// fell back to pi's own summariser.
+		if (data.type === GAP_RECORD) {
+			if (typeof data.coversUpToId === "string" && typeof data.fromId === "string") records.push(data);
+			continue;
+		}
+		if (entry.customType !== EXTRACT_RECORD && entry.customType !== OPS_RECORD) continue;
+		if (Array.isArray((data as any).drafts ?? (data as any).ops)) records.push(data);
 	}
 	return records;
 }
@@ -1203,6 +1214,19 @@ export default function piHyMemory(pi: ExtensionAPI): void {
 		live.cursorId = newest.id;
 		live.resumeFromId = undefined;
 		mirror();
+		// Mirror first (it works even when the session is already closed), then the
+		// session entry. Coverage is rebuilt from session records on reload and the
+		// longer copy wins, so a gap that lives only in the mirror is discarded the
+		// moment the session copy overtakes it.
+		try {
+			pi.appendEntry(gap.type, gap);
+		} catch (error) {
+			audit("append_failed", {
+				sessionId: live.sessionId,
+				record: gap.type,
+				error: String((error as Error)?.message ?? error).slice(0, 200),
+			});
+		}
 		audit("skipped_while_off", { sessionId: live.sessionId, entries: pending.length, tokens });
 		return { entries: pending.length, tokens };
 	};

@@ -400,7 +400,7 @@ an automatic deletion path — nothing here measures whether the closed set is s
 Cheaper and safer first use: feed the verdicts to the summary selection (rank, not delete), and
 only tombstone behind an explicit command.
 
-## Run: hi-fi compaction against the session model (2026-10-21)
+## Run: hi-fi compaction against the session model (2026-10-20)
 
 The proposal: at a compaction, ask the session's own model to *write* the checkpoint — pi's
 six sections — from the bank delta plus the kept tail, instead of rendering the bank. The
@@ -434,7 +434,7 @@ The endpoint had already told us its vocabulary when an earlier call sent `no_th
 *"unknown reasoning effort 'no_think': use none, low, medium or high"* — pi's levels are
 `off, minimal, low, medium, high, xhigh, max`, and `off` is not a value that server accepts.
 
-### …and what fixed it (2026-10-21)
+### …and what fixed it (2026-10-20)
 
 Same session, same model. Two changes, in order, each measured separately.
 
@@ -467,7 +467,7 @@ Estimator note: 4 000 server output tokens corresponded to 1 441–3 078 tokens 
 (`chars / 4`) depending on arm. For markdown dense with hex ids and code identifiers the estimate
 under-counts by roughly 30 %, which matters for `hifiDeltaTokens` and `hifiTailTokens` too.
 
-### The re-offer is the expensive part, and bounding it buys coverage (2026-10-21)
+### The re-offer is the expensive part, and bounding it buys coverage (2026-10-20)
 
 The second real boundary was accepted (1 955 output tokens, 6/6 sections, no invented ids) but
 cited only **11 of the 71 facts it was offered**. The self-healing rule — re-offer anything the
@@ -503,7 +503,7 @@ after three attempts, and the fact remains in the bank and recallable.
 Caveat kept honest: the four-boundary table is a simulation over the real bank with the model's
 measured citation rate substituted for the model. The single-boundary numbers above are live.
 
-## Run: the writer route moved to strata-poly (2026-10-21)
+## Run: the writer route moved to strata-poly (2026-10-20)
 
 `remote/hy-memory-30b-a3b` now serves PolyStrata's `strata-poly` engine; the llama.cpp profile
 is still on the same box as `hy-memory-30b-a3b-llamacpp`. Replayed the baseline chunk
@@ -533,7 +533,7 @@ agreement gate measures the judge, not the writer.
 Failover is unchanged and still real: primary `remote/hy-memory-30b-a3b` (strata-poly) and
 fallback `hy-memory-30b-a3b` (llama.cpp hybrid) are different engines on different hardware.
 
-## Finding: `no_think` is not a reasoning effort (2026-10-21)
+## Finding: `no_think` is not a reasoning effort (2026-10-20)
 
 `chatTemplateKwargs: {reasoning_effort: "no_think"}` was the value in the shipped config, the
 README and the dev harness. Probed against both profiles on the same box:
@@ -565,3 +565,39 @@ sent with.
 Validated after the fix: the same chunk through strata-poly with `reasoning_effort: none` gave
 7 drafts, 0 rejected ops, 108.6 s — inside the 92–106 s spread above. Across five strata runs
 the draft counts are 6, 7, 7, 8, 7 (mean 7.0), which is the same mean llama.cpp produced.
+
+## Run: a late `/hy on` discarded 450 694 tokens, then lost them (2026-10-20)
+
+The footer of a long-running session read `hy ▕████████▏ 429k/6k`. Not a rendering fault: the
+audit agrees, `pendingTokens` 428 612 → 407 108 across the last eight chunks. The window held
+2 438 entries the writer had never read.
+
+**What the session actually did.** `session_start` 08:14, `/hy off` 09:16 (with a write in
+flight), then eight hours with the extension off. `/hy on` at 17:08 computed the discard
+correctly — `skipped_while_off {entries: 2783, tokens: 450694}` — and eighteen minutes later
+428 612 tokens were pending again. The session was replaced at 17:08 (`session_shutdown` →
+`session_start` 17:09), and the gap did not survive it: `ledgerFromSession` recognised
+`hy.extract` and `hy.ops` only, and `reset()` takes whichever ledger copy is longer — the
+session's custom entries held 55 records against the mirror file's 46, so the copy that could
+not express a gap won.
+
+**Consequence, measured from the session file.** 3 483 entries, 12 compactions, and only two of
+them (`compact` audit events at 09:04 and 09:18) were hy-memory's. Every compaction after the
+re-enable — threshold at 17:50, manual at 17:51, the compaction itself at 17:53 — fell back to
+pi's own summariser, because `compactionBoundary` would have dropped 395 492 unread tokens past
+the 6 000-token bound. The defer rule was right; the state forcing it was not.
+
+**Swap-side cross-check.** The llama-swap activity API for the same window shows 122 completed
+requests on `hy-memory-30b-a3b` (llama.cpp, 40–122 s each) and **zero** on
+`remote/hy-memory-30b-a3b`: after two `Stream ended without finish_reason` failovers the session
+ran entirely on the fallback.
+
+**Fix.** The gap is appended as a session entry as well as mirrored, and `ledgerFromSession`
+reads `hy.gap` back. `tools/gap-reload-check.ts` replays off → on → reload with the session copy
+ahead of the mirror: 0 tokens pending with the fix, 37 000 with the gap reading disabled, and a
+catch-up write fires in the second case.
+
+**Still open.** `append_failed` at 17:29 (chunk `hy-01a15860-011`): *"This extension ctx is
+stale after session replacement or reload"* — the write path appends with a captured ctx, which
+is also why the mirror file trails the session entries. And the drain rate: `MAX_CHAIN = 2` with
+90–122 s per chunk shed 21 504 tokens in 21 minutes, about 1k/min against a 407k backlog.
