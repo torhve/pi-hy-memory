@@ -31,10 +31,8 @@ import {
 	entryTokens,
 	fileOperations,
 	renderEntry,
-	resumeAfterLostCursor,
 	selectTail,
 	serializeEntries,
-	type Window,
 } from "./entries.js";
 import { nextFailoverState } from "./failover.js";
 import { failureClass, shrinksChunk, writeCooldownMs } from "./failures.js";
@@ -74,12 +72,19 @@ const SESSIONS_DIR = join(STATE_DIR, "sessions");
 const OPS_RECORD = "hy.ops";
 const GAP_RECORD = "hy.gap";
 /**
- * What a compaction budget cannot see: the system prompt, tool schemas, and the distance between
- * pi's token counts and these estimates. The kept tail is cut to the window minus this, so an
- * overflow recovery leaves room for what the provider actually receives rather than what the branch
- * appears to hold.
+ * The floor on what a compaction budget cannot see: the system prompt and tool schemas are not ours
+ * to render, and pi counts tokens with a real tokenizer while this file estimates them from
+ * characters. Measured overhead is used when pi has counted a request; this is what is left for a
+ * session it has not.
  */
 const COMPACT_OVERHEAD_TOKENS = 2000;
+/**
+ * Room a compaction leaves below the threshold rather than filling it. A budget spent exactly to
+ * `window − reserve` puts the next request back at the trigger, so pi compacts again on the turn
+ * that follows — a compaction that trims the working set every turn is worse than one that trims
+ * less and holds.
+ */
+const COMPACT_SLACK_TOKENS = 1500;
 /** The kept tail never goes below this, so a compaction cannot leave the model with nothing to work from. */
 const COMPACT_KEEP_MIN_TOKENS = 1000;
 
@@ -988,11 +993,28 @@ export default function piHyMemory(pi: ExtensionAPI): void {
 		// window is a hard limit, and a compaction that leaves the request oversized is not a recovery —
 		// it is the 400 the provider answers with. So the window is split between the three things the
 		// retry sends: the kept tail, the summary, and the digest of whatever the cut removes that the
-		// writer never read. `COMPACT_OVERHEAD_TOKENS` covers what this extension cannot see: the system
-		// prompt, tool schemas, and the gap between pi's counts and these estimates.
+		// writer never read. What the retry carries on top of those three is measured below, since the
+		// prompt and the tool schemas are not ours to render.
 		const windowTokens = ctx.model?.contextWindow ?? 0;
 		const reserve = event.preparation?.settings?.reserveTokens ?? 0;
-		const available = windowTokens > 0 ? Math.max(0, windowTokens - reserve - COMPACT_OVERHEAD_TOKENS) : undefined;
+		// The overhead the budget has to absorb is measured, not assumed. Pi's count covers the whole
+		// request — system prompt, tool schemas, everything this extension does not render — while
+		// `entryTokens` covers only the conversation, so the difference is what the retry will carry
+		// on top of the summary and the tail. A session with a large prompt and many tools needs a far
+		// bigger allowance than one with none, and guessing too small makes the compaction miss the
+		// threshold it was supposed to clear: pi compacts again, and again. `COMPACT_OVERHEAD_TOKENS`
+		// stays as the floor for a session pi has not counted.
+		const branchTokens = entries.reduce((sum, e) => sum + entryTokens(e), 0);
+		// Only part of that gap is prompt: pi counts with a real tokenizer and this file estimates
+		// with characters, so a long conversation inflates the difference by counting alone. A third
+		// of the window is treated as the most prompt and schemas can plausibly cost, which keeps a
+		// large session from trimming its working set away.
+		const overheadTokens = Math.max(
+			COMPACT_OVERHEAD_TOKENS,
+			Math.min((event.preparation?.tokensBefore ?? 0) - branchTokens, Math.floor(windowTokens * 0.3)),
+		);
+		const available =
+			windowTokens > 0 ? Math.max(0, windowTokens - reserve - overheadTokens - COMPACT_SLACK_TOKENS) : undefined;
 		const digestBudget =
 			available === undefined
 				? config.overflowDigestTokens
@@ -1084,6 +1106,8 @@ export default function piHyMemory(pi: ExtensionAPI): void {
 				trimmedEntries: choice.trimmed.entries,
 				trimmedTokens: choice.trimmed.tokens,
 				keptTokens: choice.used,
+				windowTokens,
+				overheadTokens,
 				maxKeepTokens,
 				digestEntries,
 				digestTokens: digest ? estimateTokens(digest) : 0,

@@ -182,15 +182,17 @@ const ctx = {
 	thinkingLevel: "off",
 };
 
-// 12 000 − 1 000 reserve − 2 000 overhead = 9 000 available: 1 500 to the digest, 6 500 to the
-// summary, 1 500 to the kept tail. Entries are ~1 000 tokens, so the tail is cut to one entry.
-const preparation = (firstKeptEntryId: string) => ({
+// 12 000 − 1 000 reserve − overhead = what the retry can hold. The overhead is measured, not
+// assumed: pi counts the whole request, this branch counts only the conversation, and the fixture
+// states that gap as 2 500 tokens of prompt and schemas. So 8 500 available: 1 500 to the digest,
+// 6 000 to the summary, 1 000 to the kept tail. Entries are ~1 000 tokens, so the tail is cut to one.
+const branchTokens = hookBranch.reduce((sum, e) => sum + entryTokens(e), 0);
+const preparation = (firstKeptEntryId: string, tokensBefore = branchTokens + 2_500) => ({
 	firstKeptEntryId,
 	messagesToSummarize: [],
 	turnPrefixMessages: [],
 	isSplitTurn: false,
-	tokensBefore: 90_000,
-	fileOps: { readFiles: [], modifiedFiles: [] },
+	tokensBefore,
 	settings: { enabled: true, reserveTokens: 1000, keepRecentTokens: 5000 },
 });
 
@@ -262,6 +264,20 @@ check(
 	false,
 );
 
+// 6. The overhead is measured from pi's count of the request, and capped: a count far larger than
+// this branch can account for must not be charged entirely to the prompt, or a long session would
+// trim its own working set away.
+const inflated = await compact(
+	{
+		branchEntries: hookBranch,
+		preparation: preparation("b0", 500_000),
+		reason: "overflow",
+		willRetry: true,
+		signal: new AbortController().signal,
+	},
+	ctx,
+);
+check("an inflated count still returns a compaction", inflated?.compaction !== undefined, true);
 const audit = readFileSync(join(process.env.PI_HY_MEMORY_STATE as string, "audit.ndjson"), "utf8")
 	.split("\n")
 	.filter(Boolean)
@@ -272,6 +288,16 @@ check("the trim is audited", trimmedLine?.reason, "overflow");
 check("the trim leaves a tail inside the kept share", (trimmedLine?.keptTokens as number) <= 1500, true);
 check("the digest is bounded by its own budget", (trimmedLine?.digestTokens as number) <= 1500, true);
 check("and it covers the unread entries the trim removed", trimmedLine?.digestEntries, 7);
+check("the overhead is pi's count minus this branch", trimmedLine?.overheadTokens, 2500);
+const inflatedLine = audit.filter((a) => a.event === "compact_trimmed").at(-1);
+check("and capped at a third of the window", inflatedLine?.overheadTokens, 3600);
+// The newest entry survives even when it alone exceeds the kept share, so the share is a target,
+// not a ceiling: what the capped run must do is shed more than it keeps.
+check(
+	"the capped run shed more than it kept",
+	(inflatedLine?.trimmedTokens as number) > (inflatedLine?.keptTokens as number),
+	true,
+);
 
 const gaps = readFileSync(join(process.env.PI_HY_MEMORY_STATE as string, "sessions", "01234567.ledger.jsonl"), "utf8")
 	.split("\n")
@@ -280,5 +306,11 @@ const gaps = readFileSync(join(process.env.PI_HY_MEMORY_STATE as string, "sessio
 check("the cut is recorded as a gap", gaps[0]?.reason, "overflow-trim");
 check("coverage resumes at the first kept entry", gaps[0]?.fromId, overflow?.compaction?.firstKeptEntryId);
 
+for (const line of audit.filter((a) => a.event === "compact_trimmed")) {
+	console.log(
+		`   trim ${line.reason}: window ${line.windowTokens} overhead ${line.overheadTokens} ` +
+			`keep≤${line.maxKeepTokens} kept ${line.keptTokens} dropped ${line.trimmedEntries} digest ${line.digestTokens}`,
+	);
+}
 console.log(failures === 0 ? "ok: overflow compact" : `${failures} failure(s)`);
 process.exit(failures === 0 ? 0 : 1);

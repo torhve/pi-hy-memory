@@ -178,9 +178,11 @@ provider answered both attempts with 400 "request exceeds the context window", a
 was left unrecoverable — deferring to a fallback that needs the same oversized request is not a
 fallback. On overflow the extension produces the summary itself, and the window is divided
 before the cut is chosen: kept tail, summary and digest all fit inside
-`contextWindow − reserveTokens − COMPACT_OVERHEAD_TOKENS` (prompt and tool schemas, which this
-extension cannot see). `keepRecentTokens` is a working-set preference and loses to that budget;
-the summary gives up its configured maximum before the tail gives up its entries, and the newest
+`contextWindow − reserveTokens − overhead`. The overhead is measured rather than guessed — pi's
+count of the request minus this branch's own token sum, floored at 2000 and capped at a third of the
+window, since that gap is prompt and tool schemas only partly. Guessing it too small is what caused
+the thrash: a compaction that misses the threshold it was meant to clear makes pi compact again.
+`keepRecentTokens` is a working-set preference and loses to that budget; the summary gives up its
 entry is never dropped because pi needs a real id to cut at. Whatever the cut removes while still
 unread is digested into the summary (`overflowDigestTokens`), recorded as an `hy.gap` in the
 ledger, and audited as `compact_trimmed`, so coverage resumes at the first kept entry instead of

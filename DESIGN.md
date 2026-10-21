@@ -452,8 +452,8 @@ extension deferred twice at 375 464 tokens against a 196 608-token window, the p
 both attempts with 400 "request exceeds the context window", and pi's fallback needed the same
 oversized request. A deferral that cannot succeed is not a fallback, so on overflow the hook
 produces the summary itself and the window is divided before the cut is chosen —
-`contextWindow − reserveTokens − COMPACT_OVERHEAD_TOKENS` split between the kept tail, the summary
-and a digest of whatever the cut removes that the writer never read (`overflowDigestTokens`,
+`contextWindow − reserveTokens − overhead` split between the kept tail, the summary and a digest of
+whatever the cut removes that the writer never read (`overflowDigestTokens`,
 bounded by `serializeEntries({ maxTokens, maxEntryChars })` so one huge tool result cannot spend
 the whole share). `keepRecentTokens` is a working-set preference and yields to that budget; the
 summary gives up its configured maximum before the tail gives up entries, and the newest entry is
@@ -462,6 +462,14 @@ window, `compact_trimmed` reports the kept size so the case is visible rather th
 is audited as `compact_trimmed`, recorded as an `hy.gap { reason: "overflow-trim" }`, and moves
 coverage to the first kept entry, so a later window is measured from where the writer actually
 resumes.
+The overhead is the one quantity here that pi knows and this extension does not: the system prompt
+and the tool schemas are not ours to render, so it is taken as `tokensBefore − sum(entryTokens)` —
+pi's count of the request against the branch's own estimate. That gap is counting error as well as
+prompt, so it is floored at `COMPACT_OVERHEAD_TOKENS` and capped at a third of the window: a cap
+that binds is a long session keeping its working set, and a floor that binds is a session pi has not
+counted yet. A first compaction with no previous request to measure against is exactly the case the
+constant was written for; what it could not cover was a prompt of several thousand tokens, which is
+how the thrash below started.
 On `01a15d4e`'s numbers — a 196 608-token window, pi's default `reserveTokens: 16384` — that
 division leaves 168 724 for the tail, 8 000 for the summary and 1 500 for the digest: the ~300 000
 tokens the lagging cursor was holding are cut to fit, and the retry asks for roughly 180 000 of
