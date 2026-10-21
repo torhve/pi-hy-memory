@@ -47,12 +47,13 @@ ROOT=${LIVE_ROOT:-/tmp/hy-reload}
 WRITER=${LIVE_WRITER:-test/writer}
 RUNS=${LIVE_RUNS:-3}
 WRITER_TIMEOUT=${LIVE_WRITER_TIMEOUT:-240000}
-# The window has to be wide enough that the cut lands *after* the design turns. At 20 000 with a
-# 6 000 reserve the threshold is 14 000, which the five design answers cross on their own: the cut
-# then fell inside the design, and the answers that followed it restated every decision. At 30 000
-# the threshold is 24 000, which the design turns (~12 000 tokens) stay under and the notifyd turns
-# push past.
-CONTEXT=${LIVE_CONTEXT:-30000}
+# The cut has to land after the design turns and before the closing question, so where it fires is
+# arithmetic rather than a guess. Answers are capped at five bullets (~700 tokens): the five design
+# turns plus the system prompt come to roughly 7 500 tokens, and the three `notifyd` turns add roughly
+# 5 700 more. A threshold of 10 000 — this window minus the 6 000 reserve — therefore fires inside the
+# notifyd stretch. At 30 000 it fired mid-design, and the design answers that followed the cut restated
+# every probe, which is what made the kept tail read 5 348 tokens.
+CONTEXT=${LIVE_CONTEXT:-16000}
 RESERVE=${LIVE_RESERVE:-6000}
 # The session model emits a thinking block as content even with `--thinking off` — measured at up to
 # 2 100 tokens per turn — so a window that only covers the prose leaves pi no output budget at all:
@@ -82,7 +83,7 @@ for i in {1..40}; do
 	FILLER+="2026-04-$(( (i % 28) + 1 ))T0$((i % 9)):$((10 + (i % 49)))Z notifyd[$((800 + i))] dispatch: ${VERBS[((i % 8) + 1)]} ${STATUSES[((i % 8) + 1)]} bytes=$((300 + i * 17)) uid=$((i % 2 == 0 ? 1000 : 0))"$'\n'
 done
 MESSAGES=(
-	"We are designing the settings layer for a small CLI called tctl, a single binary people install with brew. Reason out loud about where its config lives; I will push back. Constraints: the file must be editable by hand, it must be settings.toml so it matches the other tools in this family, and it must never be written while another instance holds it, so lock it with flock on every write. Respect XDG_CONFIG_HOME when set, otherwise fall back to ~/.config/tctl."
+	"We are designing the settings layer for a small CLI called tctl, a single binary people install with brew. Reason out loud about where its config lives; I will push back. Constraints: the file must be editable by hand, it must be settings.toml so it matches the other tools in this family, and it must never be written while another instance holds it, so lock it with flock on every write. Respect XDG_CONFIG_HOME when set, otherwise fall back to ~/.config/tctl. Keep every answer to at most five short bullets — no preamble, and do not restate my question. The handover note I ask for at the end may be longer."
 	"Good. Now I reject one alternative explicitly: YAML. We rejected YAML because tctl's config is a flat key list and a YAML parser is a dependency we would carry for twelve keys. Keep the rejection in the record, not just the choice. Next: permissions and the write strategy. Pick a file mode — 0o600, since the file will hold tokens — and say how you write it."
 	"Before you continue, an incident from last spring: the ticket was MIGRATE-2024, and the failure was that a partial write left a truncated file that the next run silently re-created with defaults, so the user lost their settings and never noticed. Whatever you choose has to make a truncated file loud rather than quiet. Fold that into the rule."
 	"Unrelated chatter: the coffee machine is being serviced Thursday and the standing meeting moved to Friday because the room is double-booked — ignore that for the design. Back to it: when the settings file exists but is unreadable or half-written, what should tctl do, and what should it exit with? Specific codes, not generic ones: exit code 3 for settings errors so scripts can tell them apart from usage errors, exit code 4 for lock contention."
