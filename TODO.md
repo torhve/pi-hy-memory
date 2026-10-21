@@ -46,22 +46,21 @@ gate.
 
 ### 2. Tier-1 protocol fixes (measured against the baseline)
 
-- [ ] 2.1 Per-draft candidate budget: replace the global `seen.slice(0, candidateLimit)` union
-      in `src/pipeline.ts` with per-draft top-`candidatePerDraft` (new config key, default 3)
-      under a global `candidateLimit` cap; render candidates grouped upstream-style
-      (`for draft[i]: …`, explicit `(no candidates)`); `allowedTargets` = exactly the shown set.
-- [ ] 2.2 Add `tools/candidate-coverage-check.ts`: synthetic 20-draft × 200-entry bank scenario
-      asserting every draft's block carries its own candidates or an explicit no-candidates
-      marker; wire into `npm run check`.
-- [ ] 2.3 SKIP op: add `{ action: "SKIP", draft, reason? }` to `ReconcileOp`
-      (`src/protocol.ts` parse/validate, `src/bank.ts` ignores it for the bank), count it in the
-      `hy.ops` audit record, and add SKIP to the reconcile system prompt vocabulary.
-- [ ] 2.4 Update `src/config.ts` + README config table + DESIGN.md for `candidatePerDraft` and
-      SKIP; `tools/config-docs-check.ts` and `npm run check` pass.
-- [ ] 2.5 Run `tier1-<date>` on the same corpus; gate vs baseline: per-draft zero-candidate
-      drafts reduced to ≤ 10 % of drafts; rejected + downgraded ops not increased; reconcile
-      input tokens ≤ baseline + 20 %; judge durable score not below baseline. Record verdict in
-      `EXPERIMENTS.md`.
+- [x] 2.1 Per-draft candidate budget: shipped as `candidateRenderMode: "perDraft"` rather than a
+      `candidatePerDraft` count — every draft with candidates sees its own best match before the
+      global `candidateLimit` cap fills. Measured on the 12-chunk corpus: starved drafts 20.5 % →
+      2.2 %, reconcile input −6.5 %, no judge-verified regression.
+- [x] 2.2 `tools/candidate-coverage-check.ts` exists and runs under `npm run check`, asserting every
+      draft's block carries its own candidates or an explicit no-candidates marker.
+- [x] 2.3 SKIP op: `ReconcileOp` carries `{ action: "SKIP", draft, reason? }`, validated in
+      `src/protocol.ts`, ignored by the bank, counted in the `hy.ops` audit record and in the
+      reconcile vocabulary.
+- [x] 2.4 Config, README table and DESIGN.md updated; `tools/config-docs-check.ts` and
+      `npm run check` pass.
+- [x] 2.5 Run on the extended corpus against the baseline: zero-candidate drafts 20.5 % → 2.2 %
+      (≤ 10 % gate met), rejected and downgraded ops not increased, reconcile input 6.5 % *below*
+      baseline, judge found no durable regression. Recorded in `RESULTS.md` and `DESIGN.md`
+      (`EXPERIMENTS.md` was never created; results live in `RESULTS.md`).
 
 ### 3. Prompt experiments (one variable at a time; `src/prompts.ts` untouched until a gate passes)
 
@@ -89,10 +88,10 @@ gate.
 - [ ] 4.1 Bank-growth audit: `hy.ops` records gain `bankGrowth { dBankTokens, chunkTokens }`
       (the ratio the upstream RL penalty taxes); surface worst recent ratio in `/hy` status;
       add a `tools/` check.
-- [ ] 4.2 `hy_recall` query mode: text query → lexical ranking over task/statement/keys,
-      returns top-k ids + snippets + source entries; append a `hy.recall { ids }` ledger record
-      as usage telemetry; `tools/recall-query-check.ts`; token cost per call bounded and
-      documented.
+- [x] 4.2 `hy_recall` query mode: text query → lexical ranking, top-k ids and snippets, and `id`
+      expansion with the exact source entries; covered by `tools/recall-check.ts` (named
+      `recall-check`, not `recall-query-check`). **Remaining:** the `hy.recall { ids }` usage record,
+      which 4.3 waits on — without it there is no recall telemetry to rank the pool from.
 - [ ] 4.3 E5 (deferred until ≥ 30 `hy.recall` records exist across sessions): pool ranking from
       recall hits + recency instead of the saturated confidence tiers; run against corpus banks,
       gate on durable facts surviving compaction summaries.
@@ -100,9 +99,33 @@ gate.
 ### 5. Consolidation
 
 - [ ] 5.1 Update `DESIGN.md`, `README.md`, `RESULTS.md` to match shipped behavior and record the
-      experiment table; docs/code consistency checks and `npm run check` pass.
+      experiment table; docs/code consistency checks and `npm run check` pass. Continuous, not a
+      one-off: the flush, cadence and boundary results are recorded, and each behaviour change so
+      far came with its README row and DESIGN paragraph in the same commit.
 - [ ] 5.2 Write the Tier-4 follow-up plan (upstream two-layer fact + value-bar experiences
       output shape) as a separate `plan-two-layer.md` — explicitly not executed in this TODO.
+
+### 6. Open after `hy_flush` (measured 2026-10-21, `experiment/hy-flush`)
+
+- [x] 6.1 `hy_flush` shipped with `flushTool`, `flushListEntries`, `flushMinTokens`; pure rules in
+      `tools/flush-check.ts`, wiring in `tools/flush-tool-check.ts`.
+- [x] 6.2 Does a quantized session model use it? Yes, 3/3 unprompted two-step calls
+      (`dev/live-flush.sh`), and it writes a turn earlier than the 1 200-token threshold does
+      (`dev/live-cadence.sh`). The cooldown is what refuses a dead writer, verified live.
+- [x] 6.3 Does a finer boundary buy quality? No (`out/base-2026-10-21` against
+      `out/halves-2026-10-21`, judged twice): specificity flat, durable share 60 % → 51 %, bank
+      +53 %, 2× writes for +14 % prompt tokens. Predictions pre-registered in
+      `notes/boundary-prediction.md`.
+- [ ] 6.4 Does earlier coverage actually survive a reload? The cadence run only proved a write starts
+      earlier. Needs a session reloaded inside the gap between a flush and the threshold, then
+      `hy_recall` on a fact that only the flush covered.
+- [ ] 6.5 Does `flushMinTokens` hold real sessions near threshold-sized chunks, or does it just
+      refuse? Re-run `dev/live-cadence.sh` and read accepted chunk sizes against refusals.
+- [ ] 6.6 Retrieval precision on a larger bank: the arm's 240-fact bank may answer more queries and
+      crowd out the right fact. `hy_recall` ranking is lexical and there is no precision measurement
+      for it yet.
+- [ ] 6.7 Recall telemetry (`hy.recall` records, 4.2 remainder): without it the pool ranking in 4.3
+      has no usage signal, and tonight's relevance-tier borrowing idea has nothing to rank on.
 
 ## Notes
 
