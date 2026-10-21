@@ -76,7 +76,7 @@ EOF
 python3 - "$ROOT" "$MODEL" "$ORIGIN" "$PORT" "$CONTEXT" "$WRITER" "${LIVE_WRITER_ORIGIN:-$ORIGIN}" "${LIVE_WRITER_PORT:-$PORT}" <<'PY'
 import json, os, sys
 
-root, model, origin, port, context, writer, w_origin, w_port = sys.argv[:8]
+root, model, origin, port, context, writer, w_origin, w_port = sys.argv[1:9]
 provider, _, model_id = model.partition("/")
 w_provider, _, w_id = writer.partition("/")
 agent = os.path.join(root, ".pi", "agent")
@@ -86,19 +86,15 @@ instances = [
 		"id": provider,
 		"origin": origin,
 		"port": int(port),
-		"modelCapabilities": {model_id: {"contextWindow": int(context)}},
+		# `contextOverrides` is what pi-llama-swap reports as the model's window, which is what
+		# pi's compaction rule measures against. Pinning it small is how this harness makes
+		# compaction fire inside a short conversation.
+		"contextOverrides": {model_id: int(context)},
 	}
 ]
 if w_id and w_provider and w_provider != provider:
 	# The writer is usually a different box than the session model, so it needs its own route.
-	instances.append(
-		{
-			"id": w_provider,
-			"origin": w_origin,
-			"port": int(w_port),
-			"modelCapabilities": {w_id: {"contextWindow": 40960}},
-		}
-	)
+	instances.append({"id": w_provider, "origin": w_origin, "port": int(w_port)})
 with open(os.path.join(agent, "pi-llama-swap.json"), "w") as fh:
 	json.dump({"instances": instances}, fh, indent=2)
 if not os.path.exists(os.path.join(agent, "auth.json")):
@@ -139,13 +135,13 @@ EOF
 		python3 - "$name" "$i" "$ROOT/$name-$i.json" "$state" "$session_file" "${PROBES[@]}" <<'PY'
 import json, os, sys
 
-name, i, transcript, state, session_file = sys.argv[:5]
-probes = sys.argv[5:]
+name, i, transcript, state, session_file = sys.argv[1:6]
+probes = sys.argv[6:]
 
 
 def rows(path):
     out = []
-    if not path or not os.path.exists(path):
+    if not path or not os.path.isfile(path):
         return out
     with open(path) as fh:
         for line in fh:
