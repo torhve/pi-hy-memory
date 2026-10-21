@@ -145,6 +145,10 @@ export type FlushInput = {
 	entryCount: number;
 	/** Model-initiated writes already queued. */
 	pendingFlushes: number;
+	/** Estimated tokens in the unwritten window. */
+	pendingTokens: number;
+	/** `flushMinTokens`: how much unwritten content a model-initiated write must clear. */
+	minTokens: number;
 };
 
 export type FlushDecision = { flush: boolean; reason: string };
@@ -167,6 +171,11 @@ export type FlushDecision = { flush: boolean; reason: string };
 export function shouldFlushWrite(input: FlushInput): FlushDecision {
 	if (!input.sessionActive) return { flush: false, reason: "session off" };
 	if (input.entryCount === 0) return { flush: false, reason: "nothing unwritten" };
+	// The threshold exists to keep a chunk near `maxChunkTokens`. A flush over less than
+	// `flushMinTokens` fragments the bank the way the finer-boundary arm did — same content,
+	// finer cuts, flat specificity, durable share down — so it is refused and the threshold
+	// folds those same entries shortly.
+	if (input.pendingTokens < input.minTokens) return { flush: false, reason: "under flush token floor" };
 	if (input.inFlight) return { flush: false, reason: "write in flight" };
 	if (input.pendingExtract) return { flush: false, reason: "extract awaiting reconcile" };
 	if (input.pendingFlushes >= MAX_PENDING_FLUSH) return { flush: false, reason: "flush queue full" };

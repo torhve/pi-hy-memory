@@ -29,6 +29,9 @@ const baseConfig = {
 	timeoutMs: 2000,
 	observeAfterTokens: 100_000,
 	writeCooldownS: 0,
+	// This window is a handful of entries, so the floor is off here; the floor itself is pinned
+	// by `tools/flush-check.ts` and asserted against the wiring further down.
+	flushMinTokens: 0,
 };
 writeFileSync(join(dir, "config.json"), JSON.stringify(baseConfig));
 
@@ -177,5 +180,17 @@ check(
 	["write in flight"],
 );
 
+// 6. The token floor is enforced by the wiring, not only by the gate: a thin window is refused and
+// the listing says what a write needs, because a model that ignores a refusal still sees the number.
+writeFileSync(join(dir, "config.json"), JSON.stringify({ ...baseConfig, flushMinTokens: 2000 }));
+const floored = faux();
+piHyMemory(floored.pi as never);
+(floored.handlers.get("session_start") as (e: unknown, c: unknown) => unknown)(undefined, ctx);
+const flooredFlush = () => floored.tools.get("hy_flush") as ToolDef;
+const floorListing = await flooredFlush().execute("t3", {}, undefined, undefined, ctx);
+has("the listing states the floor", floorListing.content[0].text, "a write needs 2000.");
+const thin = await flooredFlush().execute("t4", { to: 1 }, undefined, undefined, ctx);
+has("a thin window is refused", thin.content[0].text, "the floor is 2000");
+check("a refused flush queues no write", thin.details, undefined);
 console.log(failures === 0 ? "ok: flush tool" : `${failures} failure(s)`);
 process.exit(failures === 0 ? 0 : 1);

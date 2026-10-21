@@ -188,7 +188,8 @@ that waited for the write could hold a turn for eight minutes.
 
 `shouldFlushWrite` (`src/chain.ts`) skips the token threshold on purpose — that is the whole point —
 and keeps the guards that make a write wrong or wasteful: `/hy off`, a write in flight, a persisted
-extract awaiting its reconcile, a held primary, an active cooldown, and a queue bounded at
+extract awaiting its reconcile, a held primary, an active cooldown, a window thinner than
+`flushMinTokens`, and a queue bounded at
 `MAX_PENDING_FLUSH = 2`, because a model that flushes after every edit pays ~25 s and 9 000 tokens
 per call. An active cooldown refuses the calls made inside its window — measured live, one failed
 write turned the next three calls into `write cooling down` refusals — but it does not bound how
@@ -202,6 +203,16 @@ about 200 estimated tokens. The listing caps at
 re-serialized into the writer's prompt. Registration is conditional on `flushTool`, so turning it
 off removes the surface from the prompt instead of leaving a tool that only refuses
 (`tools/flush-check.ts`, `tools/flush-tool-check.ts`).
+
+**The floor is measured, not cautious.** Cutting the same 12 captures into 24 pieces — one write per
+piece, same writer, same judge, identical content — produced 240 active facts against 157 and 52
+updates against 26, while judged specificity stayed flat (2.459 / 2.473 against 2.519 / 2.563, a gap
+inside the judge's own ±0.05 spread) and the durable share fell from 60 % to 51 %. Duplication per
+entry did *not* rise, so the extra facts are finer granularity rather than repetition: a smaller
+window makes the writer state more, shorter, more marginal things. A flush therefore has to clear
+`flushMinTokens` of unwritten content, and the listing states that number, because in the live
+cadence run a model that was refused three times in a row asked again anyway — the refusal alone
+does not teach it anything.
 
 **Coverage is a position, not an id.** The watermark is stored as an entry id, and pi can move
 the leaf: a rewind, a resumed checkpoint, or a compaction that re-parents the branch leaves

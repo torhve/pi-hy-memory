@@ -113,6 +113,12 @@ check("listing names the exact call", listing.includes(flushInstructions(rows)),
 check("the instruction uses the highest valid ref", flushInstructions(rows).includes("to=2"), true);
 check("listing one row is still a listing", renderUnwritten(rows.slice(0, 1), 0).startsWith("[0] user:"), true);
 check(
+	"listing states the size a write needs when the floor is set",
+	renderUnwritten(rows, 24, 640, 2000).startsWith("~640 tokens unwritten; a write needs 2000."),
+	true,
+);
+check("listing stays silent about the floor when it is not given", listing.startsWith("[0] user:"), true);
+check(
 	"nothing unwritten says so",
 	renderUnwritten([], 24),
 	"Nothing is unwritten: the writer has covered every entry in this session.",
@@ -134,6 +140,8 @@ const open: FlushInput = {
 	coolingDown: false,
 	entryCount: 4,
 	pendingFlushes: 0,
+	pendingTokens: 3000,
+	minTokens: 2000,
 };
 check("a settled range is written", shouldFlushWrite(open), { flush: true, reason: "model asked" });
 check("an empty range refuses", shouldFlushWrite({ ...open, entryCount: 0 }), {
@@ -171,6 +179,24 @@ check("one queued flush still accepts a second", shouldFlushWrite({ ...open, pen
 // The gate order matters: `nothing unwritten` is answered before a busy writer, so a
 // model that flushes an already-written window gets a true reason, not "write in flight".
 check("emptiness is answered before busyness", shouldFlushWrite({ ...open, entryCount: 0, inFlight: true }), {
+	flush: false,
+	reason: "nothing unwritten",
+});
+// The token floor is the measured fix for fragmentation: finer boundaries than the threshold did
+// not raise quality, so a flush over a thin window is refused rather than paid for.
+check("a window under the floor refuses", shouldFlushWrite({ ...open, pendingTokens: 1999 }), {
+	flush: false,
+	reason: "under flush token floor",
+});
+check("a window at the floor accepts", shouldFlushWrite({ ...open, pendingTokens: 2000 }), {
+	flush: true,
+	reason: "model asked",
+});
+check("a floor of 0 accepts any unwritten window", shouldFlushWrite({ ...open, pendingTokens: 1, minTokens: 0 }), {
+	flush: true,
+	reason: "model asked",
+});
+check("emptiness is answered before the floor", shouldFlushWrite({ ...open, entryCount: 0, pendingTokens: 10 }), {
 	flush: false,
 	reason: "nothing unwritten",
 });

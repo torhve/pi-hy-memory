@@ -1395,7 +1395,17 @@ export default function piHyMemory(pi: ExtensionAPI): void {
 				// No `to` is the listing, not a write.
 				if (params.to === undefined || params.to === null)
 					return {
-						content: [{ type: "text", text: renderUnwritten(rows, config.flushListEntries ?? 24) }],
+						content: [
+							{
+								type: "text",
+								text: renderUnwritten(
+									rows,
+									config.flushListEntries ?? 24,
+									window.tokens,
+									config.flushMinTokens,
+								),
+							},
+						],
 						details: { unwritten: rows.length, pendingTokens: window.tokens },
 					};
 
@@ -1426,6 +1436,8 @@ export default function piHyMemory(pi: ExtensionAPI): void {
 					coolingDown: live.writeCooldownUntil > Date.now(),
 					entryCount: chunk.entryCount,
 					pendingFlushes: flushQueued,
+					pendingTokens: window.tokens,
+					minTokens: config.flushMinTokens,
 				});
 				if (!decision.flush) {
 					audit("flush_skipped", {
@@ -1439,7 +1451,10 @@ export default function piHyMemory(pi: ExtensionAPI): void {
 						content: [
 							{
 								type: "text",
-								text: `hy_flush: not written (${decision.reason}). The bank is unchanged; hy_recall still answers what it holds.`,
+								text:
+									decision.reason === "under flush token floor"
+										? `hy_flush: not written, ${window.tokens} tokens unwritten and the floor is ${config.flushMinTokens}. Keep working; the threshold folds these entries shortly, and hy_recall answers what is already in the bank.`
+										: `hy_flush: not written (${decision.reason}). The bank is unchanged; hy_recall still answers what it holds.`,
 							},
 						],
 						details: undefined,

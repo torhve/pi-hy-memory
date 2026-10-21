@@ -119,12 +119,17 @@ export function rangeEntries(pending: SessionEntry[], rows: FlushRow[], range: F
 }
 
 /** The listing the model reads before it can name a range. */
-export function renderUnwritten(rows: FlushRow[], limit: number): string {
+export function renderUnwritten(rows: FlushRow[], limit: number, windowTokens?: number, minTokens?: number): string {
 	if (rows.length === 0) return "Nothing is unwritten: the writer has covered every entry in this session.";
 	const shown = rows.slice(0, Math.max(1, limit));
 	const lines = shown.map((row) => `[${row.ref}] ${row.role}: ${row.preview}`);
 	const hidden = rows.length - shown.length;
 	if (hidden > 0) lines.push(`… ${hidden} more, up to [${rows.length - 1}].`);
+	// A model that flushes after every settled turn ignores a refusal — measured, three refusals in
+	// a row did not change its next call — so the size a write needs is stated in the listing it
+	// already asks for.
+	if (windowTokens !== undefined && minTokens !== undefined && minTokens > 0)
+		lines.unshift(`~${windowTokens} tokens unwritten; a write needs ${minTokens}.`);
 	lines.push(flushInstructions(rows));
 	return lines.join("\n");
 }

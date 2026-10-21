@@ -111,6 +111,14 @@ export type HyConfig = {
 	flushTool: boolean;
 	/** How many unwritten entries the listing shows before it summarises the rest. */
 	flushListEntries: number;
+	/**
+	 * Refuse a model-initiated write while less than this much is unwritten. A boundary
+	 * experiment on identical content (24 pieces against 12 whole captures, same writer and
+	 * judge) found finer boundaries do not raise statement quality — specificity stayed flat
+	 * and the durable share fell from 60 % to 51 % — while the writes doubled. A floor keeps a
+	 * flush near threshold-sized instead of one chunk per settled turn.
+	 */
+	flushMinTokens: number;
 };
 
 /**
@@ -160,6 +168,7 @@ export const SETTING_DEFAULTS: HyConfig = {
 	idleDrainAfterMs: 180_000,
 	flushTool: true,
 	flushListEntries: 24,
+	flushMinTokens: 2000,
 	pruneAfterDays: 30,
 	shutdownWaitMs: 5000,
 	statusBar: true,

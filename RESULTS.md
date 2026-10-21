@@ -204,3 +204,51 @@ each, same session model, writer still a model id that does not resolve.
 
 **Not proven by this:** bank quality, and whether earlier coverage actually survives a reload —
 which needs a reload inside the gap, not a writer that fails.
+
+## Does a finer chunk boundary buy quality? (2026-10-21, corpus, pre-registered)
+
+`hy_flush` rests on the claim that a boundary chosen where work settled beats a boundary where an
+estimate landed. Tested directly: the same 12 captures, once written whole (control, 12 writes) and
+once cut at entry boundaries into 24 pieces (arm, 24 writes), same writer (`hy-memory-30b-a3b`), same
+retrieval mode, same judge (`qwen3.8-flash-next-iq3_xxs`, rubric `dev/rubric.md`) at two seeds. The
+arm's pieces were re-emitted through the same split the run used and cross-checked against its own
+entry counts, so the judge saw what the writer saw. Predictions and the noise floor were written
+before the arm's verdicts existed (`notes/boundary-prediction.md`).
+
+| | control, 12 writes | arm, 24 writes |
+|---|---|---|
+| entries in | 1 243 | 1 243 |
+| ADD / UPDATE / DELETE | 157 / 26 / 0 | 241 / 52 / 1 |
+| active facts / bank tokens | 157 / 11 814 | 240 / 16 775 |
+| mean statement tokens | 76 | 70 |
+| specificity (seed 7 / 11) | 2.519 / 2.563 | 2.459 / 2.473 |
+| durable share | 60.1 % / 56.8 % | 50.7 % / 50.7 % |
+| noise share | 15.3 % / 16.4 % | 19.4 % / 20.1 % |
+| unsupported | 0 / 1 | 4 / 0 |
+| missed per write | 7.6 / 7.2 | 5.8 / 5.8 |
+| prompt tokens | 305 039 | 347 781 |
+| wall | 5 226 s | 4 336 s |
+
+Read against the pre-registered rule (a specificity gap under 0.1 is no difference):
+
+* **Specificity did not rise.** It is flat-to-slightly-lower at both seeds. The prediction that less
+  context produces more specific statements — the paper's effect, and the direction the earlier
+  5-chunk run suggested — did not reproduce at this size.
+* **The bank got 53 % bigger and less durable**: 240 facts against 157, durable share 60 → 51 %,
+  noise share 15 → 19 %. Missed fell per write (7.6 → 5.8), which is the one quality column that
+  improved.
+* **Not duplication.** Near-duplicate pairs per active entry went *down* (0.032 → 0.025), so the
+  extra facts are finer granularity, not restatement.
+* **Cost**: 2× the writes for +14 % prompt tokens and −17 % wall — smaller writes are cheaper each,
+  and there are simply more of them.
+
+**What this changes.** A finer boundary is not a quality win, so `hy_flush` is justified only by
+*timing* — a settled fact reaches the bank a turn earlier, which matters solely against a reload or
+compaction in that gap. `flushMinTokens` (default 2000) now refuses a flush over a thin window and
+states the number in the listing, so the model cannot fragment the bank one settled turn at a time.
+That is a behaviour change: the live cadence run showed a listing plus a flush on nearly every
+settled turn, which is exactly the cadence this floor stops.
+
+**Still unproven:** whether earlier coverage survives a reload; retrieval precision on a larger bank
+(more facts may help recall and hurt precision); and whether the floor keeps real sessions near
+threshold-sized chunks rather than merely refusing the thin ones.

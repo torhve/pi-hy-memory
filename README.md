@@ -97,6 +97,7 @@ nothing backs off between turns. The audit records `write_cooldown { waitS }` an
 | `idleDrainAfterMs` | `180000` | drain a session that is doing nothing: after this much quiet, one write starts if the unread window is at least **4×** `observeAfterTokens`. A write is otherwise only ever started by `turn_end`, so a session left open never pays down its backlog. `0` disables it. A writer that has failed is probed, not vetoed: at most 3 attempts spaced by `writeCooldownS`, then it waits for a turn |
 | `flushTool` | `true` | let the session model name the range the writer reads: `hy_flush` with no arguments lists the unwritten entries, `hy_flush({to})` queues a write up to that ref. The front of the window is always included — coverage is monotone, so a skipped front would be a hole the ledger can never mark. Refuses on `/hy off`, a write in flight, a pending extract, a held primary, an active cooldown, and a queue of 2. Off costs no prompt tokens |
 | `flushListEntries` | `24` | how many unwritten entries that listing shows before summarising the rest; previews are 120 characters, never re-serialized into the writer's prompt |
+| `flushMinTokens` | `2000` | refuse a model-initiated write while less than this much is unwritten, and say so in the listing. Cutting the same content into finer pieces than the threshold wrote 53 % more facts at flat specificity and a lower durable share, so a thin flush is refused rather than paid for; `0` accepts any flush |
 | `busyRetries` / `busyBackoffMs` | `3` / `4000` | 429 handling: llama-swap rejects a concurrent request to a single-slot model *instantly* instead of queueing. Waits double, capped at 60 s each and at a quarter of `timeoutMs` in total; after that the fallback is used instead of sleeping through the write |
 | `pruneAfterDays` | `30` | delete per-session state older than this; `0` disables. The 10 newest sessions and the running one are always kept |
 | `waitForWriteOnSettle` | `true` | block the end of a turn on an in-flight write. A write that completes with the window still over the trigger is followed by another, at most twice per turn and only while the writer is healthy |
@@ -144,7 +145,9 @@ branch is monotone, so a flush that skipped the front would leave entries no lat
 covered — and a `to` past the last entry is clamped and reported. The write is queued, so the turn
 keeps going: the facts land when it finishes and are readable with `hy_recall`. It refuses when the
 session is off, a write is in flight, an extract is awaiting its reconcile, the primary writer is
-held, a cooldown is active, or two flushes are already queued.
+held, a cooldown is active, two flushes are already queued, or the unwritten window is below
+`flushMinTokens` — in which case the listing itself says how much a write needs, because a model
+that keeps flushing thin stretches was measured ignoring the refusals.
 
 ## Compaction: who decides when
 

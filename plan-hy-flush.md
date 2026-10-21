@@ -157,3 +157,9 @@ params      from  "First entry to write, as listed by hy_flush with no arguments
   inside `execute`, so a disabled flush still paid its prompt surface and the refusal was the only
   thing keeping the config honest. Registration is now conditional, pinned by
   `tools/flush-tool-check.ts`, which also measures the surface: 803 characters, ~200 estimated tokens.
+- **A token floor was added after measuring, not in the plan.** The boundary arm (`out/halves-2026-10-21`,
+  24 pieces against 12 whole captures of identical content) found a finer boundary buys no quality:
+  specificity flat, durable share 60 % → 51 %, bank 53 % larger, 2× the writes. `flushMinTokens`
+  (default 2000) refuses a flush over a thin window, and the listing states the number because the
+  live cadence run showed a model asking again after three refusals. The plan's gate had no size
+  check by design — the point was to skip the threshold — and that design is what the arm punished.
