@@ -225,5 +225,8 @@ PY
 	done
 }
 
-arm flush-on true
-arm flush-off false
+# Arms run sequentially here; launch one process per arm with `LIVE_ARMS` to overlap them, which is
+# how this is normally run — a flush-on session spends most of its wall clock on the writer.
+for name in ${=ARMS}; do
+	arm "flush-$name" "$([[ $name == on ]] && echo true || echo false)"
+done
