@@ -26,8 +26,8 @@
 #
 # Environment: LIVE_WRITER (a writer pi can resolve), LIVE_WRITER_ORIGIN / LIVE_WRITER_PORT when it
 # lives on a different box (default: the session route), LIVE_RUNS (default 3),
-# LIVE_WRITER_TIMEOUT (default 240000), LIVE_CONTEXT (session model window, default 8000),
-# LIVE_RESERVE (pi's compaction reserveTokens, default 2000 — the threshold is window − reserve, so
+# LIVE_WRITER_TIMEOUT (default 240000), LIVE_CONTEXT (session model window, default 12000),
+# LIVE_RESERVE (pi's compaction reserveTokens, default 3500 — the threshold is window − reserve, so
 # a large reserve makes compaction fire early), LIVE_ROOT (default /tmp/hy-reload).
 # Hosts stay in the environment; nothing here names one.
 set -u
@@ -41,15 +41,27 @@ ROOT=${LIVE_ROOT:-/tmp/hy-reload}
 WRITER=${LIVE_WRITER:-test/writer}
 RUNS=${LIVE_RUNS:-3}
 WRITER_TIMEOUT=${LIVE_WRITER_TIMEOUT:-240000}
-CONTEXT=${LIVE_CONTEXT:-8000}
-RESERVE=${LIVE_RESERVE:-2000}
+CONTEXT=${LIVE_CONTEXT:-12000}
+RESERVE=${LIVE_RESERVE:-3500}
+# A session that thrashes compaction would otherwise run until the harness timeout: one pi run is
+# cut off here and the run is reported with its exit code rather than silently missing.
+SESSION_TIMEOUT=${LIVE_SESSION_TIMEOUT:-900}
 
 # Eight specifics the compressed view has to keep, as substrings, plus the reasons that make them
 # load-bearing rather than incidental.
+# Bulk that carries the session past the compaction threshold and contains no design content, so
+# what the summary is asked to drop is mostly noise.
+VERBS=(read lock write stat reload parse fsync rename)
+STATUSES=(ok would-block short-read enoent partial-write retry stale-handle ignored)
+FILLER=""
+for i in {1..40}; do
+	FILLER+="2026-04-$(( (i % 28) + 1 ))T0$((i % 9)):$((10 + (i % 49)))Z tctl[$((800 + i))] settings: ${VERBS[((i % 8) + 1)]} ${STATUSES[((i % 8) + 1)]} bytes=$((300 + i * 17)) mode=$((i % 3 == 0 ? 600 : 644))"$'\n'
+done
 MESSAGES=(
 	"We are designing the settings layer for a small CLI called tctl, a single binary people install with brew. Reason out loud about where its config lives; I will push back. Constraints: the file must be editable by hand, it must be settings.toml so it matches the other tools in this family, and it must never be written while another instance holds it, so lock it with flock on every write. Respect XDG_CONFIG_HOME when set, otherwise fall back to ~/.config/tctl."
 	"Good. Now I reject one alternative explicitly: YAML. We rejected YAML because tctl's config is a flat key list and a YAML parser is a dependency we would carry for twelve keys. Keep the rejection in the record, not just the choice. Next: permissions and the write strategy. Pick a file mode — 0o600, since the file will hold tokens — and say how you write it."
-	"Before you continue, an incident from last spring: the ticket was MIGRATE-2024, and the failure was that a partial write left a truncated file that the next run silently re-created with defaults, so the user lost their settings and never noticed. Whatever you choose has to make a truncated file loud rather than quiet. Fold that into the rule."
+	"Before you continue, an incident from last spring: the ticket was MIGRATE-2024, and the failure was that a partial write left a truncated file that the next run silently re-created with defaults, so the user lost their settings and never noticed. Whatever you choose has to make a truncated file loud rather than quiet. Fold that into the rule. Here is the log from that night, for context:
+$FILLER"
 	"Unrelated chatter: the coffee machine is being serviced Thursday and the standing meeting moved to Friday because the room is double-booked — ignore that for the design. Back to it: when the settings file exists but is unreadable or half-written, what should tctl do, and what should it exit with? Specific codes, not generic ones: exit code 3 for settings errors so scripts can tell them apart from usage errors, exit code 4 for lock contention."
 	"One more thing to settle: an environment override. TOR_TOOL_SETTINGS points at an explicit path and wins over everything else, including XDG. State the precedence order in one line, highest to lowest, then restate every decision as a single rule a teammate could follow."
 	"Now, without re-reading our conversation above, write a summary for someone who joined late: where tctl stores settings, in what format, what file mode and write strategy, which alternative we rejected and why, the ticket id of the incident, the two exit codes, the environment override, and the precedence order. If something is not available to you, say so rather than guessing."
@@ -125,18 +137,19 @@ EOF
 		[[ -f "$LLAMA_SWAP" ]] && load+=(-e "$LLAMA_SWAP")
 		(
 			cd "$ROOT/work" && HOME=$ROOT PI_HY_MEMORY_CONFIG=$cfg PI_HY_MEMORY_STATE=$state \
-				pi -p --mode json "${load[@]}" \
+				timeout "$SESSION_TIMEOUT" pi -p --mode json "${load[@]}" \
 				--no-builtin-tools --no-skills --no-context-files --no-prompt-templates \
 				--session-dir "$ROOT/sessions" --session-id "$sid" \
 				--model "$MODEL" -- "${MESSAGES[@]}" > "$ROOT/$name-$i.json" 2> "$ROOT/$name-$i.err"
 		)
+		local rc=$?
 		local session_file
 		session_file=$(printf '%s\n' "$ROOT/sessions"/*"$sid"*.jsonl(N) | head -1)
-		python3 - "$name" "$i" "$ROOT/$name-$i.json" "$state" "$session_file" "${PROBES[@]}" <<'PY'
+		python3 - "$name" "$i" "$ROOT/$name-$i.json" "$state" "$session_file" "$rc" "${PROBES[@]}" <<'PY'
 import json, os, sys
 
-name, i, transcript, state, session_file = sys.argv[1:6]
-probes = sys.argv[6:]
+name, i, transcript, state, session_file, rc = sys.argv[1:7]
+probes = sys.argv[7:]
 
 
 def rows(path):
@@ -175,6 +188,7 @@ tool_calls = [e for e in events if e.get("type") == "tool_execution_start"]
 flush_calls = sum(1 for e in tool_calls if e.get("toolName") == "hy_flush")
 recall_calls = sum(1 for e in tool_calls if e.get("toolName") == "hy_recall")
 writes = [a for a in audit if a.get("event") == "write_end"]
+trim_events = sum(1 for a in audit if a.get("event") == "compact_trimmed")
 writer_tokens = sum((a.get("inTokens") or 0) + (a.get("outTokens") or 0) for a in writes)
 facts = sum(a.get("added") or 0 for a in writes)
 
@@ -188,8 +202,8 @@ for e in events:
 answer_hits = [p for p in probes if p.lower() in final.lower()]
 summary_hits = [p for p in probes if p.lower() in summary.lower()]
 print(
-    f"{name} {i}: compactions {len(compactions)} fromHook={from_hook} | summary keeps "
-    f"{len(summary_hits)}/{len(probes)} | answer keeps {len(answer_hits)}/{len(probes)} | "
+    f"{name} {i}: rc={rc} compactions {len(compactions)} (trim {trim_events}) fromHook={from_hook} | "
+    f"summary keeps {len(summary_hits)}/{len(probes)} | answer keeps {len(answer_hits)}/{len(probes)} | "
     f"writes {len(writes)} writer {writer_tokens} tok / {round(sum(a.get('wallS') or 0 for a in writes))}s | "
     f"facts {facts} | flush {flush_calls} | recall {recall_calls}"
 )
