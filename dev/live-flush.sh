@@ -40,8 +40,10 @@ arm() {
   "flushTool": $flush
 }
 EOF
-	: > "$state/audit.ndjson"
 	for i in 1 2 3; do
+		# Fresh audit per run: the state directory is shared, so without this the counts of the
+		# previous run would be read as this run's.
+		: > "$state/audit.ndjson"
 		local load=(--no-extensions -e "$EXTENSION")
 		[[ -f "$LLAMA_SWAP" ]] && load+=(-e "$LLAMA_SWAP")
 		(
