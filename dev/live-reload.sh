@@ -14,9 +14,9 @@
 #   flush-on   the session model may call `hy_flush`. `observeAfterTokens` is out of range, so the
 #   flush-on   the session model may call `hy_flush`. `observeAfterTokens` is out of range, so the
 #              threshold cannot write: a flush is the only way anything becomes durable. The token
-#              floor is off here too (`flushMinTokens: 0`) — this measures whether an early write
-#              survives compaction, not whether the shipped floor lets the write happen, which the
-#              cadence harness already answers.
+#              floor is the shipped 2 000 tokens: at 0 the model flushed almost every turn and the arm
+#              ran out of wall clock before the closing question. A filler turn is ~1 200 tokens, so
+#              the floor still admits a flush every second turn — the treatment is flush-vs-no-flush.
 #   flush-off  same conversation, no tool, threshold also out of range. Nothing is ever written, so
 #              compaction falls back to pi's summariser.
 #
@@ -47,7 +47,12 @@ ROOT=${LIVE_ROOT:-/tmp/hy-reload}
 WRITER=${LIVE_WRITER:-test/writer}
 RUNS=${LIVE_RUNS:-3}
 WRITER_TIMEOUT=${LIVE_WRITER_TIMEOUT:-240000}
-CONTEXT=${LIVE_CONTEXT:-20000}
+# The window has to be wide enough that the cut lands *after* the design turns. At 20 000 with a
+# 6 000 reserve the threshold is 14 000, which the five design answers cross on their own: the cut
+# then fell inside the design, and the answers that followed it restated every decision. At 30 000
+# the threshold is 24 000, which the design turns (~12 000 tokens) stay under and the notifyd turns
+# push past.
+CONTEXT=${LIVE_CONTEXT:-30000}
 RESERVE=${LIVE_RESERVE:-6000}
 # The session model emits a thinking block as content even with `--thinking off` — measured at up to
 # 2 100 tokens per turn — so a window that only covers the prose leaves pi no output budget at all:
@@ -56,9 +61,10 @@ RESERVE=${LIVE_RESERVE:-6000}
 MAX_TOKENS=${LIVE_MAX_TOKENS:-4000}
 # A session that thrashes compaction would otherwise run until the harness timeout: one pi run is
 # A session that thrashes compaction would otherwise run until the harness timeout: one pi run is
-# cut off here and the run is reported with its exit code rather than silently missing. The treatment
-# arm needs the extra room because every flush and recall is a turn on the session model.
-SESSION_TIMEOUT=${LIVE_SESSION_TIMEOUT:-1800}
+# cut off here and the run is reported with its exit code rather than silently missing. Nine turns on
+# a quantized model at a 30 000-token context, plus one tool turn per flush and recall, is past 20
+# minutes, and every run that ended at rc=124 never reached the closing question.
+SESSION_TIMEOUT=${LIVE_SESSION_TIMEOUT:-3600}
 # Thinking off by default: a reasoning model spends thousands of tokens per answer, which makes the
 # request overflow on output rather than compact on the threshold the experiment is about.
 THINKING=${LIVE_THINKING:-off}
@@ -151,7 +157,7 @@ arm() {
   "model": "$WRITER",
   "observeAfterTokens": 200000,
   "flushTool": $flush,
-  "flushMinTokens": 0,
+  "flushMinTokens": 2000,
   "timeoutMs": $WRITER_TIMEOUT,
   "writeCooldownS": 0,
   "keepRecentTokens": 1500,
@@ -302,7 +308,11 @@ print(
     f"{round(sum(a.get('wallS') or 0 for a in writes))}s | facts {facts} | "
     f"flush {flush_calls} | recall {recall_calls} ({recall_after} after the cut)"
 )
+# What the cut actually left behind, in the units pi's threshold is written in. If this is larger
+# than keepRecentTokens, the harness did not discard what it claims to have discarded.
+tail_tokens = sum(len(blob(e)) for e in tail_rows) // 4
 print(f"   settled {len(settled)}/{len(probes)}, verbatim in kept tail {len(tail_leak)} {tail_leak}")
+print(f"   visible tail: {len(tail_rows)} entries ~{tail_tokens} tokens (keepRecentTokens 1500)")
 print(f"   missing from summary: {[p for p in settled if p not in summary_hits]}")
 print(f"   missing from answer:  {[p for p in asked if p not in answer_hits]}")
 if compactions and name == "flush-on" and not writes_before:
