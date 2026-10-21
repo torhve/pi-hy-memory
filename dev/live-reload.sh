@@ -12,7 +12,11 @@
 # Two arms, same conversation, same writer:
 #
 #   flush-on   the session model may call `hy_flush`. `observeAfterTokens` is out of range, so the
-#              threshold cannot write: a flush is the only way anything becomes durable.
+#   flush-on   the session model may call `hy_flush`. `observeAfterTokens` is out of range, so the
+#              threshold cannot write: a flush is the only way anything becomes durable. The token
+#              floor is off here too (`flushMinTokens: 0`) — this measures whether an early write
+#              survives compaction, not whether the shipped floor lets the write happen, which the
+#              cadence harness already answers.
 #   flush-off  same conversation, no tool, threshold also out of range. Nothing is ever written, so
 #              compaction falls back to pi's summariser.
 #
@@ -46,6 +50,9 @@ RESERVE=${LIVE_RESERVE:-3500}
 # A session that thrashes compaction would otherwise run until the harness timeout: one pi run is
 # cut off here and the run is reported with its exit code rather than silently missing.
 SESSION_TIMEOUT=${LIVE_SESSION_TIMEOUT:-900}
+# Thinking off by default: a reasoning model spends thousands of tokens per answer, which makes the
+# request overflow on output rather than compact on the threshold the experiment is about.
+THINKING=${LIVE_THINKING:-off}
 
 # Eight specifics the compressed view has to keep, as substrings, plus the reasons that make them
 # load-bearing rather than incidental.
@@ -140,7 +147,7 @@ EOF
 				timeout "$SESSION_TIMEOUT" pi -p --mode json "${load[@]}" \
 				--no-builtin-tools --no-skills --no-context-files --no-prompt-templates \
 				--session-dir "$ROOT/sessions" --session-id "$sid" \
-				--model "$MODEL" -- "${MESSAGES[@]}" > "$ROOT/$name-$i.json" 2> "$ROOT/$name-$i.err"
+				--model "$MODEL" --thinking "$THINKING" -- "${MESSAGES[@]}" > "$ROOT/$name-$i.json" 2> "$ROOT/$name-$i.err"
 		)
 		local rc=$?
 		local session_file
@@ -192,13 +199,18 @@ trim_events = sum(1 for a in audit if a.get("event") == "compact_trimmed")
 writer_tokens = sum((a.get("inTokens") or 0) + (a.get("outTokens") or 0) for a in writes)
 facts = sum(a.get("added") or 0 for a in writes)
 
-final = ""
+# The answer to score is what came back after the final question. The model's last messages are
+# often tool calls with no text at all, and scoring those scored 0/8 in both arms of the smoke run.
+seq = []
 for e in events:
     if e.get("type") == "message_end":
         m = e.get("message") or {}
-        if m.get("role") == "assistant":
-            final = text(m.get("content"))
-
+        if m.get("role") in ("user", "assistant"):
+            t = text(m.get("content"))
+            if t.strip():
+                seq.append((m.get("role"), t))
+last_question = max((i for i, (role, _) in enumerate(seq) if role == "user"), default=-1)
+final = " ".join(t for role, t in seq[last_question + 1:] if role == "assistant")
 answer_hits = [p for p in probes if p.lower() in final.lower()]
 summary_hits = [p for p in probes if p.lower() in summary.lower()]
 print(
