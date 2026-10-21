@@ -207,7 +207,10 @@ function statsOf(dir: string) {
 			? (c as { rejectedOps: unknown[] }).rejectedOps.length
 			: 0;
 		wall += Number((c.usage as { wallTotalS?: number } | undefined)?.wallTotalS ?? 0);
-		promptTokens += callTokens(c.usage?.extract) + callTokens(c.usage?.reconcile);
+		// The two harnesses record usage differently — `dev/run.ts` per call, this one aggregated —
+		// and reading only one shape reports the other as zero.
+		const perCall = callTokens(c.usage?.extract) + callTokens(c.usage?.reconcile);
+		promptTokens += perCall || callTokens(c.usage);
 	}
 	const statements = statementsOf(dir);
 	const statementTokens = statements.reduce((s, t) => s + estimateTokens(t), 0);
