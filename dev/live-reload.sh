@@ -32,7 +32,8 @@
 # lives on a different box (default: the session route), LIVE_RUNS (default 3),
 # LIVE_WRITER_TIMEOUT (default 240000), LIVE_CONTEXT (session model window, default 12000),
 # LIVE_RESERVE (pi's compaction reserveTokens, default 3500 — the threshold is window − reserve, so
-# a large reserve makes compaction fire early), LIVE_ROOT (default /tmp/hy-reload).
+# a large reserve makes compaction fire early), LIVE_ROOT (default /tmp/hy-reload), LIVE_ARMS
+# (which arms to run, default `on off` — one process per arm overlaps them).
 # Hosts stay in the environment; nothing here names one.
 set -u
 REPO=$(cd "$(dirname "$0")/.." && pwd)
@@ -53,6 +54,8 @@ SESSION_TIMEOUT=${LIVE_SESSION_TIMEOUT:-900}
 # Thinking off by default: a reasoning model spends thousands of tokens per answer, which makes the
 # request overflow on output rather than compact on the threshold the experiment is about.
 THINKING=${LIVE_THINKING:-off}
+# Which arms to run: `on`, `off`, or both. One process per arm overlaps them.
+ARMS=${LIVE_ARMS:-on off}
 
 # Eight specifics the compressed view has to keep, as substrings, plus the reasons that make them
 # load-bearing rather than incidental.
