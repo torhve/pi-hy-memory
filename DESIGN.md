@@ -192,8 +192,10 @@ extract awaiting its reconcile, a held primary, an active cooldown, and a queue 
 `MAX_PENDING_FLUSH = 2`, because a model that flushes after every edit pays ~25 s and 9 000 tokens
 per call and `writeCooldownS` alone does not stop the queueing. `failures` is not a veto here, for
 the same reason the idle drain does not veto it. The prompt surface is short for the same reason it
-is short for the writer: one clause of when, one of what, and no JSON example, because a quantized
-model restates an example as prose instead of calling the tool. The listing caps at
+is short for the same reason it is short for the writer: one clause of when, one of what, and no
+JSON example, because a quantized model restates an example as prose instead of calling the tool.
+The whole surface — description, snippet, two guidelines, the `to` description — is 803 characters,
+about 200 estimated tokens. The listing caps at
 `flushListEntries = 24` rows of 120 characters — enough to choose a range, and a preview is never
 re-serialized into the writer's prompt. Registration is conditional on `flushTool`, so turning it
 off removes the surface from the prompt instead of leaving a tool that only refuses

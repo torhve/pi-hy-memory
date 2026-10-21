@@ -127,7 +127,8 @@ params      from  "First entry to write, as listed by hy_flush with no arguments
 - Queued, not synchronous: extract runs 28–52 s per chunk on the local writer route, and
   `timeoutMs` is 480 000 — a synchronous tool would stall a turn for that long.
 - On by default is a deliberate departure from `hifiCompaction`'s opt-in. The cost is prompt tokens
-  in every session (~250 characters + 2 guideline lines); the payoff is measured in 6.3.
+  in every session (measured: 803 characters, ~200 estimated tokens across description + snippet +
+  2 guideline lines + the `to` description); the payoff is measured in 6.3.
 - Failure mode to watch: a model that flushes after every small edit pays ~25 s and 9 000 tokens per
   call. The audit carries the requested range, so the cadence is measurable after the fact, and
   `flushTool: false` is the kill switch.
@@ -152,3 +153,7 @@ params      from  "First entry to write, as listed by hy_flush with no arguments
   boundary already fixed by the observer's threshold, so an arm over those files measures the writer,
   not the boundary choice. Recorded as DESIGN.md § *Not yet proven* #6: the gain needs a
   session-level replay with a real session model.
+- **`flushTool: false` did not unregister the tool.** The first implementation checked the setting
+  inside `execute`, so a disabled flush still paid its prompt surface and the refusal was the only
+  thing keeping the config honest. Registration is now conditional, pinned by
+  `tools/flush-tool-check.ts`, which also measures the surface: 803 characters, ~200 estimated tokens.
