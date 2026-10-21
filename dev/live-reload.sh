@@ -48,11 +48,10 @@ WRITER=${LIVE_WRITER:-test/writer}
 RUNS=${LIVE_RUNS:-3}
 WRITER_TIMEOUT=${LIVE_WRITER_TIMEOUT:-240000}
 # The cut has to land after the design turns and before the closing question, so where it fires is
-# arithmetic rather than a guess. Answers are capped at five bullets (~700 tokens): the five design
-# turns plus the system prompt come to roughly 7 500 tokens, and the three `notifyd` turns add roughly
-# 5 700 more. A threshold of 10 000 — this window minus the 6 000 reserve — therefore fires inside the
-# notifyd stretch. At 30 000 it fired mid-design, and the design answers that followed the cut restated
-# every probe, which is what made the kept tail read 5 348 tokens.
+# arithmetic. Answers capped at five bullets (~300 tokens) made the whole conversation read ~9 500
+# tokens against a 10 000 threshold, and compaction never fired once. Each `notifyd` turn now carries
+# 50 log lines (~1 000 tokens of user text), which adds ~3 000 on top of the design and puts the
+# crossing inside the notifyd stretch: this window minus the 6 000 reserve.
 CONTEXT=${LIVE_CONTEXT:-16000}
 RESERVE=${LIVE_RESERVE:-6000}
 # The session model emits a thinking block as content even with `--thinking off` — measured at up to
@@ -78,9 +77,18 @@ ARMS=${LIVE_ARMS:-on off}
 # what the summary is asked to drop is mostly noise.
 VERBS=(read lock write stat reload parse fsync rename)
 STATUSES=(ok would-block short-read enoent partial-write retry stale-handle ignored)
-FILLER=""
-for i in {1..40}; do
-	FILLER+="2026-04-$(( (i % 28) + 1 ))T0$((i % 9)):$((10 + (i % 49)))Z notifyd[$((800 + i))] dispatch: ${VERBS[((i % 8) + 1)]} ${STATUSES[((i % 8) + 1)]} bytes=$((300 + i * 17)) uid=$((i % 2 == 0 ? 1000 : 0))"$'\n'
+FILLER_A=""
+FILLER_B=""
+FILLER_C=""
+for i in {1..150}; do
+	line="2026-04-$(( (i % 28) + 1 ))T0$((i % 9)):$((10 + (i % 49)))Z notifyd[$((800 + i))] dispatch: ${VERBS[((i % 8) + 1)]} ${STATUSES[((i % 8) + 1)]} bytes=$((300 + i * 17)) uid=$((i % 2 == 0 ? 1000 : 0))"
+	if (( i <= 50 )); then
+		FILLER_A+=$line$'\n'
+	elif (( i <= 100 )); then
+		FILLER_B+=$line$'\n'
+	else
+		FILLER_C+=$line$'\n'
+	fi
 done
 MESSAGES=(
 	"We are designing the settings layer for a small CLI called tctl, a single binary people install with brew. Reason out loud about where its config lives; I will push back. Constraints: the file must be editable by hand, it must be settings.toml so it matches the other tools in this family, and it must never be written while another instance holds it, so lock it with flock on every write. Respect XDG_CONFIG_HOME when set, otherwise fall back to ~/.config/tctl. Keep every answer to at most five short bullets — no preamble, and do not restate my question. The handover note I ask for at the end may be longer."
@@ -91,10 +99,12 @@ MESSAGES=(
 	# Three turns on an unrelated service. They carry the bulk that pushes the context past the
 	# threshold, so the cut lands here — and because they are about something else, the answers that
 	# survive the cut cannot restate the design decisions, which is what made the last runs unscorable.
-	"Switching to a different task, and tctl is not part of it: this is notifyd's dispatch log from last night. Which lines show a retry loop rather than a clean run, and which show a permission problem? Answer only about notifyd, and do not bring up the earlier design discussion.
-$FILLER"
-	"In that same log, which lines suggest the queue was full rather than the worker being slow? Keep it to notifyd."
-	"Last one on notifyd: does anything here indicate a write that stopped short of its intended size, or a queue that drained cleanly? notifyd only."
+	"Switching to a different task, and tctl is not part of it: this is the first stretch of notifyd's dispatch log from last night. Which lines show a retry loop rather than a clean run, and which show a permission problem? Answer only about notifyd, in at most five short bullets, and do not bring up the earlier design discussion.
+$FILLER_A"
+	"Next stretch of the same log — which lines suggest the queue was full rather than the worker being slow? Keep it to notifyd, five short bullets.
+$FILLER_B"
+	"Tail of the log: does anything here indicate a dispatch that stopped short of its intended size, or one that ran cleanly? notifyd only, five short bullets.
+$FILLER_C"
 	"Now, without re-reading our conversation above and without opening any files, write a short handover note for someone who joined late: where the tool keeps its configuration, in what format, what permissions and write strategy it uses, which format we turned down and for what reason, the reference from the incident we learned from, the two numeric statuses a script can branch on, the environment override, and the order the locations are checked in. If something is not available to you, say so rather than guessing."
 )
 PROBES=(
@@ -314,6 +324,7 @@ print(
 tail_tokens = sum(len(blob(e)) for e in tail_rows) // 4
 print(f"   settled {len(settled)}/{len(probes)}, verbatim in kept tail {len(tail_leak)} {tail_leak}")
 print(f"   visible tail: {len(tail_rows)} entries ~{tail_tokens} tokens (keepRecentTokens 1500)")
+print(f"   cut at tokensBefore {compactions[-1].get('tokensBefore') if compactions else 'never'}")
 print(f"   missing from summary: {[p for p in settled if p not in summary_hits]}")
 print(f"   missing from answer:  {[p for p in asked if p not in answer_hits]}")
 if compactions and name == "flush-on" and not writes_before:
