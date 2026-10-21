@@ -200,8 +200,9 @@ JSON example, because a quantized model restates an example as prose instead of 
 The whole surface — description, snippet, two guidelines, the `to` description — is 803 characters,
 about 200 estimated tokens. The listing caps at
 `flushListEntries = 24` rows of 120 characters — enough to choose a range, and a preview is never
-re-serialized into the writer's prompt. Registration is conditional on `flushTool`, so turning it
-off removes the surface from the prompt instead of leaving a tool that only refuses
+re-serialized into the writer's prompt. Registration is conditional on `flushTool`, which defaults to
+off after the compaction-survival pilot found no advantage (item 6.4 in `RESULTS.md`), so an off
+session pays nothing for a tool it cannot use
 (`tools/flush-check.ts` for the rules, `tools/flush-tool-check.ts` for the surface against an
 unreachable writer, `tools/flush-write-check.ts` for the half that matters: a stub registry that
 answers both stages, so a queued flush is shown to land a fact in the bank, advance the watermark and

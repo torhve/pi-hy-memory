@@ -28,6 +28,8 @@ const baseConfig = {
 	origin: "http://10.255.255.1:80/v1",
 	timeoutMs: 2000,
 	observeAfterTokens: 100_000,
+	// The shipped default is off (item 6.4 in `RESULTS.md`); these checks exercise the opt-in.
+	flushTool: true,
 	writeCooldownS: 0,
 	// The writer endpoint is a black hole; without this the failed attempt retries for tens of
 	// seconds and the queue guard refuses the next call while it hangs.

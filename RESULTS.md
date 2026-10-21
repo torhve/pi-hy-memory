@@ -297,3 +297,62 @@ settled turn, which is exactly the cadence this floor stops.
 **Still unproven:** whether earlier coverage survives a reload; retrieval precision on a larger bank
 (more facts may help recall and hurt precision); and whether the floor keeps real sessions near
 threshold-sized chunks rather than merely refusing the thin ones.
+
+## Does a flushed fact survive compaction better than pi's summary? (2026-10-21, live, negative)
+
+The claim `hy_flush` rests on: a decision folded into the bank before a compaction is still available
+after it, where pi's prose summary would have lost it. Tested with `dev/live-reload.sh`: one session
+that settles eight checkable specifics in its first five turns (path, file mode, rejected format, a
+ticket reference, two exit codes, an env override and its precedence), then three turns about an
+unrelated service carrying the bulk, then a closing handover question phrased without the probe
+strings. `observeAfterTokens` is out of range in both arms, so the threshold cannot write — in the
+treatment arm a flush is the only way anything becomes durable. Session model
+`qwen3.8-flash-next-iq3_xxs`, writer `hy-memory-30b-a3b`, window 16 000 with a 6 000 reserve (threshold
+10 000), `keepRecentTokens` 1 500, `flushMinTokens` 2 000, thinking off, three runs per arm.
+
+| arm | summary keeps | answer keeps | writer cost |
+|---|---|---|---|
+| flush-off (control) | 7/8, 7/8, 7/8 | 7/8, 7/8, none | 0 |
+| flush-on (treatment) | 7/8, 7/8, 7/8 | 7/8, 6/8, 5/8 | 22 540 tok / 572 s over 3 runs |
+
+**No retention advantage.** The bank-rendered summary keeps exactly what pi's generated summary keeps:
+seven of eight specifics, in every run of both arms. Treatment answers came in at 7/8, 6/8 and 5/8
+against the control's 7/8 and 7/8, so on this instrument the extra trigger bought nothing — the
+~28 % writer tax measured earlier is not paid back. Per treatment run: 9 / 9 / 8 `hy_flush` calls,
+2 / 1 / 1 writes, 12 699 / 5 108 / 4 733 writer tokens, 12 / 7 / 11 facts.
+
+What the six runs say about *why*, which is more useful than the tie:
+
+* **The cut really discards, in both arms.** `settled 8/8` and zero probes verbatim in the visible tail
+  in all six runs, with the cut landing at `tokensBefore` 7 982–11 542 — inside the unrelated stretch,
+  after every decision. Nothing here is scored on content that was never thrown away.
+* **The render is faithful; the bank is not.** Each run's rendered summary carried precisely the
+  probes its bank held and dropped none of them. The bank itself held 7/8 — run 1 never had
+  `exit code 3`, runs 2 and 3 never had `TOR_TOOL_SETTINGS`. Extraction did not propose them; a short
+  enumerable is exactly what the writer skips.
+* **Retrieval handed over what the answer then dropped.** In run 2 the post-cut `hy_recall` results
+  contained `exit code 3` and `0o600` and the answer still lost both; run 1's recall carried seven
+  probes and the answer took six, skipping `exit code 3` that was sitting in the tool result. The
+  loss is the session model not integrating what it asked for, not retrieval missing the fact.
+* **One difference in the treatment's favour, and it is about robustness.** The control lost a run to
+  pi's own recovery: `Context overflow recovery failed: Summarization failed: generation hit the token
+  cap and the summary is incomplete`, and that run answered nothing at all. In the treatment arm the
+  extension claimed every cut (`fromHook=true`) and no run lost its answer that way — its summary is
+  rendered, not generated, so it cannot run out of output budget.
+
+**Instrument history, because three earlier pairs of this measured nothing.** The model's own answers
+after the cut restated every decision; the extension's `custom` entries, which never reach the request,
+were counted as surviving context; the scored answer itself was counted as surviving context; and the
+threshold fired mid-design, so nothing had been discarded at all. All four are fixed in the harness
+(`e7dc215`, `9b84a8f`, `83fa998`, `7cc36c4`, `7c016fc`) and the fix is visible per run: `settled 8/8`,
+`verbatim in kept tail 0`, and a named cause when a run produces no answer.
+
+**What this changes.** `flushTool` should not be presented as a retention win, and its default should
+stay off until something shows it buying durability. The two levers that could change the result are
+upstream of the flush and measurable without it: extraction coverage of short enumerables (exit codes,
+env var names), and whether a session model uses what `hy_recall` hands it.
+
+**Not proven by this:** a stronger session model, where the answer metric stops being dominated by a
+4-bit 4B model dropping facts it was given; sessions long enough that pi's prose has more specifics to
+lose than two; and reload survival (`/compact` then a fresh process), which this harness measures as
+compaction within one process rather than a restart.

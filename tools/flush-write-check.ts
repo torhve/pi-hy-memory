@@ -28,6 +28,8 @@ writeFileSync(
 	JSON.stringify({
 		model: "test/writer",
 		observeAfterTokens: 100_000,
+		// The shipped default is off (item 6.4 in `RESULTS.md`); this check needs the tool present.
+		flushTool: true,
 		writeCooldownS: 0,
 		timeoutMs: 5000,
 		flushMinTokens: 0,

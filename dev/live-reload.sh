@@ -161,8 +161,7 @@ PY
 
 arm() {
 	local name=$1 flush=$2
-	local cfg="$ROOT/config-$name.json" state="$ROOT/state-$name"
-	mkdir -p "$state"
+	local cfg="$ROOT/config-$name.json"
 	cat > "$cfg" <<EOF
 {
   "model": "$WRITER",
@@ -176,7 +175,12 @@ arm() {
 }
 EOF
 	for i in $(seq 1 "$RUNS"); do
-		: > "$state/audit.ndjson"
+		# One state directory per run. A shared one is cleared before each run, which means a run's writer
+		# records are only readable while that run is the last one: re-scoring afterwards reads the final
+		# run's audit for every run, which reported `INVALID: compacted before any write` for runs that
+		# had written.
+		local state="$ROOT/state-$name-$i"
+		mkdir -p "$state"
 		local sid=$(uuidgen | tr "A-Z" "a-z")
 		local load=(--no-extensions -e "$EXTENSION")
 		[[ -f "$LLAMA_SWAP" ]] && load+=(-e "$LLAMA_SWAP")

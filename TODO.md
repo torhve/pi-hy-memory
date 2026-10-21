@@ -118,9 +118,13 @@ gate.
       `out/halves-2026-10-21`, judged twice): specificity flat, durable share 60 % → 51 %, bank
       +53 %, 2× writes for +14 % prompt tokens. Predictions pre-registered in
       `notes/boundary-prediction.md`.
-- [ ] 6.4 Does earlier coverage actually survive a reload? The cadence run only proved a write starts
-      earlier. Needs a session reloaded inside the gap between a flush and the threshold, then
-      `hy_recall` on a fact that only the flush covered.
+- [x] 6.4 Does earlier coverage survive a compaction? **No advantage measured** (3 runs per arm,
+      `dev/live-reload.sh`, result in `RESULTS.md`). Both arms kept 7/8 settled specifics in the
+      summary; treatment answers were 7/8, 6/8, 5/8 against the control's 7/8, 7/8, one unanswered.
+      The render carries everything the bank holds; the bank is short one probe per run because
+      extraction never proposed it, and post-cut `hy_recall` handed the answer two probes it dropped.
+      Treatment cost: 22 540 writer tokens and 572 s over three runs. Not measured: a restart
+      (`/compact` then a fresh process) rather than compaction inside one session.
 - [ ] 6.5 Does `flushMinTokens` hold real sessions near threshold-sized chunks, or does it just
       refuse? Partly measured: at a 1 200-token threshold — below the 2 000-token floor, so the
       floor cannot be cleared by construction — 7 of 9 ranged calls refused and the two accepted
@@ -132,6 +136,15 @@ gate.
 - [ ] 6.7 Recall telemetry (`hy.recall` records, 4.2 remainder): without it the pool ranking in 4.3
       has no usage signal, and tonight's relevance-tier borrowing idea has nothing to rank on.
 
+- [ ] 6.10 Extraction coverage of short enumerables (from 6.4): three of six treatment runs lost a
+      probe the writer never proposed — `exit code 3` in one, `TOR_TOOL_SETTINGS` in two. The render
+      and the compaction are clean, so this is the only place a retention claim can be won. Measure on
+      the existing 12 captures: statements carrying exit codes, env var names and numeric limits, stated
+      versus proposed. Cheap, and it gates everything downstream.
+- [ ] 6.11 Does the session model use what `hy_recall` hands it? In 6.4 the post-cut recall results
+      contained both probes the answer lost. Before ranking anything in 4.3 or 6.6, repeat that one
+      question on a stronger session model: if the loss is the 4-bit model ignoring tool results,
+      retrieval changes will not fix it.
 - [x] 6.8 What does offering the tool cost? Measured against a writer that answers
       (`out` of `dev/live-cadence.sh`, 3 runs × 3 arms): +28 % writer tokens and +13 s per session
       over `threshold-only`, and the extra write was threshold-triggered, not a flush — the tool

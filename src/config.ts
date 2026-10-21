@@ -173,7 +173,9 @@ export const SETTING_DEFAULTS: HyConfig = {
 	busyBackoffMs: 4000,
 	writeCooldownS: 30,
 	idleDrainAfterMs: 180_000,
-	flushTool: true,
+	// Off by default. The compaction-survival pilot measured no retention advantage while the tool
+	// costs extra writer work and a prompt surface (`RESULTS.md`, item 6.4); opt in per session.
+	flushTool: false,
 	flushListEntries: 24,
 	flushMinTokens: 2000,
 	pruneAfterDays: 30,

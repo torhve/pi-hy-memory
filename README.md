@@ -96,7 +96,7 @@ nothing backs off between turns. The audit records `write_cooldown { waitS }` an
 | `fallbackCooldownS` | `300` | stay on the fallback this long after a failover (cleared only by a **primary** answer) |
 | `writeCooldownS` | `30` | wait before writing again after a failed attempt, doubling while it keeps failing (capped at 10 min); `0` disables. A dead endpoint otherwise costs one request per turn |
 | `idleDrainAfterMs` | `180000` | drain a session that is doing nothing: after this much quiet, one write starts if the unread window is at least **4×** `observeAfterTokens`. A write is otherwise only ever started by `turn_end`, so a session left open never pays down its backlog. `0` disables it. A writer that has failed is probed, not vetoed: at most 3 attempts spaced by `writeCooldownS`, then it waits for a turn |
-| `flushTool` | `true` | let the session model name the range the writer reads: `hy_flush` with no arguments lists the unwritten entries, `hy_flush({to})` queues a write up to that ref. The front of the window is always included — coverage is monotone, so a skipped front would be a hole the ledger can never mark. Refuses on `/hy off`, a write in flight, a pending extract, a held primary, an active cooldown, and a queue of 2. Off costs no prompt tokens |
+| `flushTool` | `false` | opt in to let the session model name the range the writer reads: `hy_flush` with no arguments lists the unwritten entries, `hy_flush({to})` queues a write up to that ref. The front of the window is always included — coverage is monotone, so a skipped front would be a hole the ledger can never mark. Refuses on `/hy off`, a write in flight, a pending extract, a held primary, an active cooldown, and a queue of 2. Off costs no prompt tokens |
 | `flushListEntries` | `24` | how many unwritten entries that listing shows before summarising the rest; previews are 120 characters, never re-serialized into the writer's prompt |
 | `flushMinTokens` | `2000` | refuse a model-initiated write whose named range carries less than this much, and answer with the amount it would have carried. The floor is on the write, not the window: naming `to` a quarter of the way up a fat window is still a thin chunk. Cutting the same content into finer pieces than the threshold wrote 53 % more facts at flat specificity and a lower durable share, so a thin flush is refused rather than paid for. 2000 is tuned against that arm (about a third of `maxChunkTokens`), not derived; `0` accepts any flush |
 | `busyRetries` / `busyBackoffMs` | `3` / `4000` | 429 handling: llama-swap rejects a concurrent request to a single-slot model *instantly* instead of queueing. Waits double, capped at 60 s each and at a quarter of `timeoutMs` in total; after that the fallback is used instead of sleeping through the write |
@@ -149,6 +149,12 @@ session is off, a write is in flight, an extract is awaiting its reconcile, the 
 held, a cooldown is active, two flushes are already queued, or the unwritten window is below
 `flushMinTokens` — in which case the listing itself says how much a write needs, because a model
 that keeps flushing thin stretches was measured ignoring the refusals.
+It is off by default because that pilot measured no compaction-survival advantage — the bank-rendered
+summary kept the same 7 of 8 settled specifics as pi's own prose summary, while the extra writes cost
+about 28 % more writer tokens — and the misses that did happen were extraction and retrieval use, not
+the timing of the write. The tool stays available as an opt-in for sessions that want to choose the
+boundary themselves, and the reading is provisional: three runs, one weak session model, one
+conversation shape (`RESULTS.md`).
 
 ## Compaction: who decides when
 
