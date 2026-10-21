@@ -202,7 +202,10 @@ about 200 estimated tokens. The listing caps at
 `flushListEntries = 24` rows of 120 characters — enough to choose a range, and a preview is never
 re-serialized into the writer's prompt. Registration is conditional on `flushTool`, so turning it
 off removes the surface from the prompt instead of leaving a tool that only refuses
-(`tools/flush-check.ts`, `tools/flush-tool-check.ts`).
+(`tools/flush-check.ts` for the rules, `tools/flush-tool-check.ts` for the surface against an
+unreachable writer, `tools/flush-write-check.ts` for the half that matters: a stub registry that
+answers both stages, so a queued flush is shown to land a fact in the bank, advance the watermark and
+be answered by `hy_recall`, while a call during the in-flight write is refused and queues nothing).
 
 **The floor is measured, not cautious.** Cutting the same 12 captures into 24 pieces — one write per
 piece, same writer, same judge, identical content — produced 240 active facts against 157 and 52
@@ -215,6 +218,16 @@ thin slice of a fat window is still a thin chunk — and the refusal names the a
 carried, while the listing states the floor, because in the live
 cadence run a model that was refused three times in a row asked again anyway — the refusal alone
 does not teach it anything.
+does not teach it anything.
+
+**Which version of the floor the live numbers were taken against.** The first shipped floor compared
+the size of the *unwritten window*, and the cadence run that produced refusals at 781–1922 tokens ran
+that version. It also accepted a write carrying 1 429 tokens out of a 2 040-token window, which is
+what showed the window is the wrong thing to measure. The payload version that replaced it briefly
+read `chunk.tokens`, a field `SerializedChunk` does not have — `undefined < floor` is false, so for
+the length of that edit the floor could not fire at all, and that interim version never ran against a
+live session. The gate now compares `estimateTokens(chunk.text)`, the same number the refusal quotes,
+and the cadence run is repeated against that code before its numbers count as evidence for it.
 
 **Coverage is a position, not an id.** The watermark is stored as an entry id, and pi can move
 the leaf: a rewind, a resumed checkpoint, or a compaction that re-parents the branch leaves

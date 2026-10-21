@@ -1,6 +1,6 @@
 # Prediction, written before the halves arm finished (2026-10-21 ~04:10)
 
-Control `out/base-2026-10-21` (kitx writer `hy-memory-30b-a3b`, 12 whole captures, perDraft/24),
+Control `out/base-2026-10-21` (writer `hy-memory-30b-a3b`, 12 whole captures, perDraft/24),
 judged by `qwen3.8-flash-next-iq3_xxs` seed 7:
 
 Final control figures, after the judge harness was fixed to re-ask a block that answered short

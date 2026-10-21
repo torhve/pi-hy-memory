@@ -242,6 +242,11 @@ Read against the pre-registered rule (a specificity gap under 0.1 is no differen
 * **Cost**: 2× the writes for +14 % prompt tokens and −17 % wall — smaller writes are cheaper each,
   and there are simply more of them.
 
+**Scope of that reading.** One writer model, 12 captures, two judge seeds, no model-variation
+control. The load-bearing columns are the durable share and the bank size, which move by more than
+the judge's spread; specificity itself moved by less than it, so it is reported as no difference
+rather than as a decline.
+
 **What this changes.** A finer boundary is not a quality win, so `hy_flush` is justified only by
 *timing* — a settled fact reaches the bank a turn earlier, which matters solely against a reload or
 compaction in that gap. `flushMinTokens` (default 2000) now refuses a write whose named range carries less than that, and
