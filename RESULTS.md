@@ -244,8 +244,9 @@ Read against the pre-registered rule (a specificity gap under 0.1 is no differen
 
 **What this changes.** A finer boundary is not a quality win, so `hy_flush` is justified only by
 *timing* — a settled fact reaches the bank a turn earlier, which matters solely against a reload or
-compaction in that gap. `flushMinTokens` (default 2000) now refuses a flush over a thin window and
-states the number in the listing, so the model cannot fragment the bank one settled turn at a time.
+compaction in that gap. `flushMinTokens` (default 2000) now refuses a write whose named range carries less than that, and
+the refusal states the amount it would have carried, so the model cannot fragment the bank one
+settled turn at a time.
 That is a behaviour change: the live cadence run showed a listing plus a flush on nearly every
 settled turn, which is exactly the cadence this floor stops.
 

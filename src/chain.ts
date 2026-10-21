@@ -145,9 +145,9 @@ export type FlushInput = {
 	entryCount: number;
 	/** Model-initiated writes already queued. */
 	pendingFlushes: number;
-	/** Estimated tokens in the unwritten window. */
-	pendingTokens: number;
-	/** `flushMinTokens`: how much unwritten content a model-initiated write must clear. */
+	/** Estimated tokens the requested write would carry, after clamping. */
+	writeTokens: number;
+	/** `flushMinTokens`: how much content a model-initiated write must carry. */
 	minTokens: number;
 };
 
@@ -172,10 +172,12 @@ export function shouldFlushWrite(input: FlushInput): FlushDecision {
 	if (!input.sessionActive) return { flush: false, reason: "session off" };
 	if (input.entryCount === 0) return { flush: false, reason: "nothing unwritten" };
 	// The threshold exists to keep a chunk near `maxChunkTokens`. A flush over less than
-	// `flushMinTokens` fragments the bank the way the finer-boundary arm did — same content,
-	// finer cuts, flat specificity, durable share down — so it is refused and the threshold
-	// folds those same entries shortly.
-	if (input.pendingTokens < input.minTokens) return { flush: false, reason: "under flush token floor" };
+	// The threshold exists to keep a chunk near `maxChunkTokens`. A write over less than
+	// `flushMinTokens` fragments the bank the way the finer-boundary arm did — same content, finer
+	// cuts, flat specificity, durable share down — so it is refused and the threshold folds those
+	// entries shortly. The floor applies to what the write carries, not the size of the window: a
+	// model that names `to` at a quarter of a fat window is still cutting a thin chunk.
+	if (input.writeTokens < input.minTokens) return { flush: false, reason: "under flush token floor" };
 	if (input.inFlight) return { flush: false, reason: "write in flight" };
 	if (input.pendingExtract) return { flush: false, reason: "extract awaiting reconcile" };
 	if (input.pendingFlushes >= MAX_PENDING_FLUSH) return { flush: false, reason: "flush queue full" };

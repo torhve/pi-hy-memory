@@ -1428,6 +1428,9 @@ export default function piHyMemory(pi: ExtensionAPI): void {
 					maxTokens: chunkBudget(),
 					maxEntryChars: config.maxEntryChars,
 				});
+				// The gated amount and the reported amount have to be the same number, or a refusal
+				// names a figure the model cannot reconcile with the listing.
+				const tokens = estimateTokens(chunk.text);
 				const decision = shouldFlushWrite({
 					sessionActive: sessionActive(),
 					inFlight: live.pending !== null,
@@ -1436,7 +1439,7 @@ export default function piHyMemory(pi: ExtensionAPI): void {
 					coolingDown: live.writeCooldownUntil > Date.now(),
 					entryCount: chunk.entryCount,
 					pendingFlushes: flushQueued,
-					pendingTokens: window.tokens,
+					writeTokens: tokens,
 					minTokens: config.flushMinTokens,
 				});
 				if (!decision.flush) {
@@ -1453,7 +1456,7 @@ export default function piHyMemory(pi: ExtensionAPI): void {
 								type: "text",
 								text:
 									decision.reason === "under flush token floor"
-										? `hy_flush: not written, ${window.tokens} tokens unwritten and the floor is ${config.flushMinTokens}. Keep working; the threshold folds these entries shortly, and hy_recall answers what is already in the bank.`
+										? `hy_flush: not written, this write would carry ${tokens} tokens and a write needs ${config.flushMinTokens}. Ask again with a larger \`to\`, or keep working: the threshold folds these entries shortly and hy_recall answers what is already in the bank.`
 										: `hy_flush: not written (${decision.reason}). The bank is unchanged; hy_recall still answers what it holds.`,
 							},
 						],
@@ -1466,7 +1469,6 @@ export default function piHyMemory(pi: ExtensionAPI): void {
 				flushQueued++;
 				chained = 0;
 				lastAttemptFailed = false;
-				const tokens = estimateTokens(chunk.text);
 				audit("hy_flush", {
 					sessionId,
 					chunkId,

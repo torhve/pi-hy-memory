@@ -209,8 +209,10 @@ piece, same writer, same judge, identical content — produced 240 active facts 
 updates against 26, while judged specificity stayed flat (2.459 / 2.473 against 2.519 / 2.563, a gap
 inside the judge's own ±0.05 spread) and the durable share fell from 60 % to 51 %. Duplication per
 entry did *not* rise, so the extra facts are finer granularity rather than repetition: a smaller
-window makes the writer state more, shorter, more marginal things. A flush therefore has to clear
-`flushMinTokens` of unwritten content, and the listing states that number, because in the live
+window makes the writer state more, shorter, more marginal things. A write therefore has to carry
+`flushMinTokens` — measured on the range the model names, not on the size of the window, because a
+thin slice of a fat window is still a thin chunk — and the refusal names the amount it would have
+carried, while the listing states the floor, because in the live
 cadence run a model that was refused three times in a row asked again anyway — the refusal alone
 does not teach it anything.
 

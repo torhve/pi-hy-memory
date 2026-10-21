@@ -29,6 +29,10 @@ const baseConfig = {
 	timeoutMs: 2000,
 	observeAfterTokens: 100_000,
 	writeCooldownS: 0,
+	// The writer endpoint is a black hole; without this the failed attempt retries for tens of
+	// seconds and the queue guard refuses the next call while it hangs.
+	busyRetries: 0,
+	busyBackoffMs: 0,
 	// This window is a handful of entries, so the floor is off here; the floor itself is pinned
 	// by `tools/flush-check.ts` and asserted against the wiring further down.
 	flushMinTokens: 0,
@@ -60,9 +64,22 @@ type ToolDef = {
 
 const message = (id: string, role: string, content: string) => ({ type: "message", id, message: { role, content } });
 const branch = [
-	message("e1", "user", "The watermark sits at the first entry, so two are unwritten."),
+	message("e1", "user", "The watermark sits at the first entry, so the rest is unwritten."),
 	message("e2", "assistant", "A flush names the end of the range and never the start."),
 	message("e3", "user", "Queue it and answer immediately."),
+	// Three more entries so a slice of the window is measurably smaller than the whole of it,
+	// which is what the token floor has to distinguish.
+	message(
+		"e4",
+		"assistant",
+		"Coverage is monotone, so a flush that skipped the front would leave a hole in the ledger that no later write could ever mark as covered, which is why only the end of the range is exposed to the model.",
+	),
+	message("e5", "user", "Write the whole window rather than the part that happens to be settled."),
+	message(
+		"e6",
+		"assistant",
+		"A thin chunk is the thing the finer-boundary experiment punished, so a named range that carries too little is refused and the threshold folds those entries instead.",
+	),
 ];
 
 const faux = () => {
@@ -91,8 +108,7 @@ const ctx = {
 			branch[0],
 			{ id: "c1", type: "custom", customType: "hy.extract", data: extractRecord },
 			{ id: "c2", type: "custom", customType: "hy.ops", data: opsRecord },
-			branch[1],
-			branch[2],
+			...branch.slice(1),
 		],
 		getEntry: (id: string) => branch.find((e) => e.id === id),
 	},
@@ -145,15 +161,15 @@ check(
 );
 check("listing stops at the newest entry", listing.split("\n")[1], "[1] user: Queue it and answer immediately.");
 check("listing excludes what is already covered", listing.includes("The watermark sits at the first entry"), false);
-has("listing names the call", listing, "call hy_flush with to=1");
+has("listing names the call", listing, "call hy_flush with to=4");
 
 // 3. A range queues and answers without waiting for the writer.
 const accepted = await flush().execute("t2", { to: 99 }, undefined, undefined, ctx);
 const queued = accepted.content.map((b) => b.text).join("\n");
-has("queued answer", queued, "queued: entries [0]–[1]");
-has("the clamp is reported", queued, "(to=99 clamped to 1)");
+has("queued answer", queued, "queued: entries [0]–[4]");
+has("the clamp is reported", queued, "(to=99 clamped to 4)");
 const details = accepted.details as { chunkId?: string; entries?: number } | undefined;
-check("details name the chunk and how much of it", [typeof details?.chunkId, details?.entries], ["string", 2]);
+check("details name the chunk and how much of it", [typeof details?.chunkId, details?.entries], ["string", 5]);
 // 4. A second call while that write is in flight is refused, not stacked.
 const busy = await textOf({ to: 1 });
 has("a busy writer refuses", busy, "not written (write in flight)");
@@ -171,7 +187,7 @@ const audit = readFileSync(join(dir, "state", "audit.ndjson"), "utf8")
 	.map((l) => JSON.parse(l) as Record<string, unknown>);
 const flushLines = audit.filter((a) => a.event === "hy_flush");
 check("the flush is audited once per accepted call", flushLines.length, 1);
-check("the audit names the requested and applied range", flushLines[0]?.applied, { from: 0, to: 1 });
+check("the audit names the requested and applied range", flushLines[0]?.applied, { from: 0, to: 4 });
 check("the audit records the clamp", flushLines[0]?.clampedTo, 99);
 const skipped = audit.filter((a) => a.event === "flush_skipped");
 check(
@@ -180,17 +196,43 @@ check(
 	["write in flight"],
 );
 
-// 6. The token floor is enforced by the wiring, not only by the gate: a thin window is refused and
-// the listing says what a write needs, because a model that ignores a refusal still sees the number.
-writeFileSync(join(dir, "config.json"), JSON.stringify({ ...baseConfig, flushMinTokens: 2000 }));
+// 6. The token floor is enforced by the wiring, not only by the gate, and the listing states the
+// number: a model that ignores a refusal still sees it where it asked.
+// The floor applies to what a write carries, not to how big the window is: naming `to` partway up a
+// window is still a thin chunk. The sizes are read back from the tool, so the pin follows the
+// fixture instead of a hand-picked number.
+writeFileSync(join(dir, "config.json"), JSON.stringify({ ...baseConfig, flushMinTokens: 0 }));
+const openFloor = faux();
+piHyMemory(openFloor.pi as never);
+(openFloor.handlers.get("session_start") as (e: unknown, c: unknown) => unknown)(undefined, ctx);
+const openFlush = () => openFloor.tools.get("hy_flush") as ToolDef;
+const slice = await openFlush().execute("t3", { to: 1 }, undefined, undefined, ctx);
+// Each accepted call queues a write against a dead endpoint; the queue guard would refuse the next
+// call while that attempt is still hanging, so let it fail out first.
+await new Promise((resolve) => setTimeout(resolve, baseConfig.timeoutMs + 300));
+const sliceTokens = (slice.details as { tokens?: number } | undefined)?.tokens ?? 0;
+check("a floor of 0 accepts a thin slice", sliceTokens > 0, true);
+const wholeTokens =
+	((await openFlush().execute("t4", { to: 3 }, undefined, undefined, ctx)).details as { tokens?: number } | undefined)
+		?.tokens ?? 0;
+check("the whole window carries more than the slice", wholeTokens > sliceTokens, true);
+await new Promise((resolve) => setTimeout(resolve, baseConfig.timeoutMs + 300));
+
+writeFileSync(join(dir, "config.json"), JSON.stringify({ ...baseConfig, flushMinTokens: sliceTokens + 1 }));
 const floored = faux();
 piHyMemory(floored.pi as never);
 (floored.handlers.get("session_start") as (e: unknown, c: unknown) => unknown)(undefined, ctx);
 const flooredFlush = () => floored.tools.get("hy_flush") as ToolDef;
-const floorListing = await flooredFlush().execute("t3", {}, undefined, undefined, ctx);
-has("the listing states the floor", floorListing.content[0].text, "a write needs 2000.");
-const thin = await flooredFlush().execute("t4", { to: 1 }, undefined, undefined, ctx);
-has("a thin window is refused", thin.content[0].text, "the floor is 2000");
+const floorListing = await flooredFlush().execute("t5", {}, undefined, undefined, ctx);
+has("the listing states the floor", floorListing.content[0].text, "a write needs");
+const thin = await flooredFlush().execute("t6", { to: 1 }, undefined, undefined, ctx);
+has("that same slice is refused once the floor is above it", thin.content[0].text, "a write needs");
+has("and it names the amount the write would have carried", thin.content[0].text, `carry ${sliceTokens}`);
 check("a refused flush queues no write", thin.details, undefined);
+const fat = await flooredFlush().execute("t7", { to: 4 }, undefined, undefined, ctx);
+const fatTokens = (fat.details as { tokens?: number } | undefined)?.tokens ?? 0;
+// Each instance is its own closure with its own estimate, so the pin is the ordering, not an
+// exact count: the slice the floor stopped is smaller than the whole window that cleared it.
+check("the whole window still clears that floor", fatTokens > sliceTokens, true);
 console.log(failures === 0 ? "ok: flush tool" : `${failures} failure(s)`);
 process.exit(failures === 0 ? 0 : 1);

@@ -140,7 +140,7 @@ const open: FlushInput = {
 	coolingDown: false,
 	entryCount: 4,
 	pendingFlushes: 0,
-	pendingTokens: 3000,
+	writeTokens: 3000,
 	minTokens: 2000,
 };
 check("a settled range is written", shouldFlushWrite(open), { flush: true, reason: "model asked" });
@@ -183,20 +183,22 @@ check("emptiness is answered before busyness", shouldFlushWrite({ ...open, entry
 	reason: "nothing unwritten",
 });
 // The token floor is the measured fix for fragmentation: finer boundaries than the threshold did
-// not raise quality, so a flush over a thin window is refused rather than paid for.
-check("a window under the floor refuses", shouldFlushWrite({ ...open, pendingTokens: 1999 }), {
+// not raise quality, so a thin write is refused rather than paid for. It floors what the write
+// carries, not how big the window is: naming `to` a quarter of the way up a fat window is still a
+// thin chunk.
+check("a write under the floor refuses", shouldFlushWrite({ ...open, writeTokens: 1999 }), {
 	flush: false,
 	reason: "under flush token floor",
 });
-check("a window at the floor accepts", shouldFlushWrite({ ...open, pendingTokens: 2000 }), {
+check("a write at the floor accepts", shouldFlushWrite({ ...open, writeTokens: 2000 }), {
 	flush: true,
 	reason: "model asked",
 });
-check("a floor of 0 accepts any unwritten window", shouldFlushWrite({ ...open, pendingTokens: 1, minTokens: 0 }), {
+check("a floor of 0 accepts any thin write", shouldFlushWrite({ ...open, writeTokens: 1, minTokens: 0 }), {
 	flush: true,
 	reason: "model asked",
 });
-check("emptiness is answered before the floor", shouldFlushWrite({ ...open, entryCount: 0, pendingTokens: 10 }), {
+check("emptiness is answered before the floor", shouldFlushWrite({ ...open, entryCount: 0, writeTokens: 10 }), {
 	flush: false,
 	reason: "nothing unwritten",
 });
