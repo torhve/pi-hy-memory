@@ -136,11 +136,20 @@ gate.
 - [ ] 6.7 Recall telemetry (`hy.recall` records, 4.2 remainder): without it the pool ranking in 4.3
       has no usage signal, and tonight's relevance-tier borrowing idea has nothing to rank on.
 
-- [ ] 6.10 Extraction coverage of short enumerables (from 6.4): three of six treatment runs lost a
+- [x] 6.10 Extraction coverage of short enumerables (from 6.4): three of six treatment runs lost a
       probe the writer never proposed — `exit code 3` in one, `TOR_TOOL_SETTINGS` in two. The render
       and the compaction are clean, so this is the only place a retention claim can be won. Measure on
-      the existing 12 captures: statements carrying exit codes, env var names and numeric limits, stated
-      versus proposed. Cheap, and it gates everything downstream.
+      the existing captures (`dev/enumerable-coverage.ts`, offline). Answered on `dev/corpus-extended.json`:
+      of 43 probes in decision lines, `trans-base` proposed 11 and banked 18 (42 %), `halves` proposed the
+      same 11 and banked 23 (53 %). Numeric limits stated as decisions went 0/3 in the base arm. But the
+      corpus holds one env var and zero exit codes in decision prose, so it cannot rank variants on those
+      shapes — see 6.12. `trans-clause` moved nothing.
+- [ ] 6.12 A corpus where the rare shapes occur by construction (from 6.10): ~30 decision statements
+      carrying exit codes, env var names, numeric limits and rejected alternatives, written as session
+      turns, committed as `dev/corpus-enumerables.json`. Without it the denominator for 6.10 is one env
+      var and zero exit codes, so no writer-prompt variant can be ranked on the shapes that 6.4 lost.
+      Gate: every category has ≥ 8 stated instances in decision prose, and `trans-base` scores on it
+      before any variant does.
 - [ ] 6.11 Does the session model use what `hy_recall` hands it? In 6.4 the post-cut recall results
       contained both probes the answer lost. Before ranking anything in 4.3 or 6.6, repeat that one
       question on a stronger session model: if the loss is the 4-bit model ignoring tool results,

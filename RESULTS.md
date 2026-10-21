@@ -356,3 +356,65 @@ env var names), and whether a session model uses what `hy_recall` hands it.
 4-bit 4B model dropping facts it was given; sessions long enough that pi's prose has more specifics to
 lose than two; and reload survival (`/compact` then a fresh process), which this harness measures as
 compaction within one process rather than a restart.
+
+## Does the writer propose short enumerables at all? (2026-10-22, offline, item 6.10)
+
+**Question.** The compaction-survival pilot lost facts that were stated plainly and never proposed:
+`exit code 3` in one treatment run, `TOR_TOOL_SETTINGS` in two. Those are short dense shapes — a code,
+an environment variable, a limit, a path, a ticket id, a rejected alternative. The claim to test is
+that the writer drops them in favour of the sentence around them.
+
+**Method.** `dev/enumerable-coverage.ts`, no model calls. It reads the chunk text the writer actually
+read (`captures-dev/<session>/hy-*.json`), pulls every probe of seven categories out of it, and asks
+two separate questions: did any draft proposed *for that chunk* carry the probe, and did the probe
+reach the final active bank. Roles are attributed per line, and the counts are reported twice — over
+all user/assistant prose, and over only the lines that read as a decision (`settled`, `chose`,
+`instead`, `default`, `dropped`, …), which is the class the bank exists for. A text is claimed by the
+first category that matches it, so a path is not also counted as an identifier. Runs measured against
+`dev/corpus-extended.json` (12 chunks, session `01a1510e`): `trans-base` (12 chunks, 150 active facts),
+`trans-clause` (the Tier-3 transition-clause variant, 148), and `halves-2026-10-21` (the same content
+in 24 chunks, 240 facts).
+
+**Decision-line scope.** Same denominator in all three, 43 probes:
+
+| category | stated | proposed (base) | in bank (base) | proposed (halves) | in bank (halves) |
+|---|---|---|---|---|---|
+| exit codes and statuses | 0 | — | — | — | — |
+| environment variables | 1 | 1 | 1 | 1 | 1 |
+| numeric limits | 3 | 0 | 0 | 1 | 1 |
+| file paths | 32 | 8 | 13 | 7 | 17 |
+| identifiers | 1 | 0 | 0 | 0 | 0 |
+| rejected alternatives | 6 | 2 | 4 | 3 | 4 |
+| commands and flags | 0 | — | — | — | — |
+| **total** | **43** | **11 (26%)** | **18 (42%)** | **11 (26%)** | **23 (53%)** |
+
+Over all prose the totals are 451 probes stated, 73 proposed (16%), 129 in bank (29%) for `trans-base`;
+`halves` proposed 98 (22%) and banked 163 (36%). Tool output carries another 1871 probes, mostly file
+listings and commit hashes, and is excluded from the claim.
+
+**Reading.** Three things, and the second one is the useful result.
+
+1. The writer does not systematically carry limits stated as decisions: 3 numeric limits in decision
+   lines, 0 proposed and 0 banked in `trans-base`, 1 of each in `halves`. Rejected alternatives fare
+   better (2 of 6 proposed), paths land at a quarter, and flags and identifiers essentially never do —
+   which is arguably correct, not a defect.
+2. **The capture corpus cannot answer the question that was asked.** Across 12 chunks there is exactly
+   one environment variable and zero exit codes in decision prose. `exit code 3` and
+   `TOR_TOOL_SETTINGS` are shapes the reload conversation had to be *written* to contain. Any coverage
+   number measured on organic captures is a denominator of one or three, so it cannot rank writer-prompt
+   variants. This is the same limit that made item 6.8 pre-register its own corpus: a claim about a rare
+   shape needs a corpus where the shape occurs by construction.
+3. The finer boundary moved retention without moving proposals: `halves` proposed the same 11 decision
+   probes as `trans-base` and banked 23 of 43 where `trans-base` banked 18 — 42% to 53%. Cutting the
+   same content into 24 pieces instead of 12 did not make the writer notice more; it made more of what
+   it noticed survive the fold to the final bank. That matches item 6.8's "53% more facts, flat
+   specificity" from the other side.
+
+**Also measured:** `trans-clause` is identical to `trans-base` on every category except chunk 001's
+draft list, and identical on both scope totals. The Tier-3 transition-clause block bought zero probe
+coverage.
+
+**Next, and it is not a prompt edit.** A corpus of ~30 decision statements that carry exit codes,
+environment-variable names, numeric limits and rejected alternatives by construction (item 6.12), so
+3.3 has a denominator. Until that exists, "the writer misses short enumerables" is a claim measured on
+three instances.
