@@ -190,7 +190,9 @@ that waited for the write could hold a turn for eight minutes.
 and keeps the guards that make a write wrong or wasteful: `/hy off`, a write in flight, a persisted
 extract awaiting its reconcile, a held primary, an active cooldown, and a queue bounded at
 `MAX_PENDING_FLUSH = 2`, because a model that flushes after every edit pays ~25 s and 9 000 tokens
-per call and `writeCooldownS` alone does not stop the queueing. `failures` is not a veto here, for
+per call. An active cooldown refuses the calls made inside its window — measured live, one failed
+write turned the next three calls into `write cooling down` refusals — but it does not bound how
+often a model asks across a long session, and `failures` is not a veto here, for
 the same reason the idle drain does not veto it. The prompt surface is short for the same reason it
 is short for the same reason it is short for the writer: one clause of when, one of what, and no
 JSON example, because a quantized model restates an example as prose instead of calling the tool.

@@ -37,7 +37,7 @@ MESSAGES=(
 mkdir -p "$ROOT/sessions" "$ROOT/work"
 
 arm() {
-	local name=$1 flush=$2 observe=$3
+	local name=$1 flush=$2 observe=$3 cooldown=${4:-0}
 	local cfg="$ROOT/config-$name.json" state="$ROOT/state-$name"
 	mkdir -p "$state"
 	cat > "$cfg" <<EOF
@@ -45,7 +45,7 @@ arm() {
   "model": "$WRITER",
   "observeAfterTokens": $observe,
   "timeoutMs": 2000,
-  "writeCooldownS": 0,
+  "writeCooldownS": $cooldown,
   "flushTool": $flush
 }
 EOF
@@ -130,10 +130,18 @@ for a in flushed:
         f"   flush to={a.get('requestedTo')} applied={a.get('applied')} entries={a.get('entries')} "
         f"chunkTokens={a.get('chunkTokens')} windowTokens={a.get('windowTokens')}"
     )
+for a in refused:
+    print(f"   refused reason={a.get('reason')} to={a.get('to')} end={a.get('end')} pendingTokens={a.get('pendingTokens')}")
 PY
 	done
 }
 
-arm flush-only true 200000
-arm threshold-only false "$THRESHOLD"
-arm both true "$THRESHOLD"
+if [[ "${LIVE_ONLY:-}" == "cooldown" ]]; then
+	# One arm for the guard that the other arms cannot reach: with `writeCooldownS: 0` a failed
+	# writer is probed again on every call, so this is where a refusal should appear.
+	arm flush-cooldown true 200000 "${LIVE_COOLDOWN:-30}"
+else
+	arm flush-only true 200000
+	arm threshold-only false "$THRESHOLD"
+	arm both true "$THRESHOLD"
+fi

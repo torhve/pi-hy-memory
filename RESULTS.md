@@ -169,3 +169,38 @@ the token threshold could not fire and every write in the experiment was model-i
 **Not proven by this:** bank quality (no write landed), a flush of an *earlier* stretch in a long
 session — with one turn per run the model could only name the end of the window — and any model
 other than this one, this prompt, this host, n=3.
+
+## Who writes first: the model or the threshold? (2026-10-21, live)
+
+The arm above isolated the tool by giving its control a threshold that could never fire. That left
+the useful question unanswered: does a model-initiated write arrive *before* the shipped cadence
+would have covered the same ground, and does the gate protect a dead writer from a model that keeps
+asking? `dev/live-cadence.sh` runs one four-message conversation in four configurations, three runs
+each, same session model, writer still a model id that does not resolve.
+
+| arm | `hy_flush` calls | write attempts | first write after message | refused |
+|---|---|---|---|---|
+| flush-only (threshold 200 000) | 9 / 4 / 2 | 5 / 2 / 1 | 9 / 9 / 9 | 0 |
+| threshold-only (no tool) | 0 | 2 / 2 / 2 | 10 / 10 / 10 | 0 |
+| both (the shipped combination, threshold 1200) | 4 / 2 / 4 | 7 / 5 / 7 | 9 / 7 / 9 | 0 |
+| both, `writeCooldownS: 30` | 7 | 2 | 7 | **3, reason `write cooling down`** |
+
+* A model-initiated write lands a turn earlier than the threshold's first: after message 7–9 versus
+  after message 10. In a session that runs to completion both arms end covered, so the gain exists
+  only against a reload or a compaction inside that gap.
+* The model asks more often than the threshold fires. Flush calls per run varied 2–9, and with both
+  mechanisms enabled a session paid 7 write attempts where the threshold alone paid 2.
+  `MAX_PENDING_FLUSH = 2` bounds the queue, not the number of calls across a session.
+* Refusals appeared in exactly one arm, and only there. With `writeCooldownS: 0` — which the other
+  three arms used — a failed writer is *not* a veto by design, so every call was accepted and the
+  gate never spoke. With the shipped 30-second cooldown, the failed write made the next three calls
+  refuse with `write cooling down`, and the calls before and after the window still went through.
+  The earlier reading of "zero refusals" was therefore my config switching the guard off, not the
+  guard working.
+* **The written-token totals are not a cost comparison.** Because the writer never answered, the
+  watermark never advanced and each flush re-carried the whole window: one run's chunks were
+  1 156 → 1 444 → 1 820 → 2 283 → 3 128 tokens over the same entries. With a writer that answers,
+  the watermark moves and the next flush covers only what is new.
+
+**Not proven by this:** bank quality, and whether earlier coverage actually survives a reload —
+which needs a reload inside the gap, not a writer that fails.
