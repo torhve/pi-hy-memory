@@ -252,7 +252,17 @@ def visible(entry):
     return (entry.get("message") or {}).get("role") != "toolResult"
 
 
-tail_rows = [e for e in entry_rows[kept_index:] if visible(e)] if kept_index is not None else []
+# The answer to the closing question is what the answer metric scores, so it cannot be evidence that a
+# probe survived the cut either — the handover note restates every decision by design, which is what
+# made the last clean run report six probes in a four-entry tail.
+answer_index = max(
+    (i for i, e in enumerate(entry_rows) if (e.get("message") or {}).get("role") == "user"),
+    default=-1,
+)
+tail_rows = (
+    [e for i, e in enumerate(entry_rows) if i >= kept_index and i < answer_index and visible(e)]
+    if kept_index is not None else []
+)
 prefix_rows = [e for e in entry_rows[:kept_index] if visible(e)] if kept_index is not None else entry_rows
 prefix_text = "\n".join(blob(e) for e in prefix_rows)
 tail_text = "\n".join(blob(e) for e in tail_rows)
