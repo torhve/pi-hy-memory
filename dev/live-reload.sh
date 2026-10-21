@@ -71,15 +71,21 @@ VERBS=(read lock write stat reload parse fsync rename)
 STATUSES=(ok would-block short-read enoent partial-write retry stale-handle ignored)
 FILLER=""
 for i in {1..40}; do
-	FILLER+="2026-04-$(( (i % 28) + 1 ))T0$((i % 9)):$((10 + (i % 49)))Z tctl[$((800 + i))] settings: ${VERBS[((i % 8) + 1)]} ${STATUSES[((i % 8) + 1)]} bytes=$((300 + i * 17)) uid=$((i % 2 == 0 ? 1000 : 0))"$'\n'
+	FILLER+="2026-04-$(( (i % 28) + 1 ))T0$((i % 9)):$((10 + (i % 49)))Z notifyd[$((800 + i))] dispatch: ${VERBS[((i % 8) + 1)]} ${STATUSES[((i % 8) + 1)]} bytes=$((300 + i * 17)) uid=$((i % 2 == 0 ? 1000 : 0))"$'\n'
 done
 MESSAGES=(
 	"We are designing the settings layer for a small CLI called tctl, a single binary people install with brew. Reason out loud about where its config lives; I will push back. Constraints: the file must be editable by hand, it must be settings.toml so it matches the other tools in this family, and it must never be written while another instance holds it, so lock it with flock on every write. Respect XDG_CONFIG_HOME when set, otherwise fall back to ~/.config/tctl."
 	"Good. Now I reject one alternative explicitly: YAML. We rejected YAML because tctl's config is a flat key list and a YAML parser is a dependency we would carry for twelve keys. Keep the rejection in the record, not just the choice. Next: permissions and the write strategy. Pick a file mode — 0o600, since the file will hold tokens — and say how you write it."
-	"Before you continue, an incident from last spring: the ticket was MIGRATE-2024, and the failure was that a partial write left a truncated file that the next run silently re-created with defaults, so the user lost their settings and never noticed. Whatever you choose has to make a truncated file loud rather than quiet. Fold that into the rule. Here is the log from that night, for context:
-$FILLER"
+	"Before you continue, an incident from last spring: the ticket was MIGRATE-2024, and the failure was that a partial write left a truncated file that the next run silently re-created with defaults, so the user lost their settings and never noticed. Whatever you choose has to make a truncated file loud rather than quiet. Fold that into the rule."
 	"Unrelated chatter: the coffee machine is being serviced Thursday and the standing meeting moved to Friday because the room is double-booked — ignore that for the design. Back to it: when the settings file exists but is unreadable or half-written, what should tctl do, and what should it exit with? Specific codes, not generic ones: exit code 3 for settings errors so scripts can tell them apart from usage errors, exit code 4 for lock contention."
 	"One more thing to settle: an environment override. TOR_TOOL_SETTINGS points at an explicit path and wins over everything else, including XDG. State the precedence order in one line, highest to lowest, then restate every decision as a single rule a teammate could follow."
+	# Three turns on an unrelated service. They carry the bulk that pushes the context past the
+	# threshold, so the cut lands here — and because they are about something else, the answers that
+	# survive the cut cannot restate the design decisions, which is what made the last runs unscorable.
+	"Switching to a different task, and tctl is not part of it: this is notifyd's dispatch log from last night. Which lines show a retry loop rather than a clean run, and which show a permission problem? Answer only about notifyd, and do not bring up the earlier design discussion.
+$FILLER"
+	"In that same log, which lines suggest the queue was full rather than the worker being slow? Keep it to notifyd."
+	"Last one on notifyd: does anything here indicate a write that stopped short of its intended size, or a queue that drained cleanly? notifyd only."
 	"Now, without re-reading our conversation above and without opening any files, write a short handover note for someone who joined late: where the tool keeps its configuration, in what format, what permissions and write strategy it uses, which format we turned down and for what reason, the reference from the incident we learned from, the two numeric statuses a script can branch on, the environment override, and the order the locations are checked in. If something is not available to you, say so rather than guessing."
 )
 PROBES=(
@@ -217,7 +223,10 @@ def blob(entry):
 
 
 prefix_rows = entry_rows[:kept_index] if kept_index is not None else entry_rows
-tail_rows = entry_rows[kept_index:] if kept_index is not None else []
+# The summary is what is being scored, so it must not count as surviving context: excluding it is
+# the difference between "the summary kept this" and "this was never thrown away".
+tail_rows = [e for e in entry_rows[kept_index:] if e.get("type") != "compaction"] if kept_index is not None else []
+prefix_rows = entry_rows[:kept_index] if kept_index is not None else entry_rows
 prefix_text = "\n".join(blob(e) for e in prefix_rows)
 tail_text = "\n".join(blob(e) for e in tail_rows)
 # A probe is only scoreable if the conversation settled it before the cut, and a probe the kept tail
