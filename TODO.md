@@ -111,7 +111,9 @@ gate.
       `tools/flush-check.ts`, wiring in `tools/flush-tool-check.ts`.
 - [x] 6.2 Does a quantized session model use it? Yes, 3/3 unprompted two-step calls
       (`dev/live-flush.sh`), and it writes a turn earlier than the 1 200-token threshold does
-      (`dev/live-cadence.sh`). The cooldown is what refuses a dead writer, verified live.
+      (`dev/live-cadence.sh`). The cooldown is what refuses a dead writer, verified live. **Corrected
+      by 6.8:** with the shipped floor the early calls are refused, so that ordering belongs to a
+      config where the floor was clearable, not to the shipped one.
 - [x] 6.3 Does a finer boundary buy quality? No (`out/base-2026-10-21` against
       `out/halves-2026-10-21`, judged twice): specificity flat, durable share 60 % → 51 %, bank
       +53 %, 2× writes for +14 % prompt tokens. Predictions pre-registered in
@@ -120,13 +122,22 @@ gate.
       earlier. Needs a session reloaded inside the gap between a flush and the threshold, then
       `hy_recall` on a fact that only the flush covered.
 - [ ] 6.5 Does `flushMinTokens` hold real sessions near threshold-sized chunks, or does it just
-      refuse? Re-run `dev/live-cadence.sh` and read accepted chunk sizes against refusals.
+      refuse? Partly measured: at a 1 200-token threshold — below the 2 000-token floor, so the
+      floor cannot be cleared by construction — 7 of 9 ranged calls refused and the two accepted
+      chunks carried 2 291 and 2 680 tokens. **Remaining:** the same run at the shipped
+      `observeAfterTokens: 6000`, where a 2 000-token flush can win the race.
 - [ ] 6.6 Retrieval precision on a larger bank: the arm's 240-fact bank may answer more queries and
       crowd out the right fact. `hy_recall` ranking is lexical and there is no precision measurement
       for it yet.
 - [ ] 6.7 Recall telemetry (`hy.recall` records, 4.2 remainder): without it the pool ranking in 4.3
       has no usage signal, and tonight's relevance-tier borrowing idea has nothing to rank on.
 
+- [x] 6.8 What does offering the tool cost? Measured against a writer that answers
+      (`out` of `dev/live-cadence.sh`, 3 runs × 3 arms): +28 % writer tokens and +13 s per session
+      over `threshold-only`, and the extra write was threshold-triggered, not a flush — the tool
+      round grows the window past the threshold again. Seven of nine ranged calls refused at the
+      floor for zero writer cost, and `flush-only` left one session of three with no write at all,
+      so the threshold is what guarantees coverage (`RESULTS.md`).
 ## Notes
 
 - Writer route: primary `remote/hy-memory-30b-a3b`, measured in this session on a 10.9 k-token
