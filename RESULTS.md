@@ -187,7 +187,9 @@ each, same session model, writer still a model id that does not resolve.
 
 * A model-initiated write lands a turn earlier than the threshold's first: after message 7–9 versus
   after message 10. In a session that runs to completion both arms end covered, so the gain exists
-  only against a reload or a compaction inside that gap.
+  only against a reload or a compaction inside that gap. **Corrected by the arm below:** with
+  `flushMinTokens: 2000` the early calls are refused rather than written, so this ordering belongs
+  to a config where the floor was clearable, not to the shipped one.
 * The model asks more often than the threshold fires. Flush calls per run varied 2–9, and with both
   mechanisms enabled a session paid 7 write attempts where the threshold alone paid 2.
   `MAX_PENDING_FLUSH = 2` bounds the queue, not the number of calls across a session.
@@ -204,6 +206,43 @@ each, same session model, writer still a model id that does not resolve.
 
 **Not proven by this:** bank quality, and whether earlier coverage actually survives a reload —
 which needs a reload inside the gap, not a writer that fails.
+
+## What a model-initiated write costs (2026-10-21, live, writer answering)
+
+The arm above left the cost question open because its writer never answered: with no watermark
+advancing, every flush re-carried the same window, so the token totals measured the stub. Repeated
+with a writer that resolves (`hy-memory-30b-a3b`), same three arms, same four-message conversation,
+three runs each, `observeAfterTokens: 1200` for the threshold arms, `flushMinTokens` at its shipped
+2 000. Means over three runs:
+
+| arm | writes | writer tokens | writer wall | facts landed | session messages |
+|---|---|---|---|---|---|
+| flush-only (threshold 200 000) | 2 | 3 318 | 41 s | 18 | 21.3 |
+| threshold-only (no tool) | 3 | 3 629 | 47 s | 23 | 12.7 |
+| both (the shipped combination) | 4 | 4 658 | 61 s | 22 (+4 updates) | 17.3 |
+
+* **Offering the tool costs about +28 % writer tokens and +13 s per session.** Per run: 3 341 /
+  7 421 / 3 213 against threshold-only's 3 737 / 3 413 / 3 737. The expensive run is the one where
+  the session grew to a second write (messages 8 and 17).
+* **The extra write was not a flush.** Nine ranged `hy_flush` calls happened across the two arms
+  that had the tool; two were accepted, seven refused at the floor, and none of them produced a
+  write that the threshold would not have produced. What `both` paid extra was a *second
+  threshold-triggered* write, because the tool round adds messages to the window.
+* **The floor is what makes asking cheap.** Seven refusals cost nothing: no writer call, one line
+  naming the number (`pendingTokens` 689–1 541 against a floor of 2 000). The earlier "7 write
+  attempts where the threshold paid 2" was the stub failing to advance the watermark, not eagerness.
+* **`flush-only` is not a policy.** One of its three sessions wrote nothing at all: 17 messages,
+  every ranged call under the floor, zero facts durable. Coverage is the threshold's job; the tool
+  is only a second trigger on top of it.
+* **A 1 200-token threshold cannot be beaten by a 2 000-token floor.** The two accepted flushes
+  landed after messages 20 and 21; the threshold wrote after messages 8–12. The shipped pair is
+  `observeAfterTokens: 6000` with the floor at 2 000, so the race is possible there, and the
+  "a turn earlier" reading from the arm above holds only for that ratio. Demonstrating it needs a
+  long conversation with a decision that settles far from the threshold — and a reload inside the
+  gap, which is the whole point and still unmeasured.
+
+**Not proven by this:** that earlier coverage survives a reload, and whether the extra write buys
+anything a later threshold write would not have covered anyway.
 
 ## Does a finer chunk boundary buy quality? (2026-10-21, corpus, pre-registered)
 
