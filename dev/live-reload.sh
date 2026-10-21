@@ -65,7 +65,7 @@ VERBS=(read lock write stat reload parse fsync rename)
 STATUSES=(ok would-block short-read enoent partial-write retry stale-handle ignored)
 FILLER=""
 for i in {1..40}; do
-	FILLER+="2026-04-$(( (i % 28) + 1 ))T0$((i % 9)):$((10 + (i % 49)))Z tctl[$((800 + i))] settings: ${VERBS[((i % 8) + 1)]} ${STATUSES[((i % 8) + 1)]} bytes=$((300 + i * 17)) mode=$((i % 3 == 0 ? 600 : 644))"$'\n'
+	FILLER+="2026-04-$(( (i % 28) + 1 ))T0$((i % 9)):$((10 + (i % 49)))Z tctl[$((800 + i))] settings: ${VERBS[((i % 8) + 1)]} ${STATUSES[((i % 8) + 1)]} bytes=$((300 + i * 17)) uid=$((i % 2 == 0 ? 1000 : 0))"$'\n'
 done
 MESSAGES=(
 	"We are designing the settings layer for a small CLI called tctl, a single binary people install with brew. Reason out loud about where its config lives; I will push back. Constraints: the file must be editable by hand, it must be settings.toml so it matches the other tools in this family, and it must never be written while another instance holds it, so lock it with flock on every write. Respect XDG_CONFIG_HOME when set, otherwise fall back to ~/.config/tctl."
@@ -74,7 +74,7 @@ MESSAGES=(
 $FILLER"
 	"Unrelated chatter: the coffee machine is being serviced Thursday and the standing meeting moved to Friday because the room is double-booked — ignore that for the design. Back to it: when the settings file exists but is unreadable or half-written, what should tctl do, and what should it exit with? Specific codes, not generic ones: exit code 3 for settings errors so scripts can tell them apart from usage errors, exit code 4 for lock contention."
 	"One more thing to settle: an environment override. TOR_TOOL_SETTINGS points at an explicit path and wins over everything else, including XDG. State the precedence order in one line, highest to lowest, then restate every decision as a single rule a teammate could follow."
-	"Now, without re-reading our conversation above, write a summary for someone who joined late: where tctl stores settings, in what format, what file mode and write strategy, which alternative we rejected and why, the ticket id of the incident, the two exit codes, the environment override, and the precedence order. If something is not available to you, say so rather than guessing."
+	"Now, without re-reading our conversation above and without opening any files, write a short handover note for someone who joined late: where the tool keeps its configuration, in what format, what permissions and write strategy it uses, which format we turned down and for what reason, the reference from the incident we learned from, the two numeric statuses a script can branch on, the environment override, and the order the locations are checked in. If something is not available to you, say so rather than guessing."
 )
 PROBES=(
 	"settings.toml"
@@ -157,6 +157,7 @@ EOF
 		session_file=$(printf '%s\n' "$ROOT/sessions"/*"$sid"*.jsonl(N) | head -1)
 		python3 - "$name" "$i" "$ROOT/$name-$i.json" "$state" "$session_file" "$rc" "${PROBES[@]}" <<'PY'
 import json, os, sys
+from datetime import datetime
 
 name, i, transcript, state, session_file, rc = sys.argv[1:7]
 probes = sys.argv[7:]
@@ -190,15 +191,60 @@ audit = rows(os.path.join(state, "audit.ndjson"))
 
 # The compressed view the last request carried is the summary recorded in the session file.
 # `fromHook` says who wrote it: this extension's bank render, or pi's summariser model.
-compactions = [e for e in rows(session_file) if e.get("type") == "compaction"]
+entry_rows = rows(session_file)
+compactions = [e for e in entry_rows if e.get("type") == "compaction"]
 summary = text(compactions[-1].get("summary")) if compactions else ""
 from_hook = bool(compactions and compactions[-1].get("fromHook"))
+kept_id = compactions[-1].get("firstKeptEntryId") if compactions else None
+kept_index = next((n for n, e in enumerate(entry_rows) if e.get("id") == kept_id), None) if kept_id else None
+
+
+def blob(entry):
+    message = entry.get("message")
+    if message:
+        return text(message.get("content"))
+    return json.dumps(entry.get("summary") or entry.get("data") or entry.get("value") or "")
+
+
+prefix_rows = entry_rows[:kept_index] if kept_index is not None else entry_rows
+tail_rows = entry_rows[kept_index:] if kept_index is not None else []
+prefix_text = "\n".join(blob(e) for e in prefix_rows)
+tail_text = "\n".join(blob(e) for e in tail_rows)
+# A probe is only scoreable if the conversation settled it before the cut, and a probe the kept tail
+# still carries verbatim scores nothing: reading it off surviving context is not surviving compaction.
+settled = [p for p in probes if p.lower() in prefix_text.lower()]
+tail_leak = [p for p in settled if p.lower() in tail_text.lower()]
 
 tool_calls = [e for e in events if e.get("type") == "tool_execution_start"]
 flush_calls = sum(1 for e in tool_calls if e.get("toolName") == "hy_flush")
 recall_calls = sum(1 for e in tool_calls if e.get("toolName") == "hy_recall")
 writes = [a for a in audit if a.get("event") == "write_end"]
 trim_events = sum(1 for a in audit if a.get("event") == "compact_trimmed")
+
+
+def stamp(value):
+    if not value:
+        return None
+    try:
+        return datetime.fromisoformat(str(value).replace("Z", "+00:00")).timestamp()
+    except Exception:
+        return None
+
+
+comp_stamp = stamp(compactions[-1].get("timestamp")) if compactions else None
+# The treatment arm only counts as treated if a write landed before the cut that discarded the
+# conversation; a flush that arrived afterwards proves nothing about survival.
+writes_before = [a for a in writes if comp_stamp is None or (stamp(a.get("ts")) or 0) <= comp_stamp]
+last_compact_event = max((n for n, e in enumerate(events) if e.get("type") == "compaction_end"), default=-1)
+# Retrieval after the cut is legitimate product behaviour, but it is a different claim from the
+# summary carrying the decision, so it is counted separately rather than folded into the score.
+recall_after = sum(
+    1
+    for n, e in enumerate(events)
+    if n > last_compact_event
+    and e.get("type") == "tool_execution_start"
+    and e.get("toolName") == "hy_recall"
+)
 writer_tokens = sum((a.get("inTokens") or 0) + (a.get("outTokens") or 0) for a in writes)
 facts = sum(a.get("added") or 0 for a in writes)
 
@@ -214,16 +260,25 @@ for e in events:
                 seq.append((m.get("role"), t))
 last_question = max((i for i, (role, _) in enumerate(seq) if role == "user"), default=-1)
 final = " ".join(t for role, t in seq[last_question + 1:] if role == "assistant")
-answer_hits = [p for p in probes if p.lower() in final.lower()]
-summary_hits = [p for p in probes if p.lower() in summary.lower()]
+# A probe the question itself names can be echoed rather than remembered, so it is not scored.
+question = seq[last_question][1] if last_question >= 0 else ""
+asked = [p for p in settled if p.lower() not in question.lower()]
+answer_hits = [p for p in asked if p.lower() in final.lower()]
+summary_hits = [p for p in settled if p.lower() in summary.lower()]
 print(
     f"{name} {i}: rc={rc} compactions {len(compactions)} (trim {trim_events}) fromHook={from_hook} | "
-    f"summary keeps {len(summary_hits)}/{len(probes)} | answer keeps {len(answer_hits)}/{len(probes)} | "
-    f"writes {len(writes)} writer {writer_tokens} tok / {round(sum(a.get('wallS') or 0 for a in writes))}s | "
-    f"facts {facts} | flush {flush_calls} | recall {recall_calls}"
+    f"summary keeps {len(summary_hits)}/{len(settled)} | answer keeps {len(answer_hits)}/{len(asked)} | "
+    f"writes {len(writes)} ({len(writes_before)} before the cut) writer {writer_tokens} tok / "
+    f"{round(sum(a.get('wallS') or 0 for a in writes))}s | facts {facts} | "
+    f"flush {flush_calls} | recall {recall_calls} ({recall_after} after the cut)"
 )
-print(f"   missing from summary: {[p for p in probes if p not in summary_hits]}")
-print(f"   missing from answer:  {[p for p in probes if p not in answer_hits]}")
+print(f"   settled {len(settled)}/{len(probes)}, verbatim in kept tail {len(tail_leak)} {tail_leak}")
+print(f"   missing from summary: {[p for p in settled if p not in summary_hits]}")
+print(f"   missing from answer:  {[p for p in asked if p not in answer_hits]}")
+if compactions and name == "flush-on" and not writes_before:
+    print("   INVALID: the treatment arm compacted before any write landed")
+if tail_leak:
+    print("   SUSPECT: the kept tail still carries a probe verbatim, so that one was never discarded")
 PY
 	done
 }
