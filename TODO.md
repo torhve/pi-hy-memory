@@ -69,7 +69,8 @@ gate.
 - [ ] 3.2 E1 confidence rubric — anchored to evidence origin (1.0 user-stated rule/constraint,
       0.7 tool-evidence inferred, 0.5 weakly inferred). Gate: share of confidence = 1.0 drops
       from baseline (> 95 %) to ≤ 80 %; durable score ≥ baseline; ranking tiers non-degenerate.
-- [ ] 3.3 E2 transition + specificity block — "settled on X; the interim Y was dropped",
+- [ ] 3.3 (deprioritised by 6.12–6.13: specificity on decision lines is already 100 % — see 6.15)
+      E2 transition + specificity block — "settled on X; the interim Y was dropped",
       subject is code/decision not user/agent, statements name paths/branches/commands/error
       strings/versions. Gate: judge transition-axis score up; noise ≤ baseline; average tokens
       per fact +≤ 25 %.
@@ -144,7 +145,19 @@ gate.
       same 11 and banked 23 (53 %). Numeric limits stated as decisions went 0/3 in the base arm. But the
       corpus holds one env var and zero exit codes in decision prose, so it cannot rank variants on those
       shapes — see 6.12. `trans-clause` moved nothing.
-- [ ] 6.12 A corpus where the rare shapes occur by construction (from 6.10): ~30 decision statements
+- [x] 6.12 A corpus where the rare shapes occur by construction (from 6.10): authored
+      `dev/corpus-enumerables.json` (14 exit codes, 12 env names, 13 limits, 11 rejected alternatives in
+      decision lines) and scored it: 58 of 58 proposed and banked. Dilution (`dev/corpus-enumerables-noisy.json`)
+      55 of 55. Replaying the 6.4 session offline (`out/reload-replay`) carried 61 of 66 including
+      `exit code 3`. Extraction is not the defect — see `RESULTS.md`.
+- [ ] 6.14 A chunk lost to a truncated response stays lost: `out/reload-replay` chunk `hy-reload-006` failed
+      twice with the same parse error at position 423 and was dropped. A fresh extract at temperature 0
+      reproduces the same truncation, so the retry only re-pays the extract. Either raise the output budget
+      on retry, or split the chunk, or record the loss as a gap so coverage says so.
+- [ ] 6.15 Is one coarse write the reason 6.4 lost a probe? The live run wrote once over ~2 680 tokens
+      (5 drafts, 13 facts); the same text replayed in 8 chunks of ~1 200 tokens proposed 61 of 66 probes,
+      and organic halves retain 53 % where 12 chunks retain 42 %. Test a live arm with a smaller chunk
+      budget before touching the writer prompt. ~30 decision statements
       carrying exit codes, env var names, numeric limits and rejected alternatives, written as session
       turns, committed as `dev/corpus-enumerables.json`. Without it the denominator for 6.10 is one env
       var and zero exit codes, so no writer-prompt variant can be ranked on the shapes that 6.4 lost.

@@ -418,3 +418,55 @@ coverage.
 environment-variable names, numeric limits and rejected alternatives by construction (item 6.12), so
 3.3 has a denominator. Until that exists, "the writer misses short enumerables" is a claim measured on
 three instances.
+
+## Can the writer carry short enumerables? (2026-10-22, authored corpus, replay, items 6.12–6.13)
+
+**Question.** Item 6.10 measured 26 % proposal coverage on organic captures, but its decision-line
+denominator was 43 probes of which 32 were file paths mentioned in passing, and it held one environment
+variable and zero exit codes. That cannot rank anything. So the shapes 6.4 lost were authored into a
+corpus (`dev/corpus-enumerables.json`, eight chunks of an invented config CLI: 14 exit codes, 12 env-var
+names, 13 numeric limits, 11 rejected alternatives, all inside decision lines), and `dev/enumerable-coverage.ts`
+prints the corpus's own gate so a thin denominator fails loudly instead of quietly producing a percentage.
+
+**Four arms, same writer (`hy-memory-30b-a3b`), decision-line scope.**
+
+| arm | chunks | stated | proposed | in bank |
+|---|---|---|---|---|
+| organic captures, `trans-base` (12 chunks, 150 facts) | 12 | 43 | 11 (26 %) | 18 (42 %) |
+| organic captures, `halves-2026-10-21` (24 chunks, 240 facts) | 24 | 43 | 11 (26 %) | 23 (53 %) |
+| authored decisions, clean prose (`enum-base`) | 8 | 58 | 58 (100 %) | 58 (100 %) |
+| authored decisions inside ~670 tokens of tool noise each (`enum-noisy`) | 8 | 55 | 55 (100 %) | 55 (100 %) |
+| the 6.4 session itself, replayed offline (`reload-replay`) | 8 | 66 | 61 (92 %) | 61 (92 %) |
+
+**The reading, which is different from what I said after 6.4.** Extraction is not blind to short
+enumerables and dilution does not break them. On decision-dense prose the writer carries everything; wrap
+the same decisions in tool output, warnings, test runs and unrelated chatter and it still carries
+everything. Replaying the exact reload conversation from item 6.4 — the run whose bank never proposed
+`exit code 3` — carries 61 of 66 probes offline, including `exit code 3` and `TOR_TOOL_SETTINGS`. The
+organic 26 % is mostly the writer declining incidental mentions, which is the intended behaviour.
+
+**What is left, and it is a granularity story.** That live treatment run made exactly one write
+(`write_start` once, two flushes refused at the 2000-token floor) over a ~2 680-token window, and produced
+5 drafts and 13 facts from it. The same text replayed as eight chunks of ~1 200 tokens proposed nearly
+everything. Finer boundaries also retained more on organic content: same 43 probes, 18 in bank at 12
+chunks against 23 at 24 — 42 % to 53 %. So the suspect is one coarse write over a long window, not the
+prompt. That also re-ranks item 3.3: a specificity block has no measured target, because specificity on
+decision lines is already at 100 %.
+
+**A defect the replay found.** Chunk `hy-reload-006` failed twice with the identical parse error —
+`Expected ',' or ']' after array element in JSON at position 423 (line 3 column 408)` — and the chunk was
+dropped. "Retrying with a fresh extract" at temperature 0 reproduces the same truncated output at the same
+position, so the retry cannot recover a truncated response; a chunk lost this way never proposes anything.
+Filed as 6.14.
+
+**Three matcher fixes this measurement forced, all in `dev/enumerable-coverage.ts`.** Retention was
+literal, so `exit code 65` was scored lost when the bank held `65 = partial write`; `carried()` is now
+whitespace-insensitive and, for exit codes, checks per statement rather than per phrase. Unlabeled
+continuation lines of a multi-line tool result were attributed to the assistant, and now inherit the
+labelled entry above them. And `rejected alternatives` was matching prose (`not just`, `not bring`), so its
+stop-word list is now real; before the fix that category reported 50 % coverage in the replay and 92 %
+after, and the 50 % was measuring English.
+
+**Not proven by this:** that granularity is what lost the probe live — that is a hypothesis from one
+session and a consistent organic contrast, and it needs a live arm with a smaller chunk budget to confirm;
+and whether the parse-failure chunk cost a probe in the live run, which the audit does not say.
