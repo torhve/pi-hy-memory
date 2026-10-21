@@ -195,7 +195,9 @@ the same reason the idle drain does not veto it. The prompt surface is short for
 is short for the writer: one clause of when, one of what, and no JSON example, because a quantized
 model restates an example as prose instead of calling the tool. The listing caps at
 `flushListEntries = 24` rows of 120 characters — enough to choose a range, and a preview is never
-re-serialized into the writer's prompt. (`tools/flush-check.ts`)
+re-serialized into the writer's prompt. Registration is conditional on `flushTool`, so turning it
+off removes the surface from the prompt instead of leaving a tool that only refuses
+(`tools/flush-check.ts`, `tools/flush-tool-check.ts`).
 
 **Coverage is a position, not an id.** The watermark is stored as an entry id, and pi can move
 the leaf: a rewind, a resumed checkpoint, or a compaction that re-parents the branch leaves

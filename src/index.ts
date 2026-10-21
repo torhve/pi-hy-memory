@@ -1349,123 +1349,128 @@ export default function piHyMemory(pi: ExtensionAPI): void {
 	 * 28–52 s on a local writer and `timeoutMs` is 480 000, so a synchronous tool
 	 * could stall a turn for eight minutes.
 	 */
-	pi.registerTool({
-		name: "hy_flush",
-		label: "Hy flush",
-		description: FLUSH_DESCRIPTION,
-		promptSnippet: FLUSH_SNIPPET,
-		promptGuidelines: FLUSH_GUIDELINES,
-		parameters: Type.Object({
-			to: Type.Optional(Type.Number({ description: FLUSH_PARAM_TO })),
-		}),
-		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
-			const live = state;
-			if (!live)
-				return {
-					content: [{ type: "text", text: "pi-hy-memory: no bank for this session yet." }],
-					details: undefined,
-				};
-			markActivity(ctx);
+	// Off means no prompt surface at all: a tool the model is not allowed to use still
+	// costs its description and its guidelines in every session's prompt.
+	if (config.flushTool)
+		pi.registerTool({
+			name: "hy_flush",
+			label: "Hy flush",
+			description: FLUSH_DESCRIPTION,
+			promptSnippet: FLUSH_SNIPPET,
+			promptGuidelines: FLUSH_GUIDELINES,
+			parameters: Type.Object({
+				to: Type.Optional(Type.Number({ description: FLUSH_PARAM_TO })),
+			}),
+			async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
+				const live = state;
+				if (!live)
+					return {
+						content: [{ type: "text", text: "pi-hy-memory: no bank for this session yet." }],
+						details: undefined,
+					};
+				markActivity(ctx);
 
-			let branch: SessionEntry[];
-			let sessionId: string;
-			try {
-				branch = ctx.sessionManager.getBranch();
-				sessionId = ctx.sessionManager.getSessionId();
-			} catch {
-				return {
-					content: [{ type: "text", text: "pi-hy-memory: the session changed; call hy_flush again." }],
-					details: undefined,
-				};
-			}
-			if (sessionId !== live.sessionId)
-				return {
-					content: [{ type: "text", text: "pi-hy-memory: this session was replaced; call hy_flush again." }],
-					details: undefined,
-				};
+				let branch: SessionEntry[];
+				let sessionId: string;
+				try {
+					branch = ctx.sessionManager.getBranch();
+					sessionId = ctx.sessionManager.getSessionId();
+				} catch {
+					return {
+						content: [{ type: "text", text: "pi-hy-memory: the session changed; call hy_flush again." }],
+						details: undefined,
+					};
+				}
+				if (sessionId !== live.sessionId)
+					return {
+						content: [
+							{ type: "text", text: "pi-hy-memory: this session was replaced; call hy_flush again." },
+						],
+						details: undefined,
+					};
 
-			const window = coverageWindow(branch, live.ledger, live.cursorId, live.resumeFromId);
-			const rows = flushRows(window.pending);
+				const window = coverageWindow(branch, live.ledger, live.cursorId, live.resumeFromId);
+				const rows = flushRows(window.pending);
 
-			// No `to` is the listing, not a write.
-			if (params.to === undefined || params.to === null)
-				return {
-					content: [{ type: "text", text: renderUnwritten(rows, config.flushListEntries ?? 24) }],
-					details: { unwritten: rows.length, pendingTokens: window.tokens },
-				};
+				// No `to` is the listing, not a write.
+				if (params.to === undefined || params.to === null)
+					return {
+						content: [{ type: "text", text: renderUnwritten(rows, config.flushListEntries ?? 24) }],
+						details: { unwritten: rows.length, pendingTokens: window.tokens },
+					};
 
-			const range = unwrittenRange(rows, params.to);
-			if (range.empty) {
-				const why =
-					range.empty === "no-entries"
-						? "nothing is unwritten"
-						: range.empty === "to-before-start"
-							? `to=${params.to} is before the start of the window`
-							: `to=${params.to} is not a number`;
-				audit("flush_skipped", { sessionId, reason: range.empty, to: params.to, unwritten: rows.length });
-				return {
-					content: [{ type: "text", text: `hy_flush: ${why}. ${rows.length} entries unwritten.` }],
-					details: undefined,
-				};
-			}
+				const range = unwrittenRange(rows, params.to);
+				if (range.empty) {
+					const why =
+						range.empty === "no-entries"
+							? "nothing is unwritten"
+							: range.empty === "to-before-start"
+								? `to=${params.to} is before the start of the window`
+								: `to=${params.to} is not a number`;
+					audit("flush_skipped", { sessionId, reason: range.empty, to: params.to, unwritten: rows.length });
+					return {
+						content: [{ type: "text", text: `hy_flush: ${why}. ${rows.length} entries unwritten.` }],
+						details: undefined,
+					};
+				}
 
-			const chunk = serializeEntries(rangeEntries(window.pending, rows, range), {
-				maxTokens: chunkBudget(),
-				maxEntryChars: config.maxEntryChars,
-			});
-			const decision = shouldFlushWrite({
-				sessionActive: sessionActive(),
-				inFlight: live.pending !== null,
-				pendingExtract: live.pendingExtract !== null,
-				primaryDown: live.primaryDownUntil > Date.now(),
-				coolingDown: live.writeCooldownUntil > Date.now(),
-				entryCount: chunk.entryCount,
-				pendingFlushes: flushQueued,
-			});
-			if (!decision.flush) {
-				audit("flush_skipped", {
-					sessionId,
-					reason: decision.reason,
-					to: params.to,
-					end: range.end,
-					pendingTokens: window.tokens,
+				const chunk = serializeEntries(rangeEntries(window.pending, rows, range), {
+					maxTokens: chunkBudget(),
+					maxEntryChars: config.maxEntryChars,
 				});
-				return {
-					content: [
-						{
-							type: "text",
-							text: `hy_flush: not written (${decision.reason}). The bank is unchanged; hy_recall still answers what it holds.`,
-						},
-					],
-					details: undefined,
-				};
-			}
+				const decision = shouldFlushWrite({
+					sessionActive: sessionActive(),
+					inFlight: live.pending !== null,
+					pendingExtract: live.pendingExtract !== null,
+					primaryDown: live.primaryDownUntil > Date.now(),
+					coolingDown: live.writeCooldownUntil > Date.now(),
+					entryCount: chunk.entryCount,
+					pendingFlushes: flushQueued,
+				});
+				if (!decision.flush) {
+					audit("flush_skipped", {
+						sessionId,
+						reason: decision.reason,
+						to: params.to,
+						end: range.end,
+						pendingTokens: window.tokens,
+					});
+					return {
+						content: [
+							{
+								type: "text",
+								text: `hy_flush: not written (${decision.reason}). The bank is unchanged; hy_recall still answers what it holds.`,
+							},
+						],
+						details: undefined,
+					};
+				}
 
-			const chunkId = nextChunkId(live.sessionId, live.ledger, () => ++live.chunkSeq);
-			flushChunks.add(chunkId);
-			flushQueued++;
-			chained = 0;
-			lastAttemptFailed = false;
-			const tokens = estimateTokens(chunk.text);
-			audit("hy_flush", {
-				sessionId,
-				chunkId,
-				requestedTo: params.to,
-				applied: { from: range.start, to: range.end },
-				clampedTo: range.clampedTo ?? null,
-				entries: chunk.entryCount,
-				droppedEntries: chunk.droppedEntries,
-				chunkTokens: tokens,
-				windowTokens: window.tokens,
-				queued: flushQueued,
-			});
-			startWrite(ctx, chunk, chunkId, sessionId);
-			return {
-				content: [{ type: "text", text: flushQueuedText(range, chunk.entryCount, tokens, chunkId) }],
-				details: { chunkId, entries: chunk.entryCount, tokens },
-			};
-		},
-	});
+				const chunkId = nextChunkId(live.sessionId, live.ledger, () => ++live.chunkSeq);
+				flushChunks.add(chunkId);
+				flushQueued++;
+				chained = 0;
+				lastAttemptFailed = false;
+				const tokens = estimateTokens(chunk.text);
+				audit("hy_flush", {
+					sessionId,
+					chunkId,
+					requestedTo: params.to,
+					applied: { from: range.start, to: range.end },
+					clampedTo: range.clampedTo ?? null,
+					entries: chunk.entryCount,
+					droppedEntries: chunk.droppedEntries,
+					chunkTokens: tokens,
+					windowTokens: window.tokens,
+					queued: flushQueued,
+				});
+				startWrite(ctx, chunk, chunkId, sessionId);
+				return {
+					content: [{ type: "text", text: flushQueuedText(range, chunk.entryCount, tokens, chunkId) }],
+					details: { chunkId, entries: chunk.entryCount, tokens },
+				};
+			},
+		});
 
 	pi.registerCommand("hy", {
 		description:
