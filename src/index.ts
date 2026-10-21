@@ -73,6 +73,15 @@ const SESSIONS_DIR = join(STATE_DIR, "sessions");
 
 const OPS_RECORD = "hy.ops";
 const GAP_RECORD = "hy.gap";
+/**
+ * What a compaction budget cannot see: the system prompt, tool schemas, and the distance between
+ * pi's token counts and these estimates. The kept tail is cut to the window minus this, so an
+ * overflow recovery leaves room for what the provider actually receives rather than what the branch
+ * appears to hold.
+ */
+const COMPACT_OVERHEAD_TOKENS = 2000;
+/** The kept tail never goes below this, so a compaction cannot leave the model with nothing to work from. */
+const COMPACT_KEEP_MIN_TOKENS = 1000;
 
 /**
  * The config file is optional, but a *malformed* file is not: falling back to
@@ -975,6 +984,27 @@ export default function piHyMemory(pi: ExtensionAPI): void {
 		if (active.length === 0) return undefined;
 
 		const entries = event.branchEntries;
+		// What the next request can actually hold. `keepRecentTokens` is a working-set heuristic; the
+		// window is a hard limit, and a compaction that leaves the request oversized is not a recovery —
+		// it is the 400 the provider answers with. So the window is split between the three things the
+		// retry sends: the kept tail, the summary, and the digest of whatever the cut removes that the
+		// writer never read. `COMPACT_OVERHEAD_TOKENS` covers what this extension cannot see: the system
+		// prompt, tool schemas, and the gap between pi's counts and these estimates.
+		const windowTokens = ctx.model?.contextWindow ?? 0;
+		const reserve = event.preparation?.settings?.reserveTokens ?? 0;
+		const available = windowTokens > 0 ? Math.max(0, windowTokens - reserve - COMPACT_OVERHEAD_TOKENS) : undefined;
+		const digestBudget =
+			available === undefined
+				? config.overflowDigestTokens
+				: Math.min(config.overflowDigestTokens, Math.floor(available / 4));
+		// The tail keeps a floor so a compaction never leaves the model with nothing to work from; the
+		// summary gives up its configured maximum before the tail gives up its entries.
+		const summaryTokenBudget =
+			available === undefined
+				? config.summaryMaxTokens
+				: Math.max(500, Math.min(config.summaryMaxTokens, available - digestBudget - COMPACT_KEEP_MIN_TOKENS));
+		const maxKeepTokens =
+			available === undefined ? undefined : Math.max(0, available - digestBudget - summaryTokenBudget);
 		// pi's own cut point and its real token count: the boundary is only worth
 		// keeping if holding the backlog does not defeat the compaction entirely.
 		const choice = compactionBoundary(entries, {
@@ -982,6 +1012,7 @@ export default function piHyMemory(pi: ExtensionAPI): void {
 			keepRecentTokens: config.keepRecentTokens,
 			proposedId: event.preparation?.firstKeptEntryId,
 			maxUncoveredTokens: config.maxChunkTokens,
+			maxKeepTokens,
 		});
 
 		// Hand back to pi when honouring our summary would drop entries the writer has
@@ -991,7 +1022,14 @@ export default function piHyMemory(pi: ExtensionAPI): void {
 		// extension. Measured on session 01a1510e (2026-10-19): a 36-minute writer
 		// outage left 477 unread entries, the boundary took pi's cut, and 53 459 tokens
 		// of history were dropped unread — exactly what a fallback would have saved.
-		if (choice.wouldDrop) {
+		//
+		// Not on overflow. pi's summariser has to send the whole conversation to compress it, and
+		// overflow is precisely the state where that request cannot fit: session 01a15d4e (2026-10-21)
+		// deferred twice at 375 464 tokens against a 196 608-token window, got 400 "request exceeds the
+		// context window" both times, and the session was left unrecoverable. Here the trim above has
+		// already cut the tail to fit and the unread range it removed is digested into the summary, so
+		// producing our own summary degrades the session instead of ending it.
+		if (choice.wouldDrop && event.reason !== "overflow") {
 			audit("compact_deferred", {
 				sessionId: state.sessionId,
 				reason: event.reason,
@@ -1005,6 +1043,53 @@ export default function piHyMemory(pi: ExtensionAPI): void {
 
 		const firstKeptIndex = choice.firstKeptIndex;
 
+		// The trim cut past the writer's watermark, so material the bank never learned is leaving the
+		// live context. Two things record that: a bounded digest of the unread range inside the
+		// summary, and a gap in the ledger so coverage resumes at the first kept entry rather than
+		// claiming the dropped range as written. `maxEntryChars` caps each entry before any token
+		// counting, because a single 100 k-token tool result must not eat the budget the trim just
+		// carved out, and neither the digest nor the gap reaches the fact bank.
+		let digest = "";
+		let digestEntries = 0;
+		if (choice.trimmed) {
+			const trimmedFrom = entries.findIndex((e) => e.id === choice.trimmed?.fromId);
+			const watermarkId = state.cursorId;
+			const watermark = watermarkId ? entries.findIndex((e) => e.id === watermarkId) : -1;
+			const unread = entries.slice(Math.max(trimmedFrom, watermark + 1), firstKeptIndex);
+			digestEntries = unread.length;
+			if (unread.length > 0) {
+				const unreadTokens = unread.reduce((sum, e) => sum + entryTokens(e), 0);
+				if (digestBudget > 0) {
+					const rendered = serializeEntries(unread, { maxTokens: digestBudget, maxEntryChars: 240 });
+					digest = `\n\nDropped to fit the context window — ${unread.length} entries, ~${unreadTokens} tokens, never written to the fact bank:\n${rendered.text}`;
+				}
+				state.ledger.push({
+					type: "hy.gap",
+					coversUpToId: state.cursorId ?? entries[firstKeptIndex].id,
+					fromId: entries[firstKeptIndex].id,
+					entries: unread.length,
+					tokens: unreadTokens,
+					reason: "overflow-trim",
+					createdAt: new Date().toISOString(),
+				});
+				// Coverage restarts at the first kept entry: the old watermark is gone from the branch,
+				// and the ledger records past it must not drag the window back over the dropped range.
+				state.cursorId = undefined;
+				state.resumeFromId = entries[firstKeptIndex].id;
+			}
+			audit("compact_trimmed", {
+				sessionId: state.sessionId,
+				reason: event.reason,
+				boundary: choice.boundary,
+				trimmedEntries: choice.trimmed.entries,
+				trimmedTokens: choice.trimmed.tokens,
+				keptTokens: choice.used,
+				maxKeepTokens,
+				digestEntries,
+				digestTokens: digest ? estimateTokens(digest) : 0,
+			});
+		}
+
 		// File operations are deterministic and free (pi computes the same lists for its
 		// own summaries), and they orient a reader faster than prose about them. Their
 		// cost comes out of the summary budget rather than being added on top.
@@ -1013,7 +1098,11 @@ export default function piHyMemory(pi: ExtensionAPI): void {
 		const fileTokens = fileBlock ? estimateTokens(fileBlock) + 4 : 0;
 		const rendered = renderMemory(
 			state.bank,
-			Math.max(500, summaryBudget(config.summaryMaxTokens, state.bank) - fileTokens),
+			// Never above the share of the window this compaction is allowed to take.
+			Math.max(
+				500,
+				summaryBudget(Math.min(config.summaryMaxTokens, summaryTokenBudget), state.bank) - fileTokens,
+			),
 			selection(state.bank),
 		);
 		// The deterministic render is both the default and the fallback: hi-fi is an
@@ -1031,6 +1120,9 @@ export default function piHyMemory(pi: ExtensionAPI): void {
 		 * not grade its own output, and a summary is grading.
 		 */
 		let checkpoint: { text: string; idsKept: number; idsGiven: number; ms: number; usage?: unknown } | undefined;
+		// A checkpoint is added to the summary, so it competes for the same share of the window.
+		const hifiBudget =
+			available === undefined ? config.hifiMaxTokens : Math.min(config.hifiMaxTokens, summaryTokenBudget);
 		if (config.hifiCompaction && ctx.model) {
 			const facts = hifiFacts(state.bank, {
 				lastSeq: state.hifi?.seq ?? 0,
@@ -1067,9 +1159,9 @@ export default function piHyMemory(pi: ExtensionAPI): void {
 						facts,
 						tail: tail.text,
 						files,
-						budgetTokens: config.hifiMaxTokens,
+						budgetTokens: hifiBudget,
 					}),
-					maxTokens: config.hifiMaxTokens,
+					maxTokens: hifiBudget,
 					timeoutMs: config.hifiTimeoutMs,
 					// Not the session's level by default: reasoning and the answer share one
 					// output budget, and a model that thinks at a checkpoint can spend it
@@ -1129,7 +1221,7 @@ export default function piHyMemory(pi: ExtensionAPI): void {
 
 		// The checkpoint is the model's prose; the reminder that its ids are lookupable is
 		// ours to add, because a good checkpoint will not have written it itself.
-		const summary = checkpoint ? withRecallNote(checkpoint.text) : fallback;
+		const summary = (checkpoint ? withRecallNote(checkpoint.text) : fallback) + digest;
 		// Prefer pi's count: ours renders unclipped text, which is the stored branch
 		// rather than the request pi builds.
 		const estimate = entries.reduce((sum, e) => sum + entryTokens(e), 0);

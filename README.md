@@ -76,7 +76,8 @@ nothing backs off between turns. The audit records `write_cooldown { waitS }` an
 | `foundationAfterChunks` | `8` | a fact this many chunks old and never superseded counts as a *foundation* for the summary selection |
 | `summaryConstraintShare` | `0.1` | share of the summary budget reserved for facts whose evidence was a user turn |
 | `summaryFoundationShare` | `0.35` | share reserved for old, never-superseded facts |
-| `keepRecentTokens` | `6000` | raw entries kept verbatim by a compaction. The cut is clamped back to the write watermark so nothing unread is dropped, but only by up to `maxChunkTokens`; past that the compaction is handed back to pi (see "Compaction: who decides when") |
+| `keepRecentTokens` | `6000` | raw entries kept verbatim by a compaction. The cut is clamped back to the write watermark so nothing unread is dropped, but only by up to `maxChunkTokens`; past that a manual or threshold compaction is handed back to pi, and an overflow cut is taken anyway with the unread range digested into the summary (see "Compaction: who decides when") |
+| `overflowDigestTokens` | `1500` | share of the window an overflow digest may take. When the kept tail has to be cut to fit the model's context window, the entries the writer never read are folded into the summary as a bounded digest rather than vanishing; the cut is also recorded as a gap in the ledger. `0` cuts without a digest |
 | `candidateLimit` | `24` | bank entries shown to the reconcile call, and the per-draft retrieval depth. Was 12: measured on the extended corpus, 12 starved 2.2 % of drafts once the bank passed ~110 entries; 24 starves none for +24 % reconcile input tokens |
 | `candidateRenderMode` | `perDraft` | how the `candidateLimit` window is chosen: `perDraft` guarantees every draft its own best bank match before the cap fills; `union` shows the score-sorted union (legacy) |
 | `hifiCompaction` | `false` | ask the **session model** (never the writer) to write the compaction checkpoint — Goal / Constraints / Progress / Decisions / Next steps / Critical context — from the bank delta plus the kept tail. A truncated, section-less, or id-less answer is rejected and the render is used instead. Off by default: the render is free and cannot fail |
@@ -169,6 +170,21 @@ creates — measured on 2026-10-19, a 36-minute 502 storm left 477 unread entrie
 older behaviour dropped 53 459 tokens of history that no chunk had ever read. The
 extension renders a summary for free; when it cannot do that faithfully, paying pi's model
 call is the cheaper mistake.
+
+**Overflow is the exception, and it never defers.** pi's summariser has to send the whole
+conversation to compress it, which is exactly the request an overflow cannot make: session
+01a15d4e (2026-10-21) deferred twice at 375 464 tokens against a 196 608-token window, the
+provider answered both attempts with 400 "request exceeds the context window", and the session
+was left unrecoverable — deferring to a fallback that needs the same oversized request is not a
+fallback. On overflow the extension produces the summary itself, and the window is divided
+before the cut is chosen: kept tail, summary and digest all fit inside
+`contextWindow − reserveTokens − COMPACT_OVERHEAD_TOKENS` (prompt and tool schemas, which this
+extension cannot see). `keepRecentTokens` is a working-set preference and loses to that budget;
+the summary gives up its configured maximum before the tail gives up its entries, and the newest
+entry is never dropped because pi needs a real id to cut at. Whatever the cut removes while still
+unread is digested into the summary (`overflowDigestTokens`), recorded as an `hy.gap` in the
+ledger, and audited as `compact_trimmed`, so coverage resumes at the first kept entry instead of
+claiming history the extension never sent.
 
 pi's trigger is `contextTokens > contextWindow − compaction.reserveTokens`, default
 `reserveTokens: 16384`, plus a manual `/compact` and one compact-and-retry on overflow.

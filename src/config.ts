@@ -24,6 +24,12 @@ export type HyConfig = {
 	/** Share reserved for old, never-superseded facts. */
 	summaryFoundationShare: number;
 	keepRecentTokens: number;
+	/**
+	 * How much of the compaction budget the overflow digest may use: when the kept tail has to be cut
+	 * to fit the model's window, the entries the writer never read are folded into the summary as a
+	 * bounded deterministic digest instead of disappearing. `0` drops them without a digest.
+	 */
+	overflowDigestTokens: number;
 	candidateLimit: number;
 	/**
 	 * Ask the executor's own model to write the compaction checkpoint instead of rendering
@@ -145,6 +151,7 @@ export const SETTING_DEFAULTS: HyConfig = {
 	summaryConstraintShare: 0.1,
 	summaryFoundationShare: 0.35,
 	keepRecentTokens: 6000,
+	overflowDigestTokens: 1500,
 	candidateLimit: 24,
 	hifiCompaction: false,
 	hifiMaxTokens: 4000,

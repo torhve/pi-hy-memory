@@ -446,6 +446,27 @@ the extension — and audits `compact_deferred { entries, tokens }`. A free summ
 having only while it is faithful; when it is not, one model call is the cheaper mistake.
 `hy.gap` remains for the `/hy off` switch, where discarding the off window is the point.
 
+**Overflow is the one case that never goes back to pi.** Deferring assumes pi's summariser can
+read the conversation, and overflow is exactly when it cannot: on `01a15d4e` (2026-10-21) the
+extension deferred twice at 375 464 tokens against a 196 608-token window, the provider answered
+both attempts with 400 "request exceeds the context window", and pi's fallback needed the same
+oversized request. A deferral that cannot succeed is not a fallback, so on overflow the hook
+produces the summary itself and the window is divided before the cut is chosen —
+`contextWindow − reserveTokens − COMPACT_OVERHEAD_TOKENS` split between the kept tail, the summary
+and a digest of whatever the cut removes that the writer never read (`overflowDigestTokens`,
+bounded by `serializeEntries({ maxTokens, maxEntryChars })` so one huge tool result cannot spend
+the whole share). `keepRecentTokens` is a working-set preference and yields to that budget; the
+summary gives up its configured maximum before the tail gives up entries, and the newest entry is
+kept whatever its size because pi needs a real id to cut at — if that remainder still exceeds the
+window, `compact_trimmed` reports the kept size so the case is visible rather than silent. The cut
+is audited as `compact_trimmed`, recorded as an `hy.gap { reason: "overflow-trim" }`, and moves
+coverage to the first kept entry, so a later window is measured from where the writer actually
+resumes.
+On `01a15d4e`'s numbers — a 196 608-token window, pi's default `reserveTokens: 16384` — that
+division leaves 168 724 for the tail, 8 000 for the summary and 1 500 for the digest: the ~300 000
+tokens the lagging cursor was holding are cut to fit, and the retry asks for roughly 180 000 of
+196 608 instead of 375 464.
+
 **Admission order decides which facts survive the summary.** Facts are admitted
 newest-first: the newest fact that fits wins, and the oldest are the ones omitted — the same
 rule `enforceBudget` uses. Chronological admission did the opposite, so the *first* N facts

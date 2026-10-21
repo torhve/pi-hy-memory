@@ -200,8 +200,45 @@ export type CompactionBoundary = {
 	/** "cursor": the safe window. "proposed": pi's cut, accepted to let compaction work. */
 	boundary: "cursor" | "proposed";
 	/** Set when honouring the summary here would drop entries the writer never read. */
+	/** Set when honouring the summary here would drop entries the writer never read. */
 	wouldDrop?: { fromId: string; toId: string; entries: number; tokens: number };
+	/** Set when the kept tail had to be cut further to fit the model's context window. */
+	trimmed?: { fromId: string; toId: string; entries: number; tokens: number };
 };
+
+/**
+ * Cut the kept tail further until it fits `maxKeepTokens`.
+ *
+ * The newest entry is always kept: pi's `firstKeptEntryId` has to name a real entry, so a tail that
+ * is itself larger than the window cannot be fixed here — that is the "switch to a larger-context
+ * model" case, and it is reported rather than silently attempted.
+ */
+function trimKeptTail(
+	entries: SessionEntry[],
+	firstKeptIndex: number,
+	used: number,
+	maxKeepTokens: number | undefined,
+): { firstKeptIndex: number; used: number; trimmed?: CompactionBoundary["trimmed"] } {
+	if (maxKeepTokens === undefined || used <= maxKeepTokens) return { firstKeptIndex, used };
+	const fromId = entries[firstKeptIndex]?.id ?? "";
+	let cut = firstKeptIndex;
+	let kept = used;
+	while (cut < entries.length - 1 && kept > maxKeepTokens) {
+		kept -= entryTokens(entries[cut]);
+		cut++;
+	}
+	if (cut === firstKeptIndex) return { firstKeptIndex, used };
+	return {
+		firstKeptIndex: cut,
+		used: kept,
+		trimmed: {
+			fromId,
+			toId: entries[cut - 1]?.id ?? fromId,
+			entries: cut - firstKeptIndex,
+			tokens: used - kept,
+		},
+	};
+}
 
 /**
  * Where a compaction should cut, given pi's own proposal.
@@ -226,6 +263,16 @@ export function compactionBoundary(
 		proposedId?: string;
 		/** How much uncovered backlog is worth holding back; one chunk by default. */
 		maxUncoveredTokens: number;
+		/**
+		 * Hard ceiling on the kept tail: the model's context window minus the summary and digest the
+		 * compaction is about to add. Without it, clamping to a lagging writer's cursor can keep a
+		 * tail bigger than the window — measured on session 01a15d4e (2026-10-21), a compaction that
+		 * reported a 5 041-token summary left a 375 464-token request, the provider answered 400
+		 * "request exceeds the context window", and pi's fallback summariser needed that same
+		 * oversized request and failed too. `keepRecentTokens` is a working-set heuristic, not a
+		 * request budget, so it is not the cap here.
+		 */
+		maxKeepTokens?: number;
 	},
 ): CompactionBoundary {
 	const safe = compactionWindow(entries, options.cursorId, options.keepRecentTokens);
@@ -234,18 +281,25 @@ export function compactionBoundary(
 	// Without a watermark in the branch there is no way to tell covered from
 	// uncovered, so the safe window stands.
 	if (cursorIndex < 0 || proposedIndex <= safe.firstKeptIndex) {
-		return { ...safe, boundary: "cursor" };
+		return {
+			...trimKeptTail(entries, safe.firstKeptIndex, safe.used, options.maxKeepTokens),
+			boundary: "cursor",
+		};
 	}
 
 	let atRisk = 0;
 	for (let i = safe.firstKeptIndex; i < proposedIndex; i++) atRisk += entryTokens(entries[i]);
-	if (atRisk <= options.maxUncoveredTokens) return { ...safe, boundary: "cursor" };
+	if (atRisk <= options.maxUncoveredTokens)
+		return {
+			...trimKeptTail(entries, safe.firstKeptIndex, safe.used, options.maxKeepTokens),
+			boundary: "cursor",
+		};
 
 	let used = 0;
 	for (let i = proposedIndex; i < entries.length; i++) used += entryTokens(entries[i]);
+	const cut = trimKeptTail(entries, proposedIndex, used, options.maxKeepTokens);
 	return {
-		firstKeptIndex: proposedIndex,
-		used,
+		...cut,
 		boundary: "proposed",
 		wouldDrop: {
 			fromId: entries[proposedIndex].id,
