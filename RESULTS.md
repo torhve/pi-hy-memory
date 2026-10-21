@@ -133,3 +133,39 @@ JUDGE_DIR=… python3 dev/ab-judge.py "$SOLO_BH" --only bh --seed 5
 Arm memory: `state/sessions/<sessionId>.{bank.json,summary.md,ledger.jsonl,stats.json}` for
 pi-hy-memory; `om.observations.recorded` / `om.observations.dropped` / `om.reflections.recorded`
 custom entries in the session for pi-blackhole.
+
+## Does the session model use `hy_flush`? (2026-10-21, live)
+
+**Question:** a tool the session model is never told about in its prompt is either used or it is
+noise. `hy_flush` asks a quantized model to read a listing and then name a number. Does it?
+
+| mechanism | file |
+|---|---|
+| Two arms, three runs each, pi headless in a scratch `HOME` with no packages loaded | `dev/live-flush.sh` |
+| Writer aimed at a model id that does not resolve, so no bank is written and no writer slot is touched | `LIVE_WRITER`, default `test/writer` |
+
+Session model `qwen3.8-flash-next-iq3_xxs` (local llama.cpp, IQ3 quantization), one prompt per run,
+identical in both arms and never mentioning memory: *"You are deciding how a small CLI tool should
+store its settings. Pick a file location, a format, and the behaviour when the file is missing.
+Then state the decision and the reason for each choice."* `observeAfterTokens` was set to 200 000 so
+the token threshold could not fire and every write in the experiment was model-initiated.
+
+| arm | runs | `hy_recall` | `hy_flush {}` | `hy_flush {to}` | refused | what the ranged call named |
+|---|---|---|---|---|---|---|
+| flush on | 3 | 1–2 | 3 / 3 | 3 / 3 | 0 | `{to: 4}` every run → applied `[0]–[4]`, 5 entries, 253–917 chunk tokens |
+| flush off | 3 | 2 | 0 | 0 | — | — |
+
+* The two-step path was taken unprompted in every run: a bare call, then a ranged call naming the
+  last ref it had been shown. No run invented a `from`, none called the tool more than once per
+  step, and none was refused — the gate never had to protect a local writer from a storm.
+* The control wrote nothing. With no tool the model read the bank twice and ended the turn, so
+  whether that stretch survives rests on the threshold, which in this sandbox could not fire. The
+  delta is real, but it is measured against a threshold configured never to trigger, not against
+  the shipped 4 000.
+* Cost of the surface, per run: two extra tool round trips (one listing, one queued write) plus
+  ~200 estimated prompt tokens in every session, and one failed write attempt per run here because
+  the writer id is deliberately unresolvable.
+
+**Not proven by this:** bank quality (no write landed), a flush of an *earlier* stretch in a long
+session — with one turn per run the model could only name the end of the window — and any model
+other than this one, this prompt, this host, n=3.

@@ -384,3 +384,4 @@ is required to use the extension.
 | `dev/run.ts` | replay a corpus of captures through the shipped write path |
 | `dev/judge.ts` | blind quality judge for one run's writes, rubric in `dev/rubric.md` |
 | `dev/boundary-arms.ts` | move the chunk boundary over identical content and compare what the bank kept |
+| `dev/live-flush.sh` | run pi headless with the extension loaded and ask whether the model calls `hy_flush` |
