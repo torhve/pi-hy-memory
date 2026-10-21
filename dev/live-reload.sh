@@ -30,8 +30,9 @@
 #
 # Environment: LIVE_WRITER (a writer pi can resolve), LIVE_WRITER_ORIGIN / LIVE_WRITER_PORT when it
 # lives on a different box (default: the session route), LIVE_RUNS (default 3),
-# LIVE_WRITER_TIMEOUT (default 240000), LIVE_CONTEXT (session model window, default 12000),
-# LIVE_RESERVE (pi's compaction reserveTokens, default 3500 — the threshold is window − reserve, so
+# LIVE_WRITER_TIMEOUT (default 240000), LIVE_CONTEXT (session model window, default 20000),
+# LIVE_MAX_TOKENS (output budget for the session model, default 4000),
+# LIVE_RESERVE (pi's compaction reserveTokens, default 6000 — the threshold is window − reserve, so
 # a large reserve makes compaction fire early), LIVE_ROOT (default /tmp/hy-reload), LIVE_ARMS
 # (which arms to run, default `on off` — one process per arm overlaps them).
 # Hosts stay in the environment; nothing here names one.
@@ -46,8 +47,13 @@ ROOT=${LIVE_ROOT:-/tmp/hy-reload}
 WRITER=${LIVE_WRITER:-test/writer}
 RUNS=${LIVE_RUNS:-3}
 WRITER_TIMEOUT=${LIVE_WRITER_TIMEOUT:-240000}
-CONTEXT=${LIVE_CONTEXT:-12000}
-RESERVE=${LIVE_RESERVE:-3500}
+CONTEXT=${LIVE_CONTEXT:-20000}
+RESERVE=${LIVE_RESERVE:-6000}
+# The session model emits a thinking block as content even with `--thinking off` — measured at up to
+# 2 100 tokens per turn — so a window that only covers the prose leaves pi no output budget at all:
+# the last request came back `stopReason: length, output: 1`, which is why an arm scored 0/8 answers.
+# Output is pinned so thinking cannot spend the whole window.
+MAX_TOKENS=${LIVE_MAX_TOKENS:-4000}
 # A session that thrashes compaction would otherwise run until the harness timeout: one pi run is
 # cut off here and the run is reported with its exit code rather than silently missing.
 SESSION_TIMEOUT=${LIVE_SESSION_TIMEOUT:-900}
@@ -95,10 +101,10 @@ cat > "$ROOT/.pi/agent/settings.json" <<EOF
   "compaction": { "enabled": true, "reserveTokens": $RESERVE, "keepRecentTokens": 1500 }
 }
 EOF
-python3 - "$ROOT" "$MODEL" "$ORIGIN" "$PORT" "$CONTEXT" "$WRITER" "${LIVE_WRITER_ORIGIN:-$ORIGIN}" "${LIVE_WRITER_PORT:-$PORT}" <<'PY'
+python3 - "$ROOT" "$MODEL" "$ORIGIN" "$PORT" "$CONTEXT" "$MAX_TOKENS" "$WRITER" "${LIVE_WRITER_ORIGIN:-$ORIGIN}" "${LIVE_WRITER_PORT:-$PORT}" <<'PY'
 import json, os, sys
 
-root, model, origin, port, context, writer, w_origin, w_port = sys.argv[1:9]
+root, model, origin, port, context, max_tokens, writer, w_origin, w_port = sys.argv[1:10]
 provider, _, model_id = model.partition("/")
 w_provider, _, w_id = writer.partition("/")
 agent = os.path.join(root, ".pi", "agent")
@@ -112,6 +118,10 @@ instances = [
 		# pi's compaction rule measures against. Pinning it small is how this harness makes
 		# compaction fire inside a short conversation.
 		"contextOverrides": {model_id: int(context)},
+		# Capabilities carry the output budget. The model spends up to 2 100 tokens thinking per turn
+		# regardless of the thinking level, so leaving the budget at half the window means a request
+		# can arrive with nothing left to answer with.
+		"modelCapabilities": {model_id: {"contextWindow": int(context), "maxTokens": int(max_tokens)}},
 	}
 ]
 if w_id and w_provider and w_provider != provider:
