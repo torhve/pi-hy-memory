@@ -304,16 +304,20 @@ recall_after = sum(
 writer_tokens = sum((a.get("inTokens") or 0) + (a.get("outTokens") or 0) for a in writes)
 facts = sum(a.get("added") or 0 for a in writes)
 
-# The answer to score is what came back after the final question. The model's last messages are
-# often tool calls with no text at all, and scoring those scored 0/8 in both arms of the smoke run.
+# The answer to score is what came back after the final question. The model's last messages are often
+# tool calls with no text at all, and scoring those scored 0/8 in both arms of the smoke run. Read the
+# session file rather than the event stream: in run 3 the final turn hit an overflow whose recovery
+# failed, so the 2 529-character answer is in the session file and has no `message_end` in the stream,
+# which scored a run that clearly answered as 0/8.
 seq = []
-for e in events:
-    if e.get("type") == "message_end":
-        m = e.get("message") or {}
-        if m.get("role") in ("user", "assistant"):
-            t = text(m.get("content"))
-            if t.strip():
-                seq.append((m.get("role"), t))
+for e in entry_rows:
+    if not visible(e):
+        continue
+    m = e.get("message") or {}
+    if m.get("role") in ("user", "assistant"):
+        t = text(m.get("content"))
+        if t.strip():
+            seq.append((m.get("role"), t))
 last_question = max((i for i, (role, _) in enumerate(seq) if role == "user"), default=-1)
 final = " ".join(t for role, t in seq[last_question + 1:] if role == "assistant")
 # A probe the question itself names can be echoed rather than remembered, so it is not scored.
@@ -324,7 +328,8 @@ summary_hits = [p for p in settled if p.lower() in summary.lower()]
 print(
     f"{name} {i}: rc={rc} compactions {len(compactions)} (trim {trim_events}) fromHook={from_hook} | "
     f"summary keeps {len(summary_hits)}/{len(settled)} | answer keeps {len(answer_hits)}/{len(asked)}"
-    f"{' (retrieval-assisted)' if recall_after else ''} | "
+    f"{' (retrieval-assisted)' if recall_after and facts else ''}"
+    f"{'' if final.strip() else ' (no answer produced)'} | "
     f"writes {len(writes)} ({len(writes_before)} before the cut) writer {writer_tokens} tok / "
     f"{round(sum(a.get('wallS') or 0 for a in writes))}s | facts {facts} | "
     f"flush {flush_calls} | recall {recall_calls} ({recall_after} after the cut)"
@@ -335,6 +340,12 @@ tail_tokens = sum(len(blob(e)) for e in tail_rows) // 4
 print(f"   settled {len(settled)}/{len(probes)}, verbatim in kept tail {len(tail_leak)} {tail_leak}")
 print(f"   visible tail: {len(tail_rows)} entries ~{tail_tokens} tokens (keepRecentTokens 1500)")
 print(f"   cut at tokensBefore {compactions[-1].get('tokensBefore') if compactions else 'never'}")
+overflow_failures = [e.get("errorMessage") for e in events if e.get("type") == "compaction_end" and e.get("errorMessage")]
+if overflow_failures:
+    # A turn that died on failed overflow recovery has no answer to score: that is pi's recovery path
+    # failing at this pinned window, not the decision being forgotten, so it is named rather than
+    # counted against retention.
+    print(f"   overflow recovery failed: {overflow_failures[-1][:120]}")
 print(f"   missing from summary: {[p for p in settled if p not in summary_hits]}")
 print(f"   missing from answer:  {[p for p in asked if p not in answer_hits]}")
 if compactions and name == "flush-on" and not writes_before:
