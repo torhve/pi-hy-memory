@@ -155,8 +155,32 @@ async function main(): Promise<void> {
 		return;
 	}
 
-	const corpus = (JSON.parse(readFileSync(corpusPath, "utf8")).chunks ?? []) as { path: string; category?: string }[];
+	const corpus = (JSON.parse(readFileSync(corpusPath, "utf8")).chunks ?? []) as {
+		path?: string;
+		text?: string;
+		chunkId?: string;
+		category?: string;
+	}[];
 	if (corpus.length === 0) throw new Error(`corpus is empty: ${corpusPath}`);
+
+	/**
+	 * A corpus item is either a capture file or inline authored text. Authored chunks get synthetic
+	 * refs, one per rendered line, so draft provenance still resolves (`refs[n]` ↔ line `n`).
+	 */
+	const readChunk = (item: (typeof corpus)[number]): Row => {
+		if (typeof item.text === "string") {
+			const id = item.chunkId ?? item.path ?? "chunk";
+			const lines = item.text.split("\n").filter((line) => line.trim());
+			return {
+				chunkId: id,
+				text: item.text,
+				refs: lines.map((_, i) => `${id}-r${i}`),
+				entryCount: lines.length,
+				estimateChunkTokens: Math.ceil(item.text.length / 4),
+			};
+		}
+		return JSON.parse(readFileSync(join(capturesDir, String(item.path)), "utf8")) as Row;
+	};
 
 	const writer = rawWriter({
 		origin: route.origin,
@@ -210,7 +234,7 @@ async function main(): Promise<void> {
 	);
 	const capturesById = new Map<string, Row>();
 	for (const item of corpus) {
-		const c = JSON.parse(readFileSync(join(capturesDir, item.path), "utf8")) as Row;
+		const c = readChunk(item);
 		capturesById.set(String(c.chunkId), { ...c, category: item.category ?? null });
 	}
 	const prefix: LedgerRecord[] = [];
@@ -239,7 +263,7 @@ async function main(): Promise<void> {
 	);
 
 	for (const item of corpus) {
-		const capture = JSON.parse(readFileSync(join(capturesDir, item.path), "utf8")) as Row;
+		const capture = readChunk(item);
 		const chunkId: string = capture.chunkId;
 		if (doneChunk.has(chunkId)) {
 			console.log(`skip ${chunkId} (already in ledger)`);

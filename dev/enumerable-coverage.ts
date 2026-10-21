@@ -158,6 +158,10 @@ const REJECT_NOISE = new Set([
 	"new",
 	"same",
 	"other",
+	"both",
+	"one",
+	"two",
+	"none",
 ]);
 
 const LINE_ROLE = /\[(User|Assistant|Tool result for [^\]]+)\b/;
@@ -169,11 +173,30 @@ function roleOfLine(line: string): Probe["role"] {
 }
 
 /** Pull probes out of a chunk, one claim per text: a path is not also an identifier. */
+/**
+ * Did a draft or a bank fact carry this probe? Retention is literal, with one relaxation: an exit code
+ * stated as `exit code 65` is legitimately kept as `65 = partial write`, and the writer does compress
+ * enumerations that way. Bare numbers are ambiguous, so the relaxation only applies to the exit-code
+ * category and only where the number sits next to an exit-ish word or an `=`.
+ */
+function carried(category: Category, probe: string, haystack: string): boolean {
+	if (haystack.toLowerCase().includes(probe.toLowerCase())) return true;
+	if (category !== "exit_code") return false;
+	const num = probe.match(/\d+/)?.[0];
+	if (!num) return false;
+	return new RegExp(`(?:exit|code|rc|status)[^\n]{0,30}\\b${num}\\b|\\b${num}\\s*(?:=|:)`, "i").test(haystack);
+}
+
 function extractProbes(text: string, chunk: string): Probe[] {
 	const probes: Probe[] = [];
+	let lastRole: Probe["role"] = "assistant";
 	for (const line of text.split("\n")) {
-		const role = roleOfLine(line);
-		const decision = DECISION_WORDS.test(line);
+		// A capture clips each entry to one line, but a corpus can carry a multi-line tool result:
+		// continuation lines belong to the labelled entry above them, not to the assistant.
+		const labelled = LINE_ROLE.test(line);
+		const role: Probe["role"] = labelled ? roleOfLine(line) : lastRole;
+		lastRole = role;
+		const decision = labelled && DECISION_WORDS.test(line);
 		const claimed = new Set<string>();
 		for (const category of CATEGORIES) {
 			for (const pattern of category.patterns) {
@@ -215,13 +238,28 @@ if (runs.length === 0) {
 	process.exit(2);
 }
 
-const corpusDoc = JSON.parse(readFileSync(corpus, "utf8")) as { chunks: { path: string; category?: string }[] };
+interface CorpusChunk {
+	path?: string;
+	text?: string;
+	chunkId?: string;
+	category?: string;
+}
+const corpusDoc = JSON.parse(readFileSync(corpus, "utf8")) as {
+	chunks: CorpusChunk[];
+	gate?: Partial<Record<Category, number>>;
+};
 
 // Probes per chunk, deduplicated within a chunk, so a path repeated five times counts once.
 const probesByChunk = new Map<string, Probe[]>();
 for (const chunk of corpusDoc.chunks) {
-	const file = join(captures, chunk.path);
-	const doc = JSON.parse(readFileSync(file, "utf8")) as { chunkId: string; text: string };
+	// An authored corpus carries its text inline; a capture corpus points at a serialized chunk file.
+	const doc =
+		typeof chunk.text === "string"
+			? { chunkId: chunk.chunkId ?? String(chunk.path), text: chunk.text }
+			: (JSON.parse(readFileSync(join(captures, String(chunk.path)), "utf8")) as {
+					chunkId: string;
+					text: string;
+				});
 	const seen = new Set<string>();
 	const keep: Probe[] = [];
 	for (const probe of extractProbes(doc.text, doc.chunkId)) {
@@ -277,19 +315,18 @@ for (const run of runs) {
 			const drafts = draftsByChunk.get(chunkId) ?? [];
 			for (const probe of probes) {
 				if (probe.category !== category.name) continue;
-				const needle = probe.text.toLowerCase();
-				const inBank = bankText.toLowerCase().includes(needle);
-				const carried = drafts.some((draft) => draft.toLowerCase().includes(needle));
+				const inBank = carried(probe.category, probe.text, bankText);
+				const proposed = drafts.some((draft) => carried(probe.category, probe.text, draft));
 				if (probe.role === "tool") {
 					tool++;
 					continue;
 				}
 				prose++;
-				if (carried) proseProposed++;
+				if (proposed) proseProposed++;
 				if (inBank) proseBank++;
 				if (probe.decision) {
 					decided++;
-					if (carried) decidedProposed++;
+					if (proposed) decidedProposed++;
 					if (inBank) decidedBank++;
 				}
 				if (!inBank && missed.length < show) missed.push(`${probe.text} (${probe.role}, ${chunkId})`);
@@ -309,6 +346,15 @@ for (const run of runs) {
 	}
 
 	const sum = (pick: (row: Row) => number) => rows.reduce((total, row) => total + pick(row), 0);
+	if (corpusDoc.gate) {
+		const names = new Map(rows.map((row, i) => [row.label, CATEGORIES[i]?.name]));
+		console.log(`\n${run} gate (decision-line scope, distinct probes stated)`);
+		for (const [name, min] of Object.entries(corpusDoc.gate)) {
+			const row = rows.find((r) => names.get(r.label) === name);
+			const have = row?.decided ?? 0;
+			console.log(`  ${name}: ${have} stated, needs ${min} — ${have >= min ? "ok" : "NOT MET"}`);
+		}
+	}
 	const pct = (n: number, d: number) => (d === 0 ? "-" : `${Math.round((100 * n) / d)}%`);
 	const table = (
 		head: string,

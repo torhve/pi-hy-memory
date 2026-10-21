@@ -1,0 +1,51 @@
+{
+ "note": "Item 6.12: authored decision statements where the shapes 6.4 lost occur by construction. Organic captures hold one environment variable and zero exit codes in decision prose (item 6.10), so coverage of those shapes had a denominator of one or three and could not rank writer-prompt variants. Eight chunks, ~6 turns each, in the same rendered form a capture carries (`[n] [User @ HH:MM]:` / `[n] [Assistant @ HH:MM]:`). Every category in the gate has at least eight distinct instances in decision lines. Content is invented: a config-editing CLI called tctl, no hostnames, no absolute paths, no credentials.",
+ "gate": {
+  "exit_code": 8,
+  "env_var": 8,
+  "limit": 8,
+  "rejected": 8
+ },
+ "chunks": [
+  {
+   "chunkId": "hy-enum-001",
+   "category": "locking and write strategy",
+   "text": "[0] [User @ 09:02]: tctl edits its config while other processes read it. Settle the locking rule.\n[1] [Assistant @ 09:04]: Settled: take an exclusive flock on settings.toml.lock, never on settings.toml itself, because rename replaces the inode and voids a lock held on the file.\n[2] [User @ 09:06]: What happens when the lock is already held?\n[3] [Assistant @ 09:07]: Settled: LOCK_EX with LOCK_NB, and a blocked attempt exits with exit code 3 rather than waiting. A corrupted file exits with exit code 4 so a script can tell the two apart.\n[4] [Assistant @ 09:08]: We rejected INI at the same time: neither the lock nor a flat key list needs it.\n[5] [User @ 09:09]: Keep the temp-file naming rule.\n[6] [Assistant @ 09:10]: Default: write settings.toml.tmp.<pid> with O_EXCL, fsync before rename, fsync the directory after, and set the mode to 0o600 before the file is visible."
+  },
+  {
+   "chunkId": "hy-enum-002",
+   "category": "config location precedence",
+   "text": "[0] [User @ 09:20]: Where does tctl look for its config? Write the precedence as a rule.\n[1] [Assistant @ 09:21]: Settled: TOR_TOOL_SETTINGS wins over everything, then XDG_CONFIG_HOME/tctl/settings.toml, then ~/.config/tctl/settings.toml.\n[2] [User @ 09:23]: And a missing file?\n[3] [Assistant @ 09:24]: A missing file is a valid empty config. Defaults stay in memory and are never auto-persisted; that is a rule, not a convenience.\n[4] [Assistant @ 09:25]: We chose XDG_DATA_HOME for the cache instead of a dotfile beside the binary, and TCTL_CACHE_DIR overrides it.\n[5] [User @ 09:26]: Any project-local lookup?\n[6] [Assistant @ 09:27]: No cwd walk and no system-wide path \u2014 dropped both, they made precedence ambiguous."
+  },
+  {
+   "chunkId": "hy-enum-003",
+   "category": "format choice",
+   "text": "[0] [User @ 09:40]: Pick the format for twelve flat keys.\n[1] [Assistant @ 09:42]: Settled on TOML, flat key list. YAML is rejected: a parser dependency for twelve keys, and the document would still be a flat list.\n[2] [Assistant @ 09:43]: We also rejected JSON5 \u2014 it buys trailing commas we would then have to forbid in the docs.\n[3] [User @ 09:45]: Should the file stay editable by hand?\n[4] [Assistant @ 09:46]: Yes, and that is why comments stay: a comment carries a decision the format cannot.\n[5] [User @ 09:47]: Do we write a schema header?\n[6] [Assistant @ 09:48]: Default: a schema = 1 line at the top. A reader that sees a higher schema exits with exit 7 rather than guessing at the layout."
+  },
+  {
+   "chunkId": "hy-enum-004",
+   "category": "permissions and the incident",
+   "text": "[0] [User @ 10:02]: The config holds a token. Set the file and directory modes.\n[1] [Assistant @ 10:03]: Settled: directory 0o700, file 0o600, applied with fchmod on the descriptor before rename so the mode exists before the name does.\n[2] [Assistant @ 10:05]: We rejected chmod after rename \u2014 a crash between the two leaves a world-readable file.\n[3] [User @ 10:06]: What does a wrong mode do at read time?\n[4] [Assistant @ 10:07]: Settled: if the mode is wider than 0o600 the reader refuses the token and exits with rc=2. HY_STATE_DIR keeps the state file out of the config directory.\n[5] [User @ 10:08]: Note the incident that made this a rule.\n[6] [Assistant @ 10:09]: Ticket MIGRATE-2024: a partial write truncated the file, the next run re-created it with defaults silently, and the user lost settings. A truncated file must be loud, never quiet."
+  },
+  {
+   "chunkId": "hy-enum-005",
+   "category": "numeric limits",
+   "text": "[0] [User @ 10:30]: Bound the log listing tctl prints.\n[1] [Assistant @ 10:31]: Settled: 250 lines max, and a line longer than 512 chars is clipped rather than wrapped.\n[2] [User @ 10:33]: And the write policy?\n[3] [Assistant @ 10:34]: Default: 2000 tokens is the floor for a write, 24 rows is what a bare listing shows, and 12 entries is the candidate cap per draft.\n[4] [Assistant @ 10:35]: We chose 30 s for a lock retry and rejected busy-wait. RUST_LOG stays off unless CI_PIPELINE_ID is set.\n[5] [User @ 10:36]: Timeout for the remote call?\n[6] [Assistant @ 10:37]: Settled: timeout 240000, and a request that dies on it exits with rc=127 so a wrapper can retry it."
+  },
+  {
+   "chunkId": "hy-enum-006",
+   "category": "environment surface",
+   "text": "[0] [User @ 11:02]: Which environment variables does tctl read, and which does it write?\n[1] [Assistant @ 11:04]: Reads TOR_TOOL_SETTINGS, XDG_CONFIG_HOME, XDG_DATA_HOME, TCTL_CACHE_DIR and NO_COLOR. Writes none \u2014 a tool that mutates its own environment makes a shell unreadable.\n[2] [Assistant @ 11:05]: NO_COLOR is honored, and we dropped the duplicate colour flag in the same commit: one switch, not two.\n[3] [User @ 11:07]: Does EDITOR matter?\n[4] [Assistant @ 11:08]: Only for tctl edit. Settled: EDITOR is honored, a pager is never spawned so output cannot be swallowed.\n[5] [Assistant @ 11:09]: CI_PIPELINE_ID turns colour off; that is a rule, not a preference."
+  },
+  {
+   "chunkId": "hy-enum-007",
+   "category": "exit codes as an interface",
+   "text": "[0] [User @ 11:30]: Give me the exit codes and what each means, as a rule for scripts.\n[1] [Assistant @ 11:32]: Settled: exit code 0 for success, exit code 1 for a user error, exit code 2 for a wrong file mode, exit code 3 when the lock is held.\n[2] [Assistant @ 11:33]: The rule continues: exit code 65 is reserved for a partial write, and exit 130 means the user interrupted a rename.\n[3] [User @ 11:35]: What about registry errors?\n[4] [Assistant @ 11:36]: Settled: a registry status 404 exits with exit code 5, and status 429 retries twice with a 45 s backoff.\n[5] [Assistant @ 11:37]: We rejected one exit code for everything \u2014 it left CI scripts guessing."
+  },
+  {
+   "chunkId": "hy-enum-008",
+   "category": "open items and storage",
+   "text": "[0] [User @ 12:00]: Anything still undecided?\n[1] [Assistant @ 12:02]: Two things. Whether settings.toml.bak rotates is not settled, and we rejected SQLite for the audit log until there is a reader for it.\n[2] [Assistant @ 12:03]: Settled: the audit log stays a flat file. We rejected LevelDB and MessagePack for the same reason \u2014 nothing reads them yet. TCTL_AUDIT_DIR names where it lives, and 4096 bytes is the size at which a line rolls.\n[3] [User @ 12:05]: Anything about the ticket?\n[4] [Assistant @ 12:06]: TCTL-118 covers the precedence rule. MIGRATE-2024 stays as the incident reference and no longer points at a branch.\n[5] [Assistant @ 12:07]: Also settled: --no-flock exists for read-only runs and must not be offered when a write is requested. We rejected getopt in favour of the hand-rolled parser we already had."
+  }
+ ]
+}
