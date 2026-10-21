@@ -213,6 +213,7 @@ async function main(): Promise<void> {
 	let noise = 0;
 	let unsupported = 0;
 	let missed = 0;
+	let verdictless = 0;
 
 	for (const item of chunks) {
 		const file = JSON.parse(readFileSync(join("captures-dev", item.path), "utf8")) as ChunkFile;
@@ -243,15 +244,31 @@ async function main(): Promise<void> {
 					: "";
 			const user = `<rubric>\n${rubric().trim()}\n</rubric>\n\n<transcript>\n${file.text.trim()}\n</transcript>\n\n<write-ops>\n${opsBlock}\n</write-ops>${contextNote}`;
 			let content = "";
-			try {
-				content = (await writer.complete(JUDGE_SYSTEM, user, "judge")).content;
-			} catch (error) {
-				console.error(
-					`${file.chunkId}: block ${b + 1} call failed: ${String((error as Error)?.message ?? error)}`,
-				);
+			let parsed: { verdicts: OpVerdict[]; missed: MissedFact[] } | null = null;
+			// A block the judge answered short — or not at all — is a harness failure, not a
+			// quality signal: the backfilled unknowns carry specificity -1 and drag every mean.
+			// Re-ask the way the writer's own re-ask works, and keep the most complete answer.
+			const attempts = Number(process.env.JUDGE_ATTEMPTS ?? 3);
+			let reask = "";
+			for (let attempt = 1; attempt <= attempts; attempt++) {
+				const ask = reask
+					? `${user}\n\n(Your previous reply was rejected: ${reask}. Reply with JSON only, one verdict per numbered op.)`
+					: user;
+				try {
+					content = (await writer.complete(JUDGE_SYSTEM, ask, "judge")).content;
+				} catch (error) {
+					console.error(
+						`${file.chunkId}: block ${b + 1} attempt ${attempt} failed: ${String((error as Error)?.message ?? error)}`,
+					);
+				}
+				const got = parseVerdicts(content, block.view.length);
+				if (got && (!parsed || got.verdicts.length > parsed.verdicts.length)) parsed = got;
+				if (parsed && parsed.verdicts.length === block.view.length) break;
+				reask = parsed
+					? `${block.view.length - parsed.verdicts.length} of ${block.view.length} ops have no verdict`
+					: "no verdicts could be parsed";
 			}
-			const parsed = parseVerdicts(content, block.view.length);
-			if (!parsed) {
+			if (!parsed || parsed.verdicts.length < block.view.length) {
 				// Keep the raw text for post-mortems; a silent discard hides why.
 				const suffix = blocks.length > 1 ? `-block${b + 1}` : "";
 				try {
@@ -262,7 +279,9 @@ async function main(): Promise<void> {
 				} catch {
 					/* diagnostics must not break the run */
 				}
-				console.error(`${file.chunkId}: block ${b + 1} produced no parseable verdict (raw kept)`);
+				console.error(
+					`${file.chunkId}: block ${b + 1} still incomplete after ${attempts} attempt(s) (${reask}); raw kept`,
+				);
 			}
 			for (let i = 0; i < block.view.length; i++) {
 				const verdict = parsed?.verdicts.find((v) => v.opIndex === i) ?? unknownVerdict(i);
@@ -285,17 +304,41 @@ async function main(): Promise<void> {
 		noise += chunkOps.filter((v) => v.shouldNotStore || v.durability === "noise").length;
 		unsupported += chunkOps.filter((v) => v.supported === "none").length;
 		missed += missedHere.length;
+		verdictless += unknown;
 		console.log(
 			`${file.chunkId}: ops ${chunkOps.length}${unknown ? ` (unknown ${unknown})` : ""} | noise ${noise} | unsupported ${unsupported} | missed ${missedHere.length}`,
 		);
 	}
 
+	// Verdict-less ops carry specificity -1, so the mean is over judged ops only and the gap is
+	// reported rather than averaged away.
+	const judged = verdicts.flatMap((c) => c.ops).filter((o) => (o.specificity ?? -1) >= 0);
+	const specificityMean = judged.length
+		? Math.round((judged.reduce((s, o) => s + o.specificity, 0) / judged.length) * 1000) / 1000
+		: null;
+
 	writeFileSync(
 		join(runDir, `judge-seed${seed}.json`),
-		`${JSON.stringify({ runId, judgeModel, seed, totalOps, noise, unsupported, missed, verdicts }, null, 2)}\n`,
+		`${JSON.stringify(
+			{
+				runId,
+				judgeModel,
+				seed,
+				totalOps,
+				noise,
+				unsupported,
+				missed,
+				verdictless,
+				judgedOps: judged.length,
+				specificityMean,
+				verdicts,
+			},
+			null,
+			2,
+		)}\n`,
 	);
 	console.log(
-		`\njudge done: ops ${totalOps}, noise ${noise}, unsupported ${unsupported}, missed ${missed} -> ${runDir}/judge-seed${seed}.json`,
+		`\njudge done: ops ${totalOps} (verdict-less ${verdictless}), noise ${noise}, unsupported ${unsupported}, missed ${missed}, specificity ${specificityMean} over ${judged.length} judged -> ${runDir}/judge-seed${seed}.json`,
 	);
 }
 
