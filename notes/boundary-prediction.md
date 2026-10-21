@@ -3,12 +3,19 @@
 Control `out/base-2026-10-21` (kitx writer `hy-memory-30b-a3b`, 12 whole captures, perDraft/24),
 judged by `qwen3.8-flash-next-iq3_xxs` seed 7:
 
-- ops judged 183 (ADD 157, UPDATE 26, DELETE 0)
-- supported: full 154, partial 15, unknown 14 — unsupported **0**
-- durability: durable 108, marginal 43, noise 18 (file aggregate: noise 23)
-- mean specificity **2.273 / 3**
-- missed **84** statements the judge says should have been written
+Final control figures, after the judge harness was fixed to re-ask a block that answered short
+(`15858c6`): an entire chunk had been backfilled with `unknown` verdicts at `specificity: -1`, which
+pulled a blindly computed mean from 2.544 to 2.273. Re-judged with `JUDGE_ATTEMPTS=3`, seed 7:
+
+- ops judged 183 (ADD 157, UPDATE 26, DELETE 0), verdict-less **0**, judged ops 183
+- supported: full 161, partial 22 — unsupported **0**
+- durability: durable 110, marginal 45, noise 28 (file aggregate `noise` 33, counting `shouldNotStore`)
+- `specificityMean` **2.519 / 3**
+- missed **91** statements the judge says should have been written
 - bank after: 157 active, 11 814 tokens (pool cap 60 000 — nowhere near binding)
+
+The figures this note was first written against were 2.273 / noise 23 / missed 84, and they are kept
+here as the corrected-away numbers rather than quietly replaced.
 
 For contrast, the earlier 5-chunk run `out/baseline-kitx` on the same writer, judged with the same
 judge and rubric: mean specificity **2.73 / 3**, noise 7/63, unsupported 0.
@@ -17,11 +24,12 @@ Prediction for `out/halves-2026-10-21` (same content, each capture cut into two 
 boundary, so 24 writes instead of 12):
 
 1. **Mean specificity rises.** The paper's effect is that less context produces more specific
-   statements, and the two runs above already line up in that direction (2.27 on dense captures,
-   2.73 on smaller ones). Expect roughly 2.5-2.9 for the halves arm.
+   statements, and the two runs above already line up in that direction (2.519 on dense captures,
+   2.73 on smaller ones — a smaller gap than the first figures suggested). Expect roughly 2.6-3.0
+   for the halves arm.
 2. **Unsupported stays 0 or near 0**, because a smaller window is easier to ground.
 3. **Noise and missed rise.** Each write sees half a transition, so facts that only become true
-   across the cut are stated early (noise) or never re-stated (missed). Expect missed > 84.
+   across the cut are stated early (noise) or never re-stated (missed). Expect missed > 91.
 4. **UPDATE count rises** (more boundaries, more superseding), ADD rises slightly, DELETE likely
    still 0.
 5. **Cost rises near 2× in writes**, while statements-per-entry should stay flat or fall, since
