@@ -9,14 +9,16 @@
 #   threshold-only token threshold only (no flush tool registered)
 #   both            the shipped default: whichever arrives first
 #
-# The writer is a model id that does not resolve, so every arm fails its writes identically and what
-# is measured is when a write was attempted and how much of the transcript it carried — not bank
-# quality, which the corpus harness measures.
+# With `LIVE_WRITER` unset the writer id does not resolve, so every arm fails identically and what is
+# measured is when a write was attempted and how much of the transcript it carried. Point it at a
+# writer that answers (any model pi's registry lists) and the same lines report what the writes cost:
+# writer tokens, wall seconds and facts landed. Bank quality is the corpus harness's job, not this one.
 #
 #   LIVE_MODEL=<provider/modelId> dev/live-cadence.sh
 #
-# Environment: LIVE_THRESHOLD (default 1200) is the threshold arms' `observeAfterTokens`;
-# LIVE_RUNS (default 3) is runs per arm.
+# Environment: LIVE_WRITER is a writer model pi can resolve (default `test/writer`, which resolves to
+# nothing); LIVE_THRESHOLD (default 1200) is the threshold arms' `observeAfterTokens`; LIVE_RUNS
+# (default 3) is runs per arm. Each write is two writer calls, so budget the wall time accordingly.
 set -u
 REPO=$(cd "$(dirname "$0")/.." && pwd)
 EXTENSION=${HY_MEMORY_EXTENSION:-$REPO/src/index.ts}
@@ -26,6 +28,9 @@ ROOT=${LIVE_ROOT:-/tmp/hy-live}
 WRITER=${LIVE_WRITER:-test/writer}
 THRESHOLD=${LIVE_THRESHOLD:-1200}
 RUNS=${LIVE_RUNS:-3}
+# 2 000 ms is what makes an unresolvable writer cheap: it fails before the session waits. A writer
+# that answers needs the real timeout, so raise this when `LIVE_WRITER` names a model that exists.
+WRITER_TIMEOUT=${LIVE_WRITER_TIMEOUT:-2000}
 
 MESSAGES=(
 	"Pick where a small CLI tool should store its settings and in what format. Give the reason."
@@ -44,7 +49,7 @@ arm() {
 {
   "model": "$WRITER",
   "observeAfterTokens": $observe,
-  "timeoutMs": 2000,
+  "timeoutMs": $WRITER_TIMEOUT,
   "writeCooldownS": $cooldown,
   "flushTool": $flush
 }
@@ -117,13 +122,19 @@ starts = [a for a in audit if a.get("event") == "write_start"]
 flushed = [a for a in audit if a.get("event") == "hy_flush"]
 refused = [a for a in audit if a.get("event") == "flush_skipped"]
 deferred = [a for a in audit if a.get("event") in ("write_deferred", "write_cooldown")]
+ends = [a for a in audit if a.get("event") == "write_end"]
+errors = [a for a in audit if a.get("event") == "write_error"]
+writer_tokens = sum((a.get("inTokens") or 0) + (a.get("outTokens") or 0) for a in ends)
+writer_wall = round(sum(a.get("wallS") or 0 for a in ends))
 
 write_at = [position(epoch(a["ts"])) for a in starts]
 print(
     f"{name} {i}: messages {seen} | writes {len(starts)} after message {write_at} | "
     f"written {sum(a.get('chunkTokens') or 0 for a in starts)} tokens | "
     f"flush calls {len(flush_at)} after message {[p for p, _ in flush_at]} | "
-    f"refused {len(refused)} | deferred {len(deferred)} | threshold {threshold}"
+    f"refused {len(refused)} | deferred {len(deferred)} | threshold {threshold}\n"
+    f"   writer {writer_tokens} tok / {writer_wall}s | facts +{sum(a.get('added') or 0 for a in ends)} "
+    f"~{sum(a.get('updated') or 0 for a in ends)} | write errors {len(errors)}"
 )
 for a in flushed:
     print(
