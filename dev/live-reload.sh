@@ -55,8 +55,10 @@ RESERVE=${LIVE_RESERVE:-6000}
 # Output is pinned so thinking cannot spend the whole window.
 MAX_TOKENS=${LIVE_MAX_TOKENS:-4000}
 # A session that thrashes compaction would otherwise run until the harness timeout: one pi run is
-# cut off here and the run is reported with its exit code rather than silently missing.
-SESSION_TIMEOUT=${LIVE_SESSION_TIMEOUT:-900}
+# A session that thrashes compaction would otherwise run until the harness timeout: one pi run is
+# cut off here and the run is reported with its exit code rather than silently missing. The treatment
+# arm needs the extra room because every flush and recall is a turn on the session model.
+SESSION_TIMEOUT=${LIVE_SESSION_TIMEOUT:-1800}
 # Thinking off by default: a reasoning model spends thousands of tokens per answer, which makes the
 # request overflow on output rather than compact on the threshold the experiment is about.
 THINKING=${LIVE_THINKING:-off}
@@ -223,10 +225,18 @@ def blob(entry):
 
 
 prefix_rows = entry_rows[:kept_index] if kept_index is not None else entry_rows
-# The summary is what is being scored, so it must not count as surviving context: excluding it is
-# the difference between "the summary kept this" and "this was never thrown away".
-tail_rows = [e for e in entry_rows[kept_index:] if e.get("type") != "compaction"] if kept_index is not None else []
-prefix_rows = entry_rows[:kept_index] if kept_index is not None else entry_rows
+# Only what the model actually receives counts. A `custom` entry is metadata — pi does not put it in
+# the request — so counting the extension's own extract records would mark its drafts as remembered.
+# Tool results are the bank being retrieved, which is the treatment working, not history that
+# escaped the cut. And the summary is the thing being scored, so it cannot be its own evidence.
+def visible(entry):
+    if entry.get("type") in ("compaction", "custom"):
+        return False
+    return (entry.get("message") or {}).get("role") != "toolResult"
+
+
+tail_rows = [e for e in entry_rows[kept_index:] if visible(e)] if kept_index is not None else []
+prefix_rows = [e for e in entry_rows[:kept_index] if visible(e)] if kept_index is not None else entry_rows
 prefix_text = "\n".join(blob(e) for e in prefix_rows)
 tail_text = "\n".join(blob(e) for e in tail_rows)
 # A probe is only scoreable if the conversation settled it before the cut, and a probe the kept tail
@@ -286,7 +296,8 @@ answer_hits = [p for p in asked if p.lower() in final.lower()]
 summary_hits = [p for p in settled if p.lower() in summary.lower()]
 print(
     f"{name} {i}: rc={rc} compactions {len(compactions)} (trim {trim_events}) fromHook={from_hook} | "
-    f"summary keeps {len(summary_hits)}/{len(settled)} | answer keeps {len(answer_hits)}/{len(asked)} | "
+    f"summary keeps {len(summary_hits)}/{len(settled)} | answer keeps {len(answer_hits)}/{len(asked)}"
+    f"{' (retrieval-assisted)' if recall_after else ''} | "
     f"writes {len(writes)} ({len(writes_before)} before the cut) writer {writer_tokens} tok / "
     f"{round(sum(a.get('wallS') or 0 for a in writes))}s | facts {facts} | "
     f"flush {flush_calls} | recall {recall_calls} ({recall_after} after the cut)"
