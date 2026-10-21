@@ -381,3 +381,6 @@ is required to use the extension.
 | `dev/poc.ts` | replay harness over captured chunks (needs `POC_ORIGIN`) |
 | `dev/export-judge.ts` | bank → judge result files |
 | `dev/raw-writer.ts` | the only HTTP client, for the shell harnesses above |
+| `dev/run.ts` | replay a corpus of captures through the shipped write path |
+| `dev/judge.ts` | blind quality judge for one run's writes, rubric in `dev/rubric.md` |
+| `dev/boundary-arms.ts` | move the chunk boundary over identical content and compare what the bank kept |
