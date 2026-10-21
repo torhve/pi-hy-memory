@@ -43,3 +43,16 @@ cost the cooldown/queue bounds.
 Reading rule fixed now: compare statement text through each run's ledger with
 `dev/boundary-arms.ts --compare`, same judge, same seed, and report the cost columns beside the
 quality columns rather than a verdict on quality alone.
+
+## Noise floor, measured before the comparison (second seed on the same control)
+
+The same control judged twice, `qwen3.8-flash-next-iq3_xxs`, `JUDGE_ATTEMPTS=3`:
+
+| seed | specificity | noise | unsupported | missed |
+|---|---|---|---|---|
+| 7 | 2.519 | 33 | 0 | 91 |
+| 11 | 2.563 | 34 | 1 | 86 |
+
+So the judge's own spread on identical writes is about **±0.05 specificity, ±1 noise, ±5 missed**.
+Reading rule for control vs halves, fixed here before the halves verdicts exist: a specificity gap
+under 0.1 and a missed gap under 8 are treated as no difference, not as a trend.
