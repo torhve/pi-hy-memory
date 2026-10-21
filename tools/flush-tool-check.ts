@@ -173,6 +173,10 @@ check("details name the chunk and how much of it", [typeof details?.chunkId, det
 // 4. A second call while that write is in flight is refused, not stacked.
 const busy = await textOf({ to: 1 });
 has("a busy writer refuses", busy, "not written (write in flight)");
+// The refusal has to deter the retry, not just report it: a live session issued fifteen flush
+// calls, nine of them while a write was already running, each burning a turn to learn the same thing.
+has("the busy refusal says a write is already running", busy, "already running or queued");
+has("and that repeating the range adds nothing", busy, "adds nothing");
 
 // 5. Off means no tool at all, so no prompt surface either.
 writeFileSync(join(dir, "config.json"), JSON.stringify({ ...baseConfig, flushTool: false }));

@@ -89,6 +89,19 @@ const COMPACT_SLACK_TOKENS = 1500;
 const COMPACT_KEEP_MIN_TOKENS = 1000;
 
 /**
+ * What a refused `hy_flush` answers with. The wording differs by reason because the useful next step
+ * differs: a thin write should be asked again later with a larger range, a write that is already
+ * running must not be asked again at all, and anything else is just the bank staying as it is.
+ */
+function flushRefusal(reason: string, tokens: number, minTokens: number): string {
+	if (reason === "under flush token floor")
+		return `hy_flush: not written, this write would carry ${tokens} tokens and a write needs ${minTokens}. Ask again with a larger \`to\`, or keep working: the threshold folds these entries shortly and hy_recall answers what is already in the bank.`;
+	if (reason === "write in flight" || reason === "extract awaiting reconcile" || reason === "write cooling down")
+		return `hy_flush: not written (${reason}). A write over this window is already running or queued, and coverage is monotone, so calling again for the same range adds nothing. Answer from hy_recall; the bank grows when that write lands.`;
+	return `hy_flush: not written (${reason}). The bank is unchanged; hy_recall still answers what it holds.`;
+}
+
+/**
  * The config file is optional, but a *malformed* file is not: falling back to
  * defaults in silence would run a different writer model than the one the user
  * configured, with no warning anywhere. A missing file is simply "all
@@ -1570,10 +1583,7 @@ export default function piHyMemory(pi: ExtensionAPI): void {
 						content: [
 							{
 								type: "text",
-								text:
-									decision.reason === "under flush token floor"
-										? `hy_flush: not written, this write would carry ${tokens} tokens and a write needs ${config.flushMinTokens}. Ask again with a larger \`to\`, or keep working: the threshold folds these entries shortly and hy_recall answers what is already in the bank.`
-										: `hy_flush: not written (${decision.reason}). The bank is unchanged; hy_recall still answers what it holds.`,
+								text: flushRefusal(decision.reason, tokens, config.flushMinTokens),
 							},
 						],
 						details: undefined,
