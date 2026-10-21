@@ -269,6 +269,61 @@ async function main(): Promise<void> {
 	const pool = numArg("--pool", 60000);
 	const renderMode = arg("--candidate-render-mode", "perDraft") as "union" | "perDraft";
 	const candidateLimit = numArg("--candidate-limit", 24);
+
+	// The judge needs the transcript each piece actually showed the writer, and a piece is not in
+	// the corpus. Emitting it through the same split the run used, then checking the entry counts
+	// against the run's own metrics, makes a piece judgeable without paying for the writes again.
+	if (process.argv.includes("--emit-corpus")) {
+		const outPath = arg("--emit-corpus", "");
+		if (!outPath) throw new Error("--emit-corpus <path> is required");
+		const piecesDir = join(capturesDir, "pieces");
+		mkdirSync(piecesDir, { recursive: true });
+		const items: { path: string; chunkId: string }[] = [];
+		const mismatches: string[] = [];
+		const metricsPath = join(outDir, "metrics.json");
+		const expected = new Map(
+			existsSync(metricsPath)
+				? (
+						JSON.parse(readFileSync(metricsPath, "utf8")).chunks as {
+							chunkId: string;
+							entryCount: number;
+						}[]
+					).map((r) => [r.chunkId, r.entryCount] as [string, number])
+				: [],
+		);
+		for (const item of (JSON.parse(readFileSync(corpusPath, "utf8")).chunks ?? []) as { path: string }[]) {
+			const capture = JSON.parse(readFileSync(join(capturesDir, item.path), "utf8")) as Capture;
+			for (const [p, piece] of splitCapture(capture, parts).entries()) {
+				const chunkId = parts === 1 ? capture.chunkId : `${capture.chunkId}.${p + 1}`;
+				const want = expected.get(chunkId);
+				if (want !== undefined && want !== piece.entryCount) {
+					mismatches.push(`${chunkId}: emitted ${piece.entryCount}, run wrote ${want}`);
+				}
+				writeFileSync(
+					join(piecesDir, `${chunkId}.json`),
+					`${JSON.stringify(
+						{
+							chunkId,
+							text: piece.text,
+							refs: piece.refs,
+							entryCount: piece.entryCount,
+							roles: piece.roles,
+						},
+						null,
+						1,
+					)}\n`,
+				);
+				items.push({ path: `pieces/${chunkId}.json`, chunkId });
+			}
+		}
+		writeFileSync(outPath, `${JSON.stringify({ chunks: items }, null, 2)}\n`);
+		console.log(
+			`emitted ${items.length} pieces -> ${outPath}${
+				mismatches.length ? `\nMISMATCH: ${mismatches.join("; ")}` : " (entry counts match the run)"
+			}`,
+		);
+		return;
+	}
 	const modelSpec = process.env.POC_MODEL;
 	if (!modelSpec) {
 		console.error("POC_MODEL is required: a provider/modelId from your own pi model list.");
