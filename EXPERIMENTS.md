@@ -601,3 +601,196 @@ catch-up write fires in the second case.
 stale after session replacement or reload"* — the write path appends with a captured ctx, which
 is also why the mirror file trails the session entries. And the drain rate: `MAX_CHAIN = 2` with
 90–122 s per chunk shed 21 504 tokens in 21 minutes, about 1k/min against a 407k backlog.
+
+## Experiment: ratification as a durability class (offline part done, 2026-10-22)
+
+**Question.** Facts the user *settled* — an assistant proposal followed by a bare
+"proceed" — should survive the bank's recency cut. Can that class be derived
+without asking the writer for a field it was never trained to emit?
+
+**Why it needs measuring.** On session `01a1510e` the bank is pinned at
+**59 989 / 60 000 tokens** (825 active facts, 11 tokens of headroom) and
+`enforceBudget()` ranks by `createdAt` alone: 220 facts are tombstoned
+`supersedeReason: "bank budget"`, all on the far side of one boundary
+(`2026-10-19T14:00:40Z`, the newest evicted and the oldest active are the same
+stamp). Nothing else removes facts — 113 ops records contain `DELETE: 1`,
+`stats.deleted: 0`, and there is no expiry. The existing durability notion covers
+almost nothing: `fromUser` is set on **7 of 825** facts and on **0** of the 220
+evicted ones, because `pipeline.ts:199` marks a draft only when a cited line has
+role `user`.
+
+**Harness.** `dev/ratification-analysis.ts` — offline, no model calls. It replays a
+real transcript against the extension's ledger, rebuilds the chunk windows the
+writer actually saw from each `hy.extract` record's `coversUpToId`, resolves all
+8 000 draft source refs against the transcript, and asks three questions: what
+roles drafts cite, whether an acceptance and the proposal it settles share a
+chunk, and whether that proposal reads as a decision or a progress report.
+
+Offline numbers (`01a1510e`: 12 425 message entries, 113 chunks, 1 355 drafts, 57 user turns):
+
+| measurement | number |
+|---|---|
+| drafts citing a user line | **13 / 1 355** (1.0 %) |
+| drafts citing assistant prose only | 907 |
+| drafts citing tool output | 1 269 |
+| acceptance-shaped user turns (≤ 24 chars: `proceed`, `ok`, `go`) | **23 = 40 %** of user turns |
+| proposal in the **same** chunk as the acceptance | **15** |
+| proposal in an **earlier** chunk | **0** |
+| acceptance with no preceding assistant proposal (it follows tool output) | 8 |
+| acceptance's chunk contains a draft citing the proposal line | 9 of 15 |
+| gate on the ratified proposal: decisionish / status-report / neither | 6 / 2 / 7 |
+| accepted drafts citing a ratified proposal | 23 of 1 321 (~1 888 tok, **2 %** of written tokens) |
+
+Reading before any model spend:
+
+- **Derivable without a new field.** `refs` are the trained provenance mechanism and
+  role labels are known to the extension, not the model, so the class is a lookup.
+  Asking for `source: user|ratified|observed` would be a self-graded durability
+  label, which the paper's schema does not have and DESIGN forbids on the prompt.
+- **Ratification never crosses a chunk boundary here** — 15 same-chunk, 0
+  cross-chunk — so the extract call that writes the fact does see the acceptance.
+  That was the load-bearing risk, and it is not a problem.
+- **The lexical gate is weak.** 6 decisions, 2 status reports, 7 neither: "proceed"
+  ratifies in-progress prose ("Now the refactor itself. Reading the eight blocks
+  precisely:") as often as a settled rule. Protecting everything an acceptance
+  follows protects noise with it.
+- **The class is small — ~2 % of written tokens.** A tier this size cannot justify a
+  generous reservation; it needs a hard bound and a precise marker.
+
+Cross-session corroboration, same harness, two more real sessions:
+
+| session | user turns | acceptances | same-chunk / cross-chunk | gate decisionish / status / neither | accepted drafts citing a ratified proposal |
+|---|---|---|---|---|---|
+| `01a1510e` (dense, 113 chunks) | 57 | 23 (40 %) | 15 / 0 | 6 / 2 / 7 | 23 (~2 % of accepted tokens) |
+| `01a15b90` (this session, 44 chunks) | 31 | 3 (10 %) | 3 / 0 | 3 / 0 / 0 | 16 (~3 %) |
+| `01a15629` (planning, 12 chunks) | 19 | 2 (11 %) | 2 / 0 | 2 / 0 / 0 | 8 (~6 %) |
+
+The zero-cross-chunk result holds on all three, and user-line citation is 1–2 % of
+drafts in every one (13/1 355, 11/498, 5/139). Acceptance *frequency* is what varies
+with session style — 10 % where the user writes sentences, 40 % where they type
+`proceed` — so the tier's population is a property of how the user works, not a
+constant. The gate is clean on the two shorter sessions and muddy on the dense one.
+
+**Live arm, gate written before the run** (`dev/ratification-arm.ts`: extract-only,
+like `dev/split-chunk.ts`, no bank, no reconcile; same route, temp 0,
+`reasoning_effort: none`; base prompt vs base plus one clause — *"a short user turn
+that only accepts what the assistant just proposed settles that proposal: store the
+proposal as a constraint, and cite the line where the proposal was made"*):
+
+- clause arm cites the ratified proposal line in **≥ 80 %** of chunks (production
+  baseline was 9 of 15);
+- facts and anchors/fact within **−10 %** of base — the paper's finding that more
+  prompt surface makes facts generic is the tax to watch;
+- **zero** unparsable JSON in either arm.
+
+Smoke pass (2 chunks, same route, to validate the harness before the full arm): base
+15 facts / proposal-cites 2 / acceptance-cites 1 / anchors 5.67; clause 12 facts /
+proposal-cites 2 / acceptance-cites 3 / anchors 7.42; zero rejected drafts in either
+arm, so the clause does not break the JSON path. Two things it showed: the clause
+moves citations onto the *acceptance* line rather than the proposal line, and fact
+count moved −20 % on n=2 — which this writer's temp-0 spread (6–8 drafts on identical
+input) cannot resolve. Route wall time varied 45–397 s per call, so wall is not an arm
+effect here.
+
+Full arm (8 acceptance chunks, same route, temp 0, `reasoning_effort: none`, 16 extract
+calls; two calls died on route aborts — `base/061` and `clause/080` — so the paired
+comparison is 7 chunks per arm on *different* subsets):
+
+| arm | chunks | facts | proposal-cites | acceptance-cites | anchors/fact | numbers/fact | dupes | rejected | in tok | out tok | wall |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| base | 8 (7 ok) | 56 | 17 | 3 | 6.51 | 1.69 | 0 | 0 | 18 109 | 6 694 | 619 s |
+| clause | 8 (7 ok) | 51 | 20 | 6 | 6.24 | 1.79 | 0 | 0 | 18 047 | 5 591 | 755 s |
+
+Chunks where at least one draft cites the proposal line: base **4 of 7** (57 %), clause
+**5 of 7** (71 %). Per-chunk citation counts are identical in the chunks where the
+proposal is a decision — `078` 6/6, `079` 1/1, `091` 5/5, `126` 5→6 — and both arms are
+zero in `014` and `096`, whose proposals are in-progress prose ("let me check a
+real-browser assumption first", "Parity established and mutation-tested. Now sharing
+the rule:").
+
+Gate:
+
+- **≥ 80 % of chunks citing the proposal: FAIL** (71 %). The clause does not convert the
+  chunks that fail; they are exactly the ones the offline gate labelled status/neither.
+- **Facts and anchors within −10 %: PASS** — −9 % overall, but that is the aborted
+  clause call on `080` (5 facts). On comparable chunks it is 51 vs 51, anchors −4 %,
+  numbers +6 %. No coverage or specificity tax.
+- **Zero unparsable JSON: PASS** (0 rejected drafts in either arm), with two route
+  aborts that are transport, not format.
+
+The clause's one genuinely new behaviour is not a citation: on `014` it emitted a fact
+the base arm did not — *"User approved proceed on B6 characterization"* — an approval
+record. That is the signal the tier wants, and the arm shows the writer will state it
+when prompted. It also shows the citation-based marker is the wrong key: base already
+cites proposal lines in 17 drafts, and the chunks that matter most are the ones where
+no draft cites the proposal at all.
+
+**Verdict: do not change the prompt.** The durability class is derivable in code from
+what the writer already emits — `sourceEntryIds` ∩ a ratified proposal line, which the
+offline analysis computes (23 accepted drafts on `01a1510e`, 16 on `01a15b90`, 8 on
+`01a15629`). The clause buys +3 citations and one approval fact for a schema change on
+the model-facing surface that DESIGN says not to make, and it still misses the muddy
+chunks. Next measurement, offline and free: replay `enforceBudget` over the real
+`01a1510e` bank with a bounded ratified/user tier and check which facts survive the cut
+that recency alone deletes — that is where the claim is either won or lost.
+
+
+Tier replay (`dev/ratification-tier.ts`, offline and deterministic). The bank file is
+already trimmed, so the cut is a no-op there; `--fold` replays the ledger instead, which
+is the only state genuinely over the cap, because budget eviction is never written to
+the ledger.
+
+`01a1510e` ledger fold: **1 205 active facts / 85 708 tokens against a 60 000 cap**, 21
+facts marked ratified (1 710 tokens), 8 `fromUser`.
+
+| rule | kept | dropped | of which ratified | tier spend |
+|---|---|---|---|---|
+| recency only (shipped) | 841 | 364 | 4 | — |
+| ratified + user tier first, 15 % bound | 840 | 365 | 0 | 2 192 |
+
+Rescued 5, pushed out 6. What came back:
+
+- *"User requires commit messages standalone, no plan reference (§, stage, S-number) in git history"* — a user constraint, and the clearest case for the tier
+- *"Storage guard (C7) asked 'does storage exist' (localStorage only) but every replaced site checked wi…"*, *"storageAvailable() restored to check typeof window … AND typeof localStorage"*
+- *"§5 dialog header: D3 blocked (no spec covers dialog scrolling …)"*, *"Run G full E2E unpiped: PLAYWRIGHT_EXIT=0; serial project 348 passed, 18 skipped"*
+
+What went out instead: `S4: §5 D1–D4 dialogs and buttons; ~160 lines; low risk`, a test-file rename, `passwordError sources and banner`, `detectError … only names cause`. That is the intended trade — bookkeeping for settled decisions.
+
+Reading:
+
+- **The bound never binds.** The class costs 2 192 tokens, so any share from 10 % to 15 %
+  gives the identical result. The protection is cheap: ~3.6 % of the cap for five facts
+  that recency alone deletes.
+- **Net capacity is not free**: 840 kept vs 841. Six facts lose their place so five
+  keep theirs.
+- **The class is "decisions the user accepted", not "constraints".** Two of the five
+  rescued facts are work state (a run's exit code, a blocked spec), which the tier would
+  keep indefinitely. Measured separately: user-stated facts alone rescue **3** facts for
+  **538 tokens** (the commit-message rule, `enableQuickKeys` default, TopBar label
+  unpinned in E2E); ratified facts alone rescue **5** for **1 710 tokens**. Both are
+  cheap. The scope question is not capacity but what should be immortal — so protect
+  both, and require UPDATE to tombstone a superseded protected fact rather than letting
+  the tier accumulate stale work state.
+
+Re-running the three modes with `--explain`, because "rescues: both 5, user-only 3,
+ratified-only 5" is not coherent for a union rule. It isn't, and the reason is the
+metric, not the rule.
+
+Protected candidates in the fold: **28** (8 `fromUser` + 21 ratified, one overlapping).
+
+| mode | protected placed | tier spend | kept | rescued | notes |
+|---|---|---|---|---|---|
+| both (union) | all 28 kept, none evicted | 2 192 | 840 | 5 | every candidate survives, including the commit-message rule |
+| user only | 8 placed; 4 ratified facts evicted | 538 | 841 | 3 | only **1** of the 3 is protected — `Commit message plan exclusion`; `enableQuickKeys default` (12 tok) and `TopBar label not pinned in E2E` (67 tok) are **not** in the candidate set |
+| ratified only | 21 placed; `Commit message plan exclusion` evicted | 1 710 | 840 | 5 | the one fact the tier exists for falls out |
+
+So the two counts in the earlier table were packing luck, not protection.
+`enforceBudget`'s walk keeps a fact only if it still fits and otherwise *continues*
+scanning, so changing the fill order shifts which small facts land in the leftover
+space — a 12-token fact can appear "rescued" in a mode that never protected it. Any
+tier metric has to separate **protected and rescued** from **rescued by packing**, or it
+will read as a benefit the rule did not provide.
+
+Union is the right rule on this evidence: it is the only mode that keeps all 28
+candidates, and ratified-only actively evicts the user constraint it is supposed to
+protect. The bound is still not what limits anything — 2 192 tokens of a 60 000 cap.

@@ -167,6 +167,20 @@ gate.
       contained both probes the answer lost. Before ranking anything in 4.3 or 6.6, repeat that one
       question on a stronger session model: if the loss is the 4-bit model ignoring tool results,
       retrieval changes will not fix it.
+- [ ] 6.16 Counterfactual reader eval for the durability tier (the gate 6.15's tier replay
+      cannot pass on its own). `dev/ratification-tier.ts` shows which facts change side when
+      a protected tier is placed first — 5 rescued, 6 displaced on the `01a1510e` fold — but
+      not whether keeping them helps a reader. Build two banks per session (shipped recency
+      cut vs union tier over the same ledger fold), take questions from *later* turns, and
+      answer them blind from each bank. Label every fact that moves side: needed / already
+      redundant / stale / harmful. Gate: rescued facts are needed by a later question at a
+      rate the displaced facts do not match, and no protected fact is stale-but-used. Until
+      that reads as a benefit, no `enforceBudget` or `DESIGN.md` change.
+- [ ] 6.17 Tombstone discipline if the tier ships: a protected fact must remain an UPDATE
+      candidate, and a later statement must supersede it rather than compete with it. Measure
+      on the fold how many protected facts are contradicted by later chunks — the class mixes
+      constraints with work state (an E2E exit code, a blocked spec), so without this the tier
+      accumulates stale facts. Requires 6.16 first.
 - [x] 6.8 What does offering the tool cost? Measured against a writer that answers
       (`out` of `dev/live-cadence.sh`, 3 runs × 3 arms): +28 % writer tokens and +13 s per session
       over `threshold-only`, and the extra write was threshold-triggered, not a flush — the tool
