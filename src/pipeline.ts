@@ -22,6 +22,7 @@ import {
 	selectShownPerDraft,
 	takeJsonRepair,
 } from "./protocol.js";
+import { BANK_INDEX_CLAUSE, renderBankIndex } from "./render.js";
 import { type SerializedChunk, serializeChunk } from "./serialize.js";
 import type { BankEntry, CallUsage, Draft, LedgerRecord, ReconcileOp } from "./types.js";
 
@@ -104,6 +105,15 @@ export async function writeChunk(
 		 * drafts whose candidates fall outside the cap see nothing.
 		 */
 		candidateRenderMode?: "union" | "perDraft";
+		/**
+		 * Experiment only (TODO 7.10), off by default and never set by the extension: give the
+		 * extract call the bank's task lines alongside the chunk, so a draft that only restates
+		 * something already stored can be withheld where it is proposed rather than merged where
+		 * it lands. Measured against the two restraint baselines before anything about this is
+		 * treated as a result; the shape of the index (what is shown when the cap bites) is not
+		 * settled by the first run.
+		 */
+		bankIndex?: boolean | { maxTokens?: number };
 		rawDir?: string;
 		/**
 		 * Drafts from an extract call that already succeeded on this same window
@@ -155,11 +165,19 @@ export async function writeChunk(
 		extractUsage = options.resume.usage;
 	} else {
 		options.onStage?.("extract", chunk.entryCount ? `${chunk.entryCount} entries` : undefined);
+		// The index is built from the bank as it stands before this chunk, and only when
+		// there is something in it to say.
+		const bankIndex = options.bankIndex
+			? renderBankIndex(bank, typeof options.bankIndex === "object" ? (options.bankIndex.maxTokens ?? 600) : 600)
+			: null;
+		const extractContent = bankIndex?.block
+			? `${bankIndex.block}\n${BANK_INDEX_CLAUSE}\n\n${chunk.text}`
+			: chunk.text;
 		const extract = await completeWithFallback(
 			primary,
 			options.fallback ?? null,
 			EXTRACT_SYSTEM,
-			chunk.text,
+			extractContent,
 			`extract ${chunkId}`,
 			{
 				preferFallback: options.preferFallback,
@@ -183,7 +201,7 @@ export async function writeChunk(
 				primary,
 				options.fallback ?? null,
 				EXTRACT_SYSTEM,
-				`${chunk.text}${retryNote(error)}`,
+				`${extractContent}${retryNote(error)}`,
 				`extract ${chunkId} (json retry)`,
 				{ preferFallback: options.preferFallback },
 			);

@@ -969,6 +969,8 @@ the pair axis the bank is already nearly clean once a merge is scored as a merge
 remains is the draft gate — the writer proposes a restatement it cannot know is redundant, because
 extract never sees the bank. The empty-chunk failure is the opposite shape: nothing to merge with, and
 still no refusal. Those are two different problems and the baseline says which one is bigger.
+*Corrected the same day:* the causal half of that sentence was tested by showing extract the bank, and it
+did not hold — the restatement still arrived 8/8. See the bank-aware draft gate at the end of this file.
 
 ### Label audit: what the nothing-durable label actually separated (2026-10-23)
 
@@ -1132,8 +1134,10 @@ already captured in the durable memory (op 1)".
   conversation 6/6. The failure is specific — it cannot tell the two apart, and nothing in the pipeline
   asks it to.
 - The draft gate is unchanged across two corpora: 0/8 withheld both times, 0/8 both times for strict
-  pair-correct. Extract never sees the bank, so a restatement is proposed before anything knows it is
-  redundant. That is the same conclusion as v1, now with the confound removed.
+  pair-correct. The reading offered here at the time — extract never sees the bank, so a restatement is
+  proposed before anything knows it is redundant — was tested against a bank-aware arm the same day and
+  **did not hold**: with the bank's own task line in front of it, the writer still restated the claim 8/8
+  (see the bank-aware draft gate below).
 - Attribution at the draft gate improved to 8/8 from 6/8, which is a property of the v2 claims always
   carrying an explicit speaker frame, not a change in the pipeline.
 
@@ -1143,3 +1147,73 @@ that column is 3/6, because the writer banks narration the corpus never declared
 ("Assistant opened the writer module…", "User instructed to leave the tctl apply for now") and a
 one-phrase `transient` list cannot name what the writer chose to write. Judge numbers on `UPDATE`
 still carry the cross-chunk bias named in the v1 section.
+
+## Experiment: bank-aware draft gate — falsified at the gate it aimed at (2026-10-23)
+
+Both baselines put the failure in one place: the draft gate, 0/8 withheld twice. The reading was causal —
+extract sees only a chunk, so a restatement is proposed before anything knows it is redundant, and
+reconcile then merges it (8 merges in both runs). This arm tests that reading rather than restating it:
+`writeChunk` gained `bankIndex`, which prepends the bank's active task lines plus one clause to the extract
+call's user content, and `dev/run.ts --bank-index` turns it on. Off by default, never set by the
+extension, so every published baseline is the flagless path. `tools/bank-index-check.ts` pins the shape of
+what arrives — background rather than transcript, no bank ids, no line that reads as a source ref, whole
+entries dropped when the cap bites, and the flagless request byte-identical to the one the baselines ran on.
+
+The clause keeps the exception the blunt version would have cost: *do draft when this chunk updates,
+corrects, cancels or adds durable detail*. "Never restate what is listed" would have taught the writer to
+withhold the update a bank entry most needs, and that is the failure mode the arm was most likely to invent.
+
+### It saw the fact, and wrote it anyway
+
+The run's own `inTokens` says the block arrived — extract input went from 423 to 913 tokens per chunk. That
+proves a block was sent, not that it named the right subject, so the ledger was replayed chunk by chunk
+through the same renderer: at every one of the eight quote-side chunks the pair's anchor was inside the
+index extract was shown, and the cap dropped nothing (bank 3–17 entries against a 600-token cap).
+
+| | v2 base | v2 + index | v1 base | v1 + index |
+| --- | --- | --- | --- | --- |
+| recall (keep side in bank) | 8/8 | 8/8 | 8/8 | 8/8 |
+| **restraint, strict (draft gate)** | **0/8** | **0/8** | **0/8** | **0/8** |
+| quote side clean — bank gate | 5/8 | 7/8 | 7/8 | 8/8 |
+| pair-correct, attributed-ok | 1/8 | 1/8 | 5/8 | 4/8 |
+| active facts | 45 | 40 | 43 | 45 |
+| quote side added a second fact | 3 | 1 | 1 | 0 |
+| explicit SKIP ops | 1 | 0 | 1 | 0 |
+| tool: kept the fact and nothing else | 3/6 | 5/6 | — | — |
+| extract input / chunk | 423 | 913 | 485 | 1036 |
+| total input tokens | 33 022 | 44 708 | 33 478 | 48 000 |
+
+The gate it was built for did not move: the writer is shown the fact it is about to duplicate and
+duplicates it 8/8, on both corpora. Everything else moved by one or two pairs out of eight, and in
+opposite directions on the two corpora (v2 bank gate 5→7, v1 7→8; pair-correct 1→1 and 5→4). There is no
+noise floor for these gates, so the honest reading is **directionally mixed, within the uncertainty of
+eight pairs: no robust effect**, not "noise" and not an improvement. Nothing the scorer can see was lost:
+recall held at 8/8, and the quote-side drafts still carry the chunk's own lines rather than the bank's
+wording, so the copying risk the clause was written against did not appear here.
+
+Two secondary reads worth keeping. The reconcile `SKIP` disappeared in both arms (1 → 0): fewer drafts
+arrive, which is not the same as more drafts being refused, and a drop in SKIP must not be reported as
+restraint. And the bank got smaller on v2 (45 → 40 facts) while getting larger on v1 (43 → 45) — a bank
+size that moves in both directions under one change is a bank size with no signal in it yet.
+
+### What this rules out, and where it stops
+
+Extract's blindness is not why the draft gate fails, **at this bank size**. The boundary matters: the index
+never truncated in either arm, because these corpora bank 45 facts or fewer against a 600-token cap. In a
+real session the bank is hundreds of facts — the 32-chunk session measured elsewhere in this file held 408
+active facts — so a cap that shows a fraction of the bank is exactly the case where redundancy can be
+genuinely invisible. This arm does not speak to that case, and does not falsify bank visibility as an
+idea; it falsifies the cheap version of it as an explanation for 0/8.
+
+Not measured yet: the independent judge on the two arms. The judge endpoint went unreachable partway
+through the run — empty completions, then connection failures — and the re-ask loop spent its three
+attempts on each of the first four chunks, keeping each discarded reply as `out/restraint2-bidx/judge-raw-*.txt`
+(`out/` is gitignored, so those files are a local post-mortem, not evidence in the repository). Switching
+judge model would break the comparison against the seeds-7-and-11 baselines, so the soft axis stays open.
+What this arm can therefore claim is only what the scorer can see: no claim was lost, recall held at 8/8,
+and no draft borrowed the bank's wording. Whether the arm also reduced what an independent judge calls
+noise is unmeasured, and is not implied by a bank that got five facts smaller on one corpus.
+
+Cost is measured and is real: ~2.2× the extract input, +35 % total input tokens, for no movement in either
+published gate. Wall time is unusable in these two runs — the endpoint was contended, and several calls
+took 90–180 s against ~3 s in the baselines.

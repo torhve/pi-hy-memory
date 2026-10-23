@@ -364,6 +364,7 @@ to break silently:
 | `json-repair-check` | the two measured malformations (illegal escape, stray quote after a number) parse, content survives, valid output is untouched, and an unparseable reply is re-asked exactly once |
 | `budget-check`, `reload-budget-check` | pool eviction order, reload semantics, summary budget |
 | `render-check` | compaction summary budget, omission reporting, and newest-first admission |
+| `bank-index-check` | the experimental bank-aware extract call: index arrives as background rather than transcript, carries no bank ids, drops whole entries newest-first, and the flagless request is byte-identical to the shipped one |
 | `prune-check` | retention deletes old sessions and nothing else |
 | `config-docs-check` | every setting in the code is in the table above, with the same default |
 | `status-check` | footer rendering, including a stale context |
@@ -393,7 +394,7 @@ is required to use the extension.
 | `src/protocol.ts` | JSON parse, validation, sanitizing, bank/draft rendering |
 | `src/bank.ts` | ledger fold, candidate retrieval, op application, budget |
 | `src/pipeline.ts` | the two calls and everything deterministic around them |
-| `src/render.ts` | model-free compaction summary + omission notice |
+| `src/render.ts` | model-free compaction summary + omission notice, plus the bank index the experimental extract arm shows the writer (pinned by `tools/bank-index-check.ts`) |
 | `src/status.ts` | footer bar: window fill, bank fill, spinner, flash |
 | `src/failover.ts` | when the primary is considered down, and when it is trusted again |
 | `src/state.ts` | retention for per-session state |
@@ -408,7 +409,7 @@ is required to use the extension.
 | `dev/poc.ts` | replay harness over captured chunks (needs `POC_ORIGIN`) |
 | `dev/export-judge.ts` | bank → judge result files |
 | `dev/raw-writer.ts` | the only HTTP client, for the shell harnesses above |
-| `dev/run.ts` | replay a corpus of captures through the shipped write path |
+| `dev/run.ts` | replay a corpus of captures through the shipped write path (`--bank-index` runs the bank-aware extract arm; off by default, so baselines are the flagless path) |
 | `dev/judge.ts` | blind quality judge for one run's writes, rubric in `dev/rubric.md` |
 | `dev/boundary-arms.ts` | move the chunk boundary over identical content, compare runs, emit the pieces for the judge |
 | `dev/live-flush.sh` | run pi headless with the extension loaded and ask whether the model calls `hy_flush` |

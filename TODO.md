@@ -264,11 +264,16 @@ gate.
       declared chatter, but only 3/6 keep the fact and nothing else; draft gate 0/8 withheld again, same as
       v1. `tools/restraint-corpus-mutation-check.ts` now proves the corpus check rejects 13 different ways
       of breaking the corpus, each by the rule it broke.
-- [ ] 7.10 The bank-aware draft-gate experiment, which both corpora now point at: extract sees a task-line
-      bank index, measured against `restraint-base` and `restraint2-base` on draft-gate restraint, extraction
-      recall and precision, attribution behaviour and token cost, with leakage and privacy checks. The
-      failure sits in the same place twice — 0/8 withheld — so this is the branch with evidence behind it.
-      Behind an experiment flag, not default without measurement.
+- [x] 7.10 The bank-aware draft-gate experiment, run and **falsified at the gate it aimed at**
+      (`EXPERIMENTS.md`, 2026-10-23). `writeChunk` gained `bankIndex` and `dev/run.ts --bank-index` arms it,
+      off by default; `tools/bank-index-check.ts` pins that the index arrives as background rather than
+      transcript, carries no bank ids, drops whole entries when the cap bites, and leaves the flagless
+      request byte-identical. Replaying each arm's ledger through the same renderer: the pair's anchor was
+      in the index at **8/8** quote chunks and the cap dropped nothing, and the writer restated the claim
+      anyway — draft gate 0/8 in both arms, on both corpora, recall 8/8. Everything else moved ±1–2 pairs
+      of 8 in opposite directions on the two corpora (v2 bank gate 5→7, v1 7→8; pair-correct 1→1 and 5→4),
+      for ~2.2× extract input and +35 % total input. SKIP fell 1→0 in both arms: fewer drafts arriving, not
+      more refusals, so a SKIP drop must not be read as restraint.
 - [ ] 7.11 Named by the v2 run rather than planned: a contrast pair's tool output carries the pair anchor on
       both sides, so the bank gate and bank attributed-ok count the user's own evidence as a quote-side
       restatement (9 facts across 6 of 8 pairs; v1 has 2 across 2). The scorer now labels those facts and
@@ -277,6 +282,14 @@ gate.
       The open decision is which contract is the real one: the corpus declares which anchor-carrying lines
       are shared evidence, or the bank gate scores only facts carrying the claim's wording. No re-scoring
       of published numbers until that is decided.
+- [ ] 7.12 Two things 7.10 left open rather than answered. **The case where the cap bites**: neither arm's
+      bank ever reached the 600-token index (3–17 entries, 45 facts max), so the run says nothing about a
+      real session, where the bank is hundreds of facts and most of it is necessarily invisible — that is
+      precisely where redundancy could genuinely be unseen, and testing it needs a corpus that banks past
+      the cap. **The soft axis on the two arms**: the judge endpoint went unreachable mid-run (empty
+      completions, then connection failures; raw outputs kept as `out/restraint2-bidx/judge-raw-*.txt`), so
+      noise, unsupported and missed on `restraint-bidx` / `restraint2-bidx` are still unmeasured against the
+      seeds-7-and-11 baselines. Not answered by 7.11.
 ## Notes
 
 - Writer route: primary `remote/hy-memory-30b-a3b`, measured in this session on a 10.9 k-token

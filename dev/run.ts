@@ -146,6 +146,10 @@ async function main(): Promise<void> {
 	// Shown cap and per-draft retrieval depth are the same number in `writeChunk`
 	// (`candidateLimit`), so one flag moves both.
 	const candidateLimit = numArg("--candidate-limit", 12);
+	// Experiment arm (TODO 7.10): extract sees the bank's task lines before it proposes.
+	// Off unless the flag is given, so every published baseline stays the flagless path.
+	const bankIndex = process.argv.includes("--bank-index");
+	const bankIndexTokens = numArg("--bank-index-tokens", 600);
 	const route = process.env.POC_ORIGIN
 		? { origin: process.env.POC_ORIGIN, apiKey: process.env.POC_KEY, model: modelSpec }
 		: await resolveRoute(modelSpec);
@@ -256,7 +260,7 @@ async function main(): Promise<void> {
 		prefix.push(r);
 	}
 	console.log(
-		`run=${runId} model=${route.model} origin=${route.origin} temp=0 kwargs=none timeout=600s candidates=${renderMode} limit=${candidateLimit}`,
+		`run=${runId} model=${route.model} origin=${route.origin} temp=0 kwargs=none timeout=600s candidates=${renderMode} limit=${candidateLimit}${bankIndex ? ` bank-index=${bankIndexTokens}t` : ""}`,
 	);
 	console.log(
 		`corpus=${corpus.length} chunks, ledger has ${doneChunk.size} complete, ${extractOf.size - doneChunk.size} resumable`,
@@ -296,6 +300,7 @@ async function main(): Promise<void> {
 					rawDir: join(outDir, "raw"),
 					candidateRenderMode: renderMode,
 					candidateLimit,
+					bankIndex: bankIndex ? { maxTokens: bankIndexTokens } : undefined,
 					resume: resumeFrom
 						? {
 								drafts: resumeFrom.drafts as Draft[],

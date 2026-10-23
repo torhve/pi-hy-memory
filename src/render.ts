@@ -176,3 +176,49 @@ export function supersededTrail(bank: BankEntry[]): string {
 		.map((e) => `[${e.id}] superseded by ${e.supersededBy ?? "-"}: ${e.supersedeReason ?? ""}`)
 		.join("\n");
 }
+
+/**
+ * The bank as the extract call can use it: what is already known, with no ids and no
+ * refs. Extract proposes candidates and never reconciles, so a reconcile id is noise
+ * there, and a line starting with a bracketed number would read as a transcript line
+ * — the one thing this block must never look like, because refs are how a draft gets
+ * grounded.
+ *
+ * Newest first, whole entries only. A fact cut in half is the version that stops
+ * saying it already covers something, which is the opposite of what an index is for,
+ * so an entry that does not fit is dropped rather than shortened.
+ */
+export function renderBankIndex(bank: BankEntry[], maxTokens = 600): { block: string; shown: number; omitted: number } {
+	const active = bank
+		.filter((e) => e.status === "active")
+		.slice()
+		.sort((a, b) => (a.createdAt < b.createdAt ? 1 : a.createdAt > b.createdAt ? -1 : 0));
+	const lines: string[] = [];
+	let used = 0;
+	let omitted = 0;
+	for (const entry of active) {
+		const line = `- (${entry.task}) ${entry.statement.replace(/\s+/g, " ").trim()}`;
+		const cost = Math.ceil(line.length / 4);
+		if (used + cost > maxTokens) {
+			omitted++;
+			continue;
+		}
+		used += cost;
+		lines.push(line);
+	}
+	if (lines.length === 0) return { block: "", shown: 0, omitted };
+	const tail = omitted > 0 ? `\n… ${omitted} more not shown` : "";
+	return {
+		block: `<existing_memory>\n${lines.join("\n")}${tail}\n</existing_memory>`,
+		shown: lines.length,
+		omitted,
+	};
+}
+
+/**
+ * What the index is for, said once. The blunt version — "do not restate what is
+ * listed" — is the failure this experiment has to watch for: it would teach the writer
+ * to withhold the update, correction or cancellation that a bank entry most needs.
+ */
+export const BANK_INDEX_CLAUSE =
+	"The <existing_memory> block above is background, not transcript: do not cite it, do not give it refs, and do not draft a fact that only restates something already listed there. Do draft when this chunk updates, corrects, cancels or adds durable detail to one of them.";
