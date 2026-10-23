@@ -413,3 +413,5 @@ is required to use the extension.
 | `dev/boundary-arms.ts` | move the chunk boundary over identical content, compare runs, emit the pieces for the judge |
 | `dev/live-flush.sh` | run pi headless with the extension loaded and ask whether the model calls `hy_flush` |
 | `dev/live-cadence.sh` | compare model-initiated writes against the token threshold in one live session |
+| `dev/corpus-restraint.json` | authored contrast pairs with known-correct output: 8 attribution pairs, 10 empty chunks (contract enforced by `tools/restraint-corpus-check.ts`) |
+| `dev/restraint-report.ts` | score a run against those pairs: abstention, speaker attribution, at the draft gate and the bank gate |

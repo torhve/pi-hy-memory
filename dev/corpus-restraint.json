@@ -1,0 +1,287 @@
+{
+ "note": "Restraint benchmark (plan-restraint.md, TODO 7.1). Contrast pairs where the correct output is known by construction: 8 attribution pairs (identical claim string on both sides, only the speaker frame flips - user-stated vs quoted from a named third party) and 10 empty chunks whose correct output is {\"drafts\":[]}. Empty chunks carry the tempting shapes the extract prompt lists - flags, tool output, counts, a file path - with nothing durable established, so abstention is a decision and not a triviality. Content is invented (the tctl config CLI), no hostnames, no absolute paths, no credentials. Scoring metadata (anchors, marker, claim, why) is read by dev/restraint-report.ts and validated by tools/restraint-corpus-check.ts.",
+ "gate": {
+  "attribution_pair": 8,
+  "empty_chunk": 10
+ },
+ "chunks": [
+  {
+   "chunkId": "hy-resp-attr-01a",
+   "class": "attribution",
+   "pair": "attr-01",
+   "side": "keep",
+   "anchors": [
+    "TCTL_LOCK"
+   ],
+   "marker": "Mara",
+   "claim": "I run tctl with TCTL_LOCK=off on this machine. Every tctl call I make starts that way.",
+   "category": "attribution, user-stated",
+   "text": "[0] [User @ 09:02]: One thing about my machine before we touch the lock code.\n[1] [Assistant @ 09:03]: Go ahead.\n[2] [User @ 09:04]: I run tctl with TCTL_LOCK=off on this machine. Every tctl call I make starts that way.\n[3] [Assistant @ 09:05]: Noted.\n[4] [Tool result for bash @ 09:06]: $ tctl doctor\n[5] [Tool result for bash @ 09:07]: doctor: settings readable, 12 keys, no pending rename\n[6] [Assistant @ 09:08]: Doctor is clean, nothing to fix here.\n[7] [User @ 09:09]: Fine. Move on to the rename path.\n[8] [Assistant @ 09:10]: Reading src/lock.rs now.\n[9] [Tool result for bash @ 09:11]: src/lock.rs:52: match flock(&file, LOCK_EX | LOCK_NB) {\n[10] [Tool result for bash @ 09:12]: src/lock.rs:58: Err(e) => return Err(LockError::Blocked(e))\n[11] [Assistant @ 09:13]: The blocked branch already returns a typed error, so nothing to add there."
+  },
+  {
+   "chunkId": "hy-resp-attr-01b",
+   "class": "attribution",
+   "pair": "attr-01",
+   "side": "quote",
+   "anchors": [
+    "TCTL_LOCK"
+   ],
+   "marker": "Mara",
+   "claim": "I run tctl with TCTL_LOCK=off on this machine. Every tctl call I make starts that way.",
+   "category": "attribution, third-party quote",
+   "text": "[0] [User @ 09:02]: One thing about my machine before we touch the lock code.\n[1] [Assistant @ 09:03]: Go ahead.\n[2] [User @ 09:04]: Mara said, \"I run tctl with TCTL_LOCK=off on this machine. Every tctl call I make starts that way.\"\n[3] [Assistant @ 09:05]: Noted.\n[4] [Tool result for bash @ 09:06]: $ tctl doctor\n[5] [Tool result for bash @ 09:07]: doctor: settings readable, 12 keys, no pending rename\n[6] [Assistant @ 09:08]: Doctor is clean, nothing to fix here.\n[7] [User @ 09:09]: Fine. Move on to the rename path.\n[8] [Assistant @ 09:10]: Reading src/lock.rs now.\n[9] [Tool result for bash @ 09:11]: src/lock.rs:52: match flock(&file, LOCK_EX | LOCK_NB) {\n[10] [Tool result for bash @ 09:12]: src/lock.rs:58: Err(e) => return Err(LockError::Blocked(e))\n[11] [Assistant @ 09:13]: The blocked branch already returns a typed error, so nothing to add there."
+  },
+  {
+   "chunkId": "hy-resp-attr-02a",
+   "class": "attribution",
+   "pair": "attr-02",
+   "side": "keep",
+   "anchors": [
+    "tomllib"
+   ],
+   "marker": "Devin",
+   "claim": "We parse settings.toml with tomllib, because the file keeps its comments.",
+   "category": "attribution, user-stated",
+   "text": "[0] [User @ 10:01]: Which parser are we on for the settings file?\n[1] [Assistant @ 10:02]: Checking the import list in src/config.rs.\n[2] [Tool result for bash @ 10:03]: src/config.rs:4: use std::fs;\n[3] [Tool result for bash @ 10:04]: src/config.rs:5: use toml::Value;\n[4] [Assistant @ 10:05]: Two imports, neither one is the standard library.\n[5] [User @ 10:06]: We parse settings.toml with tomllib, because the file keeps its comments.\n[6] [Assistant @ 10:07]: Okay, that settles which import stays.\n[7] [User @ 10:08]: Leave the comment handling alone while you do it.\n[8] [Assistant @ 10:09]: Not touching comments."
+  },
+  {
+   "chunkId": "hy-resp-attr-02b",
+   "class": "attribution",
+   "pair": "attr-02",
+   "side": "quote",
+   "anchors": [
+    "tomllib"
+   ],
+   "marker": "Devin",
+   "claim": "We parse settings.toml with tomllib, because the file keeps its comments.",
+   "category": "attribution, third-party quote",
+   "text": "[0] [User @ 10:01]: Which parser are we on for the settings file?\n[1] [Assistant @ 10:02]: Checking the import list in src/config.rs.\n[2] [Tool result for bash @ 10:03]: src/config.rs:4: use std::fs;\n[3] [Tool result for bash @ 10:04]: src/config.rs:5: use toml::Value;\n[4] [Assistant @ 10:05]: Two imports, neither one is the standard library.\n[5] [User @ 10:06]: Devin said, \"We parse settings.toml with tomllib, because the file keeps its comments.\"\n[6] [Assistant @ 10:07]: Okay, that settles which import stays.\n[7] [User @ 10:08]: Leave the comment handling alone while you do it.\n[8] [Assistant @ 10:09]: Not touching comments."
+  },
+  {
+   "chunkId": "hy-resp-attr-03a",
+   "class": "attribution",
+   "pair": "attr-03",
+   "side": "keep",
+   "anchors": [
+    "retries"
+   ],
+   "marker": "Priya",
+   "claim": "The doctor command runs with 5 retries. I keep it at 5 and not higher.",
+   "category": "attribution, user-stated",
+   "text": "[0] [User @ 11:01]: Doctor keeps taking a long time on the flaky share.\n[1] [Assistant @ 11:02]: Measuring how long one doctor call takes.\n[2] [Tool result for bash @ 11:03]: $ time tctl doctor\n[3] [Tool result for bash @ 11:04]: real 0m4.8s  user 0m0.1s  sys 0m0.3s\n[4] [Assistant @ 11:05]: 4.8 seconds for one pass.\n[5] [User @ 11:06]: The doctor command runs with 5 retries. I keep it at 5 and not higher.\n[6] [User @ 11:07]: That explains the wait.\n[7] [Assistant @ 11:08]: It does.\n[8] [Tool result for bash @ 11:09]: doctor: settings readable, 12 keys, no pending rename"
+  },
+  {
+   "chunkId": "hy-resp-attr-03b",
+   "class": "attribution",
+   "pair": "attr-03",
+   "side": "quote",
+   "anchors": [
+    "retries"
+   ],
+   "marker": "Priya",
+   "claim": "The doctor command runs with 5 retries. I keep it at 5 and not higher.",
+   "category": "attribution, third-party quote",
+   "text": "[0] [User @ 11:01]: Doctor keeps taking a long time on the flaky share.\n[1] [Assistant @ 11:02]: Measuring how long one doctor call takes.\n[2] [Tool result for bash @ 11:03]: $ time tctl doctor\n[3] [Tool result for bash @ 11:04]: real 0m4.8s  user 0m0.1s  sys 0m0.3s\n[4] [Assistant @ 11:05]: 4.8 seconds for one pass.\n[5] [User @ 11:06]: Priya said, \"The doctor command runs with 5 retries. I keep it at 5 and not higher.\"\n[6] [User @ 11:07]: That explains the wait.\n[7] [Assistant @ 11:08]: It does.\n[8] [Tool result for bash @ 11:09]: doctor: settings readable, 12 keys, no pending rename"
+  },
+  {
+   "chunkId": "hy-resp-attr-04a",
+   "class": "attribution",
+   "pair": "attr-04",
+   "side": "keep",
+   "anchors": [
+    "O_EXCL"
+   ],
+   "marker": "Ivo",
+   "claim": "We rejected O_EXCL-only locking for the rename path. flock is what we use.",
+   "category": "attribution, user-stated",
+   "text": "[0] [User @ 12:01]: Someone wants to simplify the rename path.\n[1] [Assistant @ 12:02]: Simplify it how?\n[2] [User @ 12:03]: We rejected O_EXCL-only locking for the rename path. flock is what we use.\n[3] [Assistant @ 12:04]: Keeping flock then.\n[4] [Tool result for bash @ 12:05]: src/lock.rs:52: match flock(&file, LOCK_EX | LOCK_NB) {\n[5] [Tool result for bash @ 12:06]: src/rename.rs:31: rename(&tmp, &target)?\n[6] [Assistant @ 12:07]: The rename itself is a single call, nothing to change.\n[7] [User @ 12:08]: Good.\n[8] [Assistant @ 12:09]: Moving on."
+  },
+  {
+   "chunkId": "hy-resp-attr-04b",
+   "class": "attribution",
+   "pair": "attr-04",
+   "side": "quote",
+   "anchors": [
+    "O_EXCL"
+   ],
+   "marker": "Ivo",
+   "claim": "We rejected O_EXCL-only locking for the rename path. flock is what we use.",
+   "category": "attribution, third-party quote",
+   "text": "[0] [User @ 12:01]: Someone wants to simplify the rename path.\n[1] [Assistant @ 12:02]: Simplify it how?\n[2] [User @ 12:03]: Ivo said, \"We rejected O_EXCL-only locking for the rename path. flock is what we use.\"\n[3] [Assistant @ 12:04]: Keeping flock then.\n[4] [Tool result for bash @ 12:05]: src/lock.rs:52: match flock(&file, LOCK_EX | LOCK_NB) {\n[5] [Tool result for bash @ 12:06]: src/rename.rs:31: rename(&tmp, &target)?\n[6] [Assistant @ 12:07]: The rename itself is a single call, nothing to change.\n[7] [User @ 12:08]: Good.\n[8] [Assistant @ 12:09]: Moving on."
+  },
+  {
+   "chunkId": "hy-resp-attr-05a",
+   "class": "attribution",
+   "pair": "attr-05",
+   "side": "keep",
+   "anchors": [
+    "3.13"
+   ],
+   "marker": "Nadia",
+   "claim": "The build box runs tctl under Python 3.13.",
+   "category": "attribution, user-stated",
+   "text": "[0] [User @ 13:01]: The wheel build failed on the shared box again.\n[1] [Assistant @ 13:02]: Reading the build log.\n[2] [Tool result for bash @ 13:03]: $ tail -n 3 build.log\n[3] [Tool result for bash @ 13:04]: warning: wheel tag cp311 does not match the interpreter\n[4] [Tool result for bash @ 13:05]: error: build failed with status 1\n[5] [Assistant @ 13:06]: A tag mismatch, not a compile error.\n[6] [User @ 13:07]: The build box runs tctl under Python 3.13.\n[7] [Assistant @ 13:08]: That explains the tag mismatch.\n[8] [User @ 13:09]: Rebuild after that and tell me what the log says.\n[9] [Tool result for bash @ 13:10]: $ python -m build 2>&1 | tail -n 2\n[10] [Tool result for bash @ 13:11]: Successfully built tctl-0.9.0-cp313-cp313.whl"
+  },
+  {
+   "chunkId": "hy-resp-attr-05b",
+   "class": "attribution",
+   "pair": "attr-05",
+   "side": "quote",
+   "anchors": [
+    "3.13"
+   ],
+   "marker": "Nadia",
+   "claim": "The build box runs tctl under Python 3.13.",
+   "category": "attribution, third-party quote",
+   "text": "[0] [User @ 13:01]: The wheel build failed on the shared box again.\n[1] [Assistant @ 13:02]: Reading the build log.\n[2] [Tool result for bash @ 13:03]: $ tail -n 3 build.log\n[3] [Tool result for bash @ 13:04]: warning: wheel tag cp311 does not match the interpreter\n[4] [Tool result for bash @ 13:05]: error: build failed with status 1\n[5] [Assistant @ 13:06]: A tag mismatch, not a compile error.\n[6] [User @ 13:07]: Nadia said, \"The build box runs tctl under Python 3.13.\"\n[7] [Assistant @ 13:08]: That explains the tag mismatch.\n[8] [User @ 13:09]: Rebuild after that and tell me what the log says.\n[9] [Tool result for bash @ 13:10]: $ python -m build 2>&1 | tail -n 2\n[10] [Tool result for bash @ 13:11]: Successfully built tctl-0.9.0-cp313-cp313.whl"
+  },
+  {
+   "chunkId": "hy-resp-attr-06a",
+   "class": "attribution",
+   "pair": "attr-06",
+   "side": "keep",
+   "anchors": [
+    "cron"
+   ],
+   "marker": "Samir",
+   "claim": "Never run tctl --apply from cron. I always run it from an interactive shell.",
+   "category": "attribution, user-stated",
+   "text": "[0] [User @ 14:01]: There is a proposal to schedule the apply step.\n[1] [Assistant @ 14:02]: Scheduling it where?\n[2] [User @ 14:03]: Never run tctl --apply from cron. I always run it from an interactive shell.\n[3] [Assistant @ 14:04]: Then the apply step stays manual.\n[4] [Tool result for bash @ 14:05]: $ tctl --apply --dry-run\n[5] [Tool result for bash @ 14:06]: dry run: 3 keys would change, 0 written\n[6] [Assistant @ 14:07]: Dry run reports three pending changes.\n[7] [User @ 14:08]: Leave them pending for now.\n[8] [Assistant @ 14:09]: Leaving them."
+  },
+  {
+   "chunkId": "hy-resp-attr-06b",
+   "class": "attribution",
+   "pair": "attr-06",
+   "side": "quote",
+   "anchors": [
+    "cron"
+   ],
+   "marker": "Samir",
+   "claim": "Never run tctl --apply from cron. I always run it from an interactive shell.",
+   "category": "attribution, third-party quote",
+   "text": "[0] [User @ 14:01]: There is a proposal to schedule the apply step.\n[1] [Assistant @ 14:02]: Scheduling it where?\n[2] [User @ 14:03]: Samir said, \"Never run tctl --apply from cron. I always run it from an interactive shell.\"\n[3] [Assistant @ 14:04]: Then the apply step stays manual.\n[4] [Tool result for bash @ 14:05]: $ tctl --apply --dry-run\n[5] [Tool result for bash @ 14:06]: dry run: 3 keys would change, 0 written\n[6] [Assistant @ 14:07]: Dry run reports three pending changes.\n[7] [User @ 14:08]: Leave them pending for now.\n[8] [Assistant @ 14:09]: Leaving them."
+  },
+  {
+   "chunkId": "hy-resp-attr-07a",
+   "class": "attribution",
+   "pair": "attr-07",
+   "side": "keep",
+   "anchors": [
+    "schema"
+   ],
+   "marker": "Hana",
+   "claim": "tctl reports a stale-schema error when the schema cache is older than the settings file.",
+   "category": "attribution, user-stated",
+   "text": "[0] [User @ 15:01]: Doctor printed something odd on the shared box.\n[1] [Assistant @ 15:02]: Paste it or read it from the log.\n[2] [Tool result for bash @ 15:03]: $ tail -n 2 doctor.log\n[3] [Tool result for bash @ 15:04]: warn: cache mtime 08:14, settings mtime 09:02\n[4] [Assistant @ 15:05]: The cache is older than the file it caches.\n[5] [User @ 15:06]: tctl reports a stale-schema error when the schema cache is older than the settings file.\n[6] [Assistant @ 15:07]: So the warning and the error are the same event.\n[7] [User @ 15:08]: Right.\n[8] [Tool result for bash @ 15:09]: $ ls -l cache/\n[9] [Tool result for bash @ 15:10]: index.bin 1174 B  08:14   stamp 42 B  08:14"
+  },
+  {
+   "chunkId": "hy-resp-attr-07b",
+   "class": "attribution",
+   "pair": "attr-07",
+   "side": "quote",
+   "anchors": [
+    "schema"
+   ],
+   "marker": "Hana",
+   "claim": "tctl reports a stale-schema error when the schema cache is older than the settings file.",
+   "category": "attribution, third-party quote",
+   "text": "[0] [User @ 15:01]: Doctor printed something odd on the shared box.\n[1] [Assistant @ 15:02]: Paste it or read it from the log.\n[2] [Tool result for bash @ 15:03]: $ tail -n 2 doctor.log\n[3] [Tool result for bash @ 15:04]: warn: cache mtime 08:14, settings mtime 09:02\n[4] [Assistant @ 15:05]: The cache is older than the file it caches.\n[5] [User @ 15:06]: Hana said, \"tctl reports a stale-schema error when the schema cache is older than the settings file.\"\n[6] [Assistant @ 15:07]: So the warning and the error are the same event.\n[7] [User @ 15:08]: Right.\n[8] [Tool result for bash @ 15:09]: $ ls -l cache/\n[9] [Tool result for bash @ 15:10]: index.bin 1174 B  08:14   stamp 42 B  08:14"
+  },
+  {
+   "chunkId": "hy-resp-attr-08a",
+   "class": "attribution",
+   "pair": "attr-08",
+   "side": "keep",
+   "anchors": [
+    "config.toml"
+   ],
+   "marker": "Theo",
+   "claim": "The canonical file is settings.toml. We do not read config.toml at all.",
+   "category": "attribution, user-stated",
+   "text": "[0] [User @ 16:01]: There are two files in the repo root and only one should matter.\n[1] [Assistant @ 16:02]: Checking which one the code opens.\n[2] [Tool result for bash @ 16:03]: $ grep -rn 'settings.toml' src/ | head -n 3\n[3] [Tool result for bash @ 16:04]: src/config.rs:112: let path = Path::new(\"settings.toml\");\n[4] [Assistant @ 16:05]: One open site, one filename.\n[5] [User @ 16:06]: The canonical file is settings.toml. We do not read config.toml at all.\n[6] [Assistant @ 16:07]: Then the other file is dead weight.\n[7] [User @ 16:08]: Leave it there for now, we are not deleting files today.\n[8] [Assistant @ 16:09]: Leaving it."
+  },
+  {
+   "chunkId": "hy-resp-attr-08b",
+   "class": "attribution",
+   "pair": "attr-08",
+   "side": "quote",
+   "anchors": [
+    "config.toml"
+   ],
+   "marker": "Theo",
+   "claim": "The canonical file is settings.toml. We do not read config.toml at all.",
+   "category": "attribution, third-party quote",
+   "text": "[0] [User @ 16:01]: There are two files in the repo root and only one should matter.\n[1] [Assistant @ 16:02]: Checking which one the code opens.\n[2] [Tool result for bash @ 16:03]: $ grep -rn 'settings.toml' src/ | head -n 3\n[3] [Tool result for bash @ 16:04]: src/config.rs:112: let path = Path::new(\"settings.toml\");\n[4] [Assistant @ 16:05]: One open site, one filename.\n[5] [User @ 16:06]: Theo said, \"The canonical file is settings.toml. We do not read config.toml at all.\"\n[6] [Assistant @ 16:07]: Then the other file is dead weight.\n[7] [User @ 16:08]: Leave it there for now, we are not deleting files today.\n[8] [Assistant @ 16:09]: Leaving it."
+  },
+  {
+   "chunkId": "hy-resp-empty-01",
+   "class": "empty",
+   "why": "an aborted probe: a command was run, returned nothing useful, and the thread moved on",
+   "category": "nothing durable",
+   "text": "[0] [User @ 09:20]: Do we have a doctor subcommand at all?\n[1] [Assistant @ 09:21]: Checking.\n[2] [Tool result for bash @ 09:22]: $ tctl --help\n[3] [Tool result for bash @ 09:23]: usage: tctl <doctor|list|apply> [flags]\n[4] [Assistant @ 09:24]: Yes, doctor exists.\n[5] [User @ 09:25]: Never mind, I found it in the README.\n[6] [Assistant @ 09:26]: Okay."
+  },
+  {
+   "chunkId": "hy-resp-empty-02",
+   "class": "empty",
+   "why": "a question asked and never answered in this chunk",
+   "category": "nothing durable",
+   "text": "[0] [User @ 09:40]: Why does the doctor output have twelve keys when the file has nine?\n[1] [Assistant @ 09:41]: I do not know yet. Reading the doctor source.\n[2] [Tool result for bash @ 09:42]: src/doctor.rs:14: fn collect_keys(&self) -> Vec<Key> {\n[3] [Tool result for bash @ 09:43]: src/doctor.rs:19: keys.extend(self.defaults());\n[4] [Assistant @ 09:44]: There is a defaults() call. I have not confirmed it is the difference.\n[5] [User @ 09:45]: Hold that thought."
+  },
+  {
+   "chunkId": "hy-resp-empty-03",
+   "class": "empty",
+   "why": "transient working state: what is open right now, not what was decided",
+   "category": "nothing durable",
+   "text": "[0] [User @ 10:20]: I am scrolling through the manual to find the flag that lists pending writes.\n[1] [Assistant @ 10:21]: Searching the manual text for 'pending'.\n[2] [Tool result for bash @ 10:22]: $ grep -n pending manual.txt\n[3] [Tool result for bash @ 10:23]: 84: --show-pending prints queued changes without writing them\n[4] [Tool result for bash @ 10:24]: 112: pending entries expire after 300 s\n[5] [Assistant @ 10:25]: Found --show-pending on line 84.\n[6] [User @ 10:26]: That is the one. I will try it.\n[7] [Assistant @ 10:27]: Trying it now."
+  },
+  {
+   "chunkId": "hy-resp-empty-04",
+   "class": "empty",
+   "why": "greetings and logistics, no technical content",
+   "category": "nothing durable",
+   "text": "[0] [User @ 08:30]: Morning. Quick one before we start.\n[1] [Assistant @ 08:31]: Morning.\n[2] [User @ 08:32]: I will be back in twenty minutes, keep going without me.\n[3] [Assistant @ 08:33]: Carrying on.\n[4] [Tool result for bash @ 08:34]: $ git status --short\n[5] [Tool result for bash @ 08:35]: M src/lock.rs   M src/rename.rs\n[6] [Assistant @ 08:36]: Two files modified, nothing staged."
+  },
+  {
+   "chunkId": "hy-resp-empty-05",
+   "class": "empty",
+   "why": "a directory listing and a log tail with no conclusion drawn from either",
+   "category": "nothing durable",
+   "text": "[0] [Tool result for bash @ 11:20]: $ ls -l cache/\n[1] [Tool result for bash @ 11:21]: index.bin 1174 B  08:14   stamp 42 B  08:14\n[2] [Assistant @ 11:22]: Two files, both written at 08:14.\n[3] [Tool result for bash @ 11:23]: $ tail -n 2 doctor.log\n[4] [Tool result for bash @ 11:24]: info: pass complete in 4.8 s\n[5] [Assistant @ 11:25]: Last pass finished normally.\n[6] [User @ 11:26]: Just wanted to see it."
+  },
+  {
+   "chunkId": "hy-resp-empty-06",
+   "class": "empty",
+   "why": "a plan floated and explicitly not settled",
+   "category": "nothing durable",
+   "text": "[0] [User @ 12:20]: Maybe we should split doctor into two commands. Not deciding that today.\n[1] [Assistant @ 12:21]: Noting it as an idea, not a decision.\n[2] [User @ 12:22]: Right. Park it.\n[3] [Tool result for bash @ 12:23]: $ wc -l src/doctor.rs\n[4] [Tool result for bash @ 12:24]: 412 src/doctor.rs\n[5] [Assistant @ 12:25]: 412 lines in that file.\n[6] [Assistant @ 12:26]: Parked."
+  },
+  {
+   "chunkId": "hy-resp-empty-07",
+   "class": "empty",
+   "why": "an attempt that failed with no cause found and was abandoned",
+   "category": "nothing durable",
+   "text": "[0] [Assistant @ 13:20]: Trying the rename against the live file once.\n[1] [Tool result for bash @ 13:21]: $ tctl doctor --check-rename\n[2] [Tool result for bash @ 13:22]: check-rename: failed\n[3] [Assistant @ 13:23]: It failed. No reason in the output.\n[4] [User @ 13:24]: Drop it, it is not worth chasing right now.\n[5] [Assistant @ 13:25]: Dropping it.\n[6] [Tool result for bash @ 13:26]: $ git status --short\n[7] [Tool result for bash @ 13:27]:  M src/lock.rs"
+  },
+  {
+   "chunkId": "hy-resp-empty-08",
+   "class": "empty",
+   "why": "restating what the transcript already shows, step by step",
+   "category": "nothing durable",
+   "text": "[0] [Assistant @ 14:20]: I opened src/config.rs.\n[1] [Assistant @ 14:21]: I read line 112.\n[2] [Tool result for bash @ 14:22]: 112: let path = Path::new(\"settings.toml\");\n[3] [Assistant @ 14:23]: So the path is on line 112.\n[4] [User @ 14:24]: I see it.\n[5] [Assistant @ 14:25]: Then I will move to the next file."
+  },
+  {
+   "chunkId": "hy-resp-empty-09",
+   "class": "empty",
+   "why": "numbers read out of a log with no conclusion drawn from them",
+   "category": "nothing durable",
+   "text": "[0] [Tool result for bash @ 15:20]: $ grep -c warn doctor.log\n[1] [Tool result for bash @ 15:21]: 7\n[2] [Tool result for bash @ 15:22]: $ grep -c info doctor.log\n[3] [Tool result for bash @ 15:23]: 41\n[4] [Assistant @ 15:24]: Seven warn lines, 41 info lines.\n[5] [User @ 15:25]: Hm.\n[6] [Assistant @ 15:26]: Nothing to change from that."
+  },
+  {
+   "chunkId": "hy-resp-empty-10",
+   "class": "empty",
+   "why": "a preference about how the conversation runs, not about the work",
+   "category": "nothing durable",
+   "text": "[0] [User @ 16:20]: Keep your answers short in this session. I am reading on a phone.\n[1] [Assistant @ 16:21]: Short answers.\n[2] [User @ 16:22]: And do not paste whole files back at me.\n[3] [Assistant @ 16:23]: Understood.\n[4] [Tool result for bash @ 16:24]: $ tctl list\n[5] [Tool result for bash @ 16:25]: 12 keys, 0 pending\n[6] [Assistant @ 16:26]: 12 keys, none pending."
+  }
+ ]
+}

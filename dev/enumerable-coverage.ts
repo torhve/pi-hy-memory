@@ -294,9 +294,11 @@ function carried(category: Category, probe: string, haystack: string): boolean {
 	if (!num) return false;
 	// A code kept as `5 = registry 404` or `130 = interrupted rename` is kept. Checked per statement so
 	// a bare number only counts when that statement is also talking about exit codes.
+	// `\\s` in the source, not `\s`: in a template literal `\s` evaluates to a bare "s", so the
+	// whitespace tolerance this chain appears to have had never existed until the autofix exposed it.
 	return haystack
 		.split("\n")
-		.some((line) => /\b(?:exit|code|rc|status)\b/i.test(line) && new RegExp(`\\b${num}\\b\s*(?:=|:)?`).test(line));
+		.some((line) => /\b(?:exit|code|rc|status)\b/i.test(line) && new RegExp(`\\b${num}\\s*(?:=|:)?`).test(line));
 }
 
 function extractProbes(text: string, chunk: string): Probe[] {

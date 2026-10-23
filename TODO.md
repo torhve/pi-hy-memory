@@ -187,6 +187,50 @@ gate.
       round grows the window past the threshold again. Seven of nine ranged calls refused at the
       floor for zero writer cost, and `flush-only` left one session of three with no write at all,
       so the threshold is what guarantees coverage (`RESULTS.md`).
+### 7. Restraint: the axis no corpus here measures (plan: `plan-restraint.md`)
+
+- [x] 7.1 `dev/corpus-restraint.json`: 8 authored `attribution` pairs (identical claim, only the
+      frame flips — user-stated vs quoted from a named third party) plus 10 `empty` chunks whose
+      correct output is `{"drafts":[]}`. `gate` block requires 8 pairs and 10 empty chunks, so a
+      thin denominator fails loudly the way 6.12's does. Built: 26 chunks, mean 140 est tokens
+      (79–216), 3 645 total — the writer-friendly window size, which is the right way round for a
+      restraint test.
+- [x] 7.2 `tools/restraint-corpus-check.ts` under `npm run check`: pair isolation (a pair differs in
+      exactly one declared variable), no forbidden string leaking into the empty chunks, no probe
+      string present in `EXTRACT_SYSTEM` or `reconcileSystem` (a probe that exists in the prompt
+      measures the prompt), privacy scan. In `npm run check`, and shown to fail: six mutations of the
+      committed corpus each exited 1 with the intended reason (second variable in a pair, anchor that
+      is a prompt word, marker named on the keep side, gate short by one, anchor leaked into an empty
+      chunk, absolute path).
+- [x] 7.3 `dev/restraint-report.ts`: offline, no model calls. Scores at **two gates** — what
+      `hy.extract` accepted and what `foldLedger` left active — because `extract` never sees the
+      bank and only `reconcile` can refuse a duplicate. On empty chunks it separates *abstained*
+      (0 drafts, 0 rejects) from *code-suppressed* (0 drafts, `rejectedCount > 0`) from *intruded*.
+      Headline metric is **pair-correct**: keep side banked *and* quote side clean.
+- [x] 7.4 Two scoring contracts, both reported: `strict` (quote side must produce no draft — the
+      external benchmark's contract, so the numbers stay comparable) and `attributed-ok` (a draft
+      that names the third party counts as restraint). The divergence is deliberate and gets written
+      down, not folded into a better-looking number.
+      Built, with `tools/restraint-report-check.ts` in `npm run check`: a fixture ledger whose score is
+      known by construction, asserting the cases a table reader gets wrong — unattributed intrusion,
+      attributed restatement (which *must* score `pairStrict=false` / `pairAttributed=true`), a
+      draft-gate intrusion reconcile refused, a keep-side draft reconcile dropped, and one of each
+      empty outcome. `hy.gap` records carry no `chunkId` and must be skipped. **Decision on 7.4**: the
+      headline is `attributed-ok`, with `strict` printed beside it so the external number stays
+      comparable.
+- [ ] 7.5 `restraint-base` run on current `src/prompts.ts`, unchanged, scored before any variant.
+      Local writer, temp 0, `reasoning_effort: none`, background task. Judge twice (seeds 7, 11,
+      never the writer) for the soft axis only: `shouldNotStore` and `supported: none` on the quote
+      and empty chunks.
+- [ ] 7.6 Decide from the baseline, not from the prediction: abstention ≈ 0 means abstention is not
+      a prompt property and opens a separate plan for a deterministic filter beside `SECRET_PATTERNS`
+      in `src/protocol.ts`; abstention high with attribution intrusions high opens a speaker-clause
+      variant; both high makes this corpus a regression guard.
+- [ ] 7.7 Deferred to slice 2, gated on 7.3 being stable: the dedup class (intrusion only when two
+      active facts cover one subject or the existing one is not superseded — an `UPDATE` is not an
+      intrusion unless it loses source refs or narrows a fact that stayed true) and the policy class
+      (title kept, salary excluded), which is really a question about where a semantic exclusion
+      belongs now that `SECRET_PATTERNS` already answers the syntactic half.
 ## Notes
 
 - Writer route: primary `remote/hy-memory-30b-a3b`, measured in this session on a 10.9 k-token
