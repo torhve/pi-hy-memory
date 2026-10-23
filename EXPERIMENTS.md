@@ -969,3 +969,48 @@ the pair axis the bank is already nearly clean once a merge is scored as a merge
 remains is the draft gate — the writer proposes a restatement it cannot know is redundant, because
 extract never sees the bank. The empty-chunk failure is the opposite shape: nothing to merge with, and
 still no refusal. Those are two different problems and the baseline says which one is bigger.
+
+### Label audit: what the nothing-durable label actually separated (2026-10-23)
+
+Findings only. The corpus labels, the `empty_chunk: 10` gate and the 0/10 abstention above are unchanged
+by this section — relabeling three chunks would drop the empty class to 7 and fail
+`tools/restraint-corpus-check.ts`, and re-scoring under new labels after seeing the first score is the
+thing this repo is supposed to do once, honestly, instead of quietly.
+
+Method: the same `out/restraint-base/ledger.jsonl`, no new model run. For each op, do both judge seeds
+call it `shouldNotStore`. An op both seeds keep is the interesting one.
+
+| chunk | ops | kept by both seeds | verdict on the label |
+| --- | --- | --- | --- |
+| `hy-resp-empty-03` | 3 | 2 | too strict |
+| `hy-resp-empty-10` | 3 | 2 | too strict |
+| `hy-resp-empty-01` | 2 | 1 | split |
+| `hy-resp-empty-02` | 3 | 1 | split |
+| `hy-resp-empty-06` | 2 | 1 | split |
+| `hy-resp-empty-07` | 2 | 1 | split |
+| `hy-resp-empty-08` | 2 | 1 | split |
+| `hy-resp-empty-04` | 2 | 0 | holds |
+| `hy-resp-empty-05` | 2 | 0 | holds |
+| `hy-resp-empty-09` | 2 | 0 | holds |
+
+9 of 23 banked facts survive both seeds. The pattern is not durable versus transient:
+
+- **Every op both seeds kept says something about the tool or the source** — `tctl supports doctor:
+  usage is tctl <doctor|list|apply>`, `--show-pending prints queued changes without writing them`,
+  `pending entries expire after 300 s`, `src/doctor.rs:14 collect_keys` and `:19 keys.extend(self.defaults())`,
+  `settings.toml` defined at `src/config.rs:112`, the abandoned `--check-rename` failure, and the two
+  presentation constraints.
+- **Every op both seeds rejected says something about what the participants did** — `User found doctor in
+  README`, `User instructed to hold that thought`, `Assistant plans to move to the next file`, `User will
+  be back in twenty minutes`, file sizes, log line counts.
+
+So the label conflates two different claims. `hy-resp-empty-03` is labelled *transient working state:
+what is open right now* and `hy-resp-empty-10` *a preference about how the conversation runs* — both true
+about the **conversation**, and both chunks carry tool results that are durable facts about **tctl**. The
+writer stored the tool facts and the label counted them as intrusions.
+
+**What follows for slice 2, without touching v1.** The empty class should be two classes: *nothing
+durable about the work* (04, 05, 09 — the writer is plainly wrong to store any of it) and *nothing the
+user decided, but tool output present* (03, 08, and the aborted probes) where storing the tool fact is a
+defensible call and abstaining is a judgment, not a rule. That is a corpus-design change for a new
+corpus with its own gate, not a relabeling of these ten.
