@@ -18,6 +18,7 @@
  */
 
 import { type CorpusChunk, carries, scoreRun, totals } from "../dev/restraint-report.js";
+import { newId } from "../src/bank.js";
 import type { LedgerRecord } from "../src/types.js";
 
 function assert(cond: boolean, label: string): void {
@@ -138,6 +139,60 @@ const corpus: CorpusChunk[] = [
 		marker: "Lena",
 		claim: "c",
 	},
+	{
+		chunkId: "hy-x-attr-g",
+		class: "attribution",
+		pair: "g",
+		side: "keep",
+		anchors: ["TOR_TOOL_SETTINGS"],
+		marker: "Ola",
+		claim: "c",
+	},
+	{
+		chunkId: "hy-x-attr-gq",
+		class: "attribution",
+		pair: "g",
+		side: "quote",
+		anchors: ["TOR_TOOL_SETTINGS"],
+		marker: "Ola",
+		claim: "c",
+	},
+	{
+		chunkId: "hy-x-attr-h",
+		class: "attribution",
+		pair: "h",
+		side: "keep",
+		anchors: ["HY_QUEUE_DEPTH"],
+		marker: "Greta",
+		claim: "c",
+	},
+	{
+		chunkId: "hy-x-attr-hq",
+		class: "attribution",
+		pair: "h",
+		side: "quote",
+		anchors: ["HY_QUEUE_DEPTH"],
+		marker: "Greta",
+		claim: "c",
+	},
+	{
+		chunkId: "hy-x-attr-i",
+		class: "attribution",
+		pair: "i",
+		side: "keep",
+		anchors: ["HY_RETRY_WINDOW"],
+		marker: "Bo",
+		claim: "c",
+	},
+	{
+		chunkId: "hy-x-attr-iq",
+		class: "attribution",
+		pair: "i",
+		side: "quote",
+		anchors: ["HY_RETRY_WINDOW"],
+		marker: "Bo",
+		claim: "c",
+	},
 	{ chunkId: "hy-x-empty-01", class: "empty", why: "aborted probe" },
 	{ chunkId: "hy-x-empty-02", class: "empty", why: "unanswered question" },
 	{ chunkId: "hy-x-empty-03", class: "empty", why: "log numbers, no conclusion" },
@@ -163,7 +218,12 @@ const extract = (chunkId: string, drafts: ReturnType<typeof draft>[], rejectedCo
 	usage: { inTokens: 100, outTokens: 50, wallS: 1 },
 });
 
-type FixtureOp = { action: "ADD" | "SKIP" | "DELETE"; draft?: number; target?: string };
+type FixtureOp = {
+	action: "ADD" | "SKIP" | "DELETE" | "UPDATE";
+	draft?: number;
+	target?: string;
+	reason?: string;
+};
 
 const ops = (chunkId: string, list: FixtureOp[]): LedgerRecord => ({
 	type: "hy.ops",
@@ -175,7 +235,14 @@ const ops = (chunkId: string, list: FixtureOp[]): LedgerRecord => ({
 			? { action: "ADD" as const, draft: o.draft ?? 0 }
 			: o.action === "SKIP"
 				? { action: "SKIP" as const, draft: o.draft ?? 0 }
-				: { action: "DELETE" as const, target: o.target ?? "aaaaaaaaaaaa" },
+				: o.action === "UPDATE"
+					? {
+							action: "UPDATE" as const,
+							draft: o.draft ?? 0,
+							target: o.target ?? "aaaaaaaaaaaa",
+							reason: o.reason ?? "fixture merge",
+						}
+					: { action: "DELETE" as const, target: o.target ?? "aaaaaaaaaaaa" },
 	),
 	rejectedCount: 0,
 	usage: { inTokens: 100, outTokens: 20, wallS: 1 },
@@ -219,6 +286,36 @@ const ledger: LedgerRecord[] = [
 	ops("hy-x-attr-f", [{ action: "ADD", draft: 0 }]),
 	extract("hy-x-attr-fq", [draft("registry config", "The registry cache is read from the main config file.", true)]),
 	ops("hy-x-attr-fq", [{ action: "ADD", draft: 0 }]),
+
+	// g: the shape the first real run actually produced. The quote side restates the claim and
+	// reconcile merges it into the keep-side fact with an UPDATE, so the surviving entry's own chunkId
+	// is the quote chunk and the claim is still in the bank.
+	extract("hy-x-attr-g", [draft("tool settings", "TOR_TOOL_SETTINGS points at the settings file here.", true)]),
+	ops("hy-x-attr-g", [{ action: "ADD", draft: 0 }]),
+	extract("hy-x-attr-gq", [draft("Ola's setup", "Ola (ops) uses TOR_TOOL_SETTINGS for the settings file.", true)]),
+	ops("hy-x-attr-gq", [{ action: "UPDATE", draft: 0, target: newId("hy-x-attr-g:0:ADD") }]),
+
+	// h: a two-hop chain. The claim survives a merge and then a later refinement, so recall must
+	// follow the chain however long it gets. The third chunk is not in the corpus at all.
+	extract("hy-x-attr-h", [draft("queue depth", "HY_QUEUE_DEPTH caps the worker queue at 64.", true)]),
+	ops("hy-x-attr-h", [{ action: "ADD", draft: 0 }]),
+	extract("hy-x-attr-hq", [
+		draft("Greta's queue setting", "Greta (infra) sets HY_QUEUE_DEPTH to cap the worker queue at 64.", true),
+	]),
+	ops("hy-x-attr-hq", [{ action: "UPDATE", draft: 0, target: newId("hy-x-attr-h:0:ADD") }]),
+	extract("hy-x-attr-h2", [draft("queue depth confirmed", "HY_QUEUE_DEPTH caps the worker queue at 64.", false)]),
+	ops("hy-x-attr-h2", [
+		{ action: "UPDATE", draft: 0, target: newId("hy-x-attr-hq:0:UPDATE"), reason: "confirmed in config" },
+	]),
+
+	// i: the guard on that chain. An UPDATE reaches back to the keep-side fact, but what it wrote no
+	// longer carries the claim. Following the chain alone would call that recall; it is a loss.
+	extract("hy-x-attr-i", [draft("retry window", "HY_RETRY_WINDOW gives 90 s before a job is retried.", true)]),
+	ops("hy-x-attr-i", [{ action: "ADD", draft: 0 }]),
+	extract("hy-x-attr-iq", [
+		draft("scheduler rewrite", "The retry window was removed entirely in the scheduler rewrite.", true),
+	]),
+	ops("hy-x-attr-iq", [{ action: "UPDATE", draft: 0, target: newId("hy-x-attr-i:0:ADD") }]),
 	// empties: abstained, code-suppressed, intruded, dropped.
 	extract("hy-x-empty-01", []),
 	ops("hy-x-empty-01", []),
@@ -303,6 +400,34 @@ assert(
 	"f: the anchor really is absent from the paraphrase",
 );
 
+// g: merged, not duplicated — the shape the first real run actually produced.
+const g = byPair.get("g")!;
+assert(g.keepBanked === true, "g: recall follows the supersede chain, the keep-side claim is still in the bank");
+assert(g.quoteMerged === 1 && g.quoteAdded === 0, `g: merged 1, added 0, got ${g.quoteMerged}/${g.quoteAdded}`);
+assert(g.pairFacts === 1 && !g.bankDuplicated, `g: one fact for the subject, got ${g.pairFacts}`);
+assert(g.quoteBankStrict === true, "g: the bank gate passes because the quote side added nothing new");
+assert(g.quoteDraftStrict === false, "g: the draft gate still fails, the model did restate the claim");
+assert(g.pairStrict === false && g.pairAttributed === true, "g: strict and attributed-ok split on the draft gate");
+
+// h: the chain is followed however long it gets.
+const h = byPair.get("h")!;
+assert(h.keepBanked === true, "h: recall survives a merge and a later refinement two hops on");
+assert(
+	h.quoteMerged === 0 && h.quoteAdded === 0 && h.pairFacts === 1,
+	`h: the surviving entry now belongs to a third chunk, so the quote side holds nothing itself; the pair is still one fact, got ${h.quoteMerged}/${h.quoteAdded}/${h.pairFacts}`,
+);
+assert(h.quoteDraftStrict === false, "h: the quote side restated the claim, so the draft gate fails");
+assert(h.quoteBankStrict === true, "h: the bank gate passes, nothing new was added");
+
+// i: the guard on the chain — reaching back to the keep-side fact is not the same as keeping the claim.
+const i = byPair.get("i")!;
+assert(i.keepBanked === false, "i: the surviving fact superseded the keep-side one and no longer carries the claim");
+assert(i.pairFacts === 0 && i.quoteBankStrict === true, "i: no anchor-carrying fact left, and nothing new was added");
+assert(
+	i.pairStrict === false && i.pairAttributed === false,
+	"i: a lost claim is not pair-correct under either contract",
+);
+
 // empties: four outcomes, four different meanings.
 assert(byEmpty.get("hy-x-empty-01")!.outcome === "abstained", "empty-01: model withheld");
 assert(byEmpty.get("hy-x-empty-02")!.outcome === "code-suppressed", "empty-02: model proposed, code refused");
@@ -313,34 +438,43 @@ assert(
 assert(byEmpty.get("hy-x-empty-04")!.outcome === "dropped", "empty-04: no extract record is not abstention");
 
 // ---- aggregates ---------------------------------------------------------------
-assert(t.pairs === 6, `pairs 6, got ${t.pairs}`);
-assert(t.keepBanked === 5, `keep banked 5 of 6 (c was dropped), got ${t.keepBanked}`);
+assert(t.pairs === 9, `pairs 9, got ${t.pairs}`);
+assert(t.keepBanked === 7, `keep banked 7 of 9 (c dropped, i superseded), got ${t.keepBanked}`);
 assert(
-	t.restraintDraftStrict === 3,
-	`draft gate clean on 3 of 6 quote sides (a,b,d intruded), got ${t.restraintDraftStrict}`,
-);
-assert(t.restraintBankStrict === 4, `bank gate clean on 4 of 6 (d skipped), got ${t.restraintBankStrict}`);
-assert(
-	t.restraintDraftAttributed === 4,
-	`draft gate attributed-ok on 4 of 6 (b attributed, c/e/f clean), got ${t.restraintDraftAttributed}`,
-);
-assert(t.restraintBankAttributed === 5, `bank gate attributed-ok on 5 of 6, got ${t.restraintBankAttributed}`);
-assert(
-	t.restraintStrict === 3 && t.restraintAttributed === 4,
-	`both-gate restraint 3 strict / 4 attributed, got ${t.restraintStrict}/${t.restraintAttributed}`,
+	t.restraintDraftStrict === 4,
+	`draft gate clean on 4 of 9 quote sides (a,b,d,g,h restated the claim), got ${t.restraintDraftStrict}`,
 );
 assert(
-	t.pairStrict === 2 && t.pairAttributed === 3,
-	`pair-correct 2 strict / 3 attributed, got ${t.pairStrict}/${t.pairAttributed}`,
+	t.restraintBankStrict === 7,
+	`bank gate clean on 7 of 9 (a,b added a second fact), got ${t.restraintBankStrict}`,
+);
+assert(
+	t.restraintDraftAttributed === 7,
+	`draft gate attributed-ok on 7 of 9 (a, d restated and named nothing), got ${t.restraintDraftAttributed}`,
+);
+assert(t.restraintBankAttributed === 8, `bank gate attributed-ok on 8 of 9, got ${t.restraintBankAttributed}`);
+assert(
+	t.restraintStrict === 4 && t.restraintAttributed === 7,
+	`both-gate restraint 4 strict / 7 attributed, got ${t.restraintStrict}/${t.restraintAttributed}`,
+);
+assert(
+	t.pairStrict === 2 && t.pairAttributed === 5,
+	`pair-correct 2 strict / 5 attributed, got ${t.pairStrict}/${t.pairAttributed}`,
 );
 assert(t.abstained === 1 && t.suppressed === 1 && t.intruded === 1 && t.dropped === 1, "one of each empty outcome");
 assert(t.bankFactsFromEmpty === 1, "exactly one fact the bank kept from an empty chunk");
 assert(t.paraphraseSuspects === 1, `exactly one pair flagged as a possible paraphrase, got ${t.paraphraseSuspects}`);
+assert(
+	t.bankMerged === 1,
+	`one pair merged with the surviving entry still on the quote side (g); h merged too but a third chunk refined it since, and this metric counts what the bank holds now, got ${t.bankMerged}`,
+);
+assert(t.bankAdded === 2, `two pairs got a new second fact (a, b), got ${t.bankAdded}`);
+assert(t.bankDuplicated === 2, `two pairs hold the subject twice (a, b), got ${t.bankDuplicated}`);
 assert(
 	(score.opTotals.get("SKIP") ?? 0) === 1,
 	"the fixture used SKIP once, so the report must not claim SKIP was never used",
 );
 
 console.log(
-	`ok: unattributed vs attributed, draft gate vs bank gate, drafted-then-dropped, the paraphrase blind spot, and all four empty outcomes score as intended`,
+	`ok: unattributed vs attributed, draft gate vs bank gate, drafted-then-dropped, merge vs second fact, supersede chains two hops long and one that lost the claim, the paraphrase blind spot, and all four empty outcomes score as intended`,
 );

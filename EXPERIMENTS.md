@@ -822,3 +822,150 @@ choice instead of leaving it to be rediscovered.
 corpora contain a colliding pair, which is why the bug survived every number ever printed from it. The
 new behaviour is proven by a self-test that runs whenever the tool runs: nine cases, five of them
 negatives, including the known looseness.
+
+## Experiment: restraint baseline — abstention and attribution (2026-10-23)
+
+The enumerable probe asks whether the writer **keeps** what matters. This one asks the other half of
+the job: does it **refuse** what does not matter, and when a fact arrives as a quotation, does the bank
+record who said it? Diagnostic only — no prompt variant, no code-side policy filter, `src/prompts.ts`
+unchanged.
+
+**Corpus** `dev/corpus-restraint.json`, 26 authored chunks, mean 140 est tokens:
+
+- **8 attribution pairs.** Same claim, same tool output, one declared variable flipped: the keep side
+  states it as the user's own, the quote side delivers it as a named third party relayed through the
+  user (`Mara`, `Devin`, `Priya`, `Ivo`, `Nadia`, `Samir`, `Hana`, `Theo`).
+- **10 nothing-durable chunks.** Aborted probes, greetings and logistics, a directory listing and a log
+  tail, a plan explicitly not settled, an abandoned failure, step-by-step restatement, log counts with
+  no conclusion. The correct output is `{"drafts":[]}`.
+
+`tools/restraint-corpus-check.ts` runs in `npm run check` and enforces the design: the two sides of a
+pair differ in exactly one declared variable, no anchor from a pair leaks into an empty chunk, no probe
+word appears in either writer prompt, no privacy-shaped string. Six deliberate mutations of the corpus
+each exit 1.
+
+**Two contracts, both reported.** The external benchmark this idea came from counts only an empty list
+as correct (`strict`). For a coding-agent bank that is too strict: *Mara (ops channel) runs tctl with
+`TCTL_LOCK=off`* is usable memory. The headline here is **attributed-ok** — a draft may carry the claim
+if it names the third party — with strict kept beside it so the external number stays comparable.
+
+**Two gates.** Extract never sees the bank, so withholding can only happen at reconcile. Scoring at both
+separates a prompt failure from a reconcile failure.
+
+**Run** `restraint-base`: local writer `hy-memory-30b-a3b`, temperature 0, `reasoning_effort: none`, pool
+12 000, per-draft candidate rendering, limit 12. 26 chunks, 74 drafts, 0 rejected, 7 drafts shown no
+candidate, 43 active facts.
+
+### The instrument was wrong before the run taught it
+
+The first report printed **recall 1/8**. It was not the writer: `keepBanked` asked for an active fact
+whose own `chunkId` is the keep chunk. An `UPDATE` writes a *new* entry whose `chunkId` is the newer
+chunk and whose `supersedes` points back at what it replaced, so every pair whose quote side merged
+into the keep-side fact was scored as a lost claim. Following the supersede chain, recall is **8/8** —
+every claim in this corpus survived.
+
+The fixture in `tools/restraint-report-check.ts` had no merge case, which is why it passed while the
+real scorer was wrong. Pair `g` now exists for exactly that shape: quote side restates, reconcile
+`UPDATE`s the keep-side fact, and the check asserts merged 1 / added 0 / one fact for the subject.
+
+### What the writer actually did
+
+| measure | strict | attributed-ok |
+| --- | --- | --- |
+| recall (keep side in bank) | 8/8 | 8/8 |
+| quote side withheld — draft gate | 0/8 | — |
+| quote side added nothing new — bank gate | 7/8 | — |
+| pair-correct (keep banked **and** quote clean) | 0/8 | 5/8 |
+
+What each column means, because these totals only mean something with the definitions attached:
+
+- **recall** — an active bank fact carries the pair's anchor token *and* its `supersedes` chain reaches
+  the keep chunk. The chain, not the entry: an `UPDATE` writes a new entry whose own `chunkId` is the
+  newer chunk. A fact superseded by a statement that no longer carries the anchor is a loss, not a
+  recall (fixture pair `i`).
+- **quote side withheld (draft gate)** — no accepted `hy.extract` draft on the quote chunk carries the
+  anchor. Strict counts any such draft; attributed-ok accepts one that names the third party.
+- **added nothing new (bank gate)** — no active anchor-carrying fact whose own `chunkId` is the quote
+  chunk, *except* one whose chain reaches the keep chunk. Merging a restatement into a fact the bank
+  already holds is reconcile doing its job; standing beside it as a second fact is the failure.
+- **facts** — active anchor-carrying facts across the whole pair: 1 is one memory, 2+ is the bank
+  holding the subject twice.
+- **pair-correct** — recall **and** the quote gate clean, under each contract.
+
+- **The writer restates.** All 8 quote sides drafted a claim the bank already held. At the draft gate
+  restraint is 0/8, which is the number comparable to the external benchmark.
+- **Reconcile merges instead of duplicating.** All 8 pairs have at least one quote-side fact merged into
+  the keep-side fact; 1 pair (`attr-06`) also added a second active fact; 2 pairs end with the subject
+  held twice (`attr-06` two facts, `attr-05` three). These are per-pair flags, not a partition —
+  `attr-06` appears in all three. `SKIP` was used once in the whole run. Withholding in this pipeline
+  happens as *merge*, not as refusal.
+- **Attribution works more often than not.** Six of eight quote-side facts name the third party —
+  `(per Mara)`, `(per Devin)`, `Priya stated to keep it at 5`, `stated by Samir`, `Hana stated`,
+  `Nadia stated`. Two dropped the speaker entirely (`attr-04`, `attr-08`).
+- **One paraphrase suspect** (`attr-04`): the quote side was clean by anchor yet shared three content
+  words with the keep-side fact. Reported, not scored — anchor matching cannot see a paraphrase.
+
+### The empty-chunk axis is where abstention genuinely fails
+
+0/10 abstained, 0 code-suppressed, 21 facts banked from chunks labelled nothing-durable. Reading the 21
+rather than counting them: about fifteen are chatter or transient state the bank has no business
+keeping —
+
+- `User found doctor subcommand in README, no longer needs assistant confirmation`
+- `git status --short shows modified file: src/lock.rs`
+- `doctor.log contains 7 warn lines and 41 info lines`
+- `Assistant plans to move to the next file after reading src/config.rs line 112`
+
+and about six are defensible memories the corpus label was too strict to admit — a CLI capability
+(`tctl supports doctor: usage is tctl <doctor|list|apply>`), two facts read out of the manual
+(`--show-pending prints queued changes without writing them`, `pending entries expire after 300 s`),
+where a constant lives, and the user's presentation constraints (`keep answers short, reading on a
+phone`, `do not paste whole files back`). For a bank meant to serve a coding agent those are not noise.
+
+**The corpus labels were not changed for this report.** 0/10 abstained is the number the corpus as
+committed produces, and relabeling `hy-resp-empty-03`, `-08` and `-10` after seeing it would move the
+goalposts rather than measure anything. The label disagreement is recorded here as an audit finding, and
+the judge below is what tests it: an independent model with the standing rubric agrees with the labels
+on about half of those chunks and disagrees on the rest. No corrected-label re-score is included in this
+report; a later label audit could re-score the same ledger under corrected labels while keeping these
+numbers, but that has not been done here.
+
+The sharpest single line in the run is the writer stating its own disqualifier and storing anyway:
+`User suggested splitting doctor into two commands but decided not to decide on it today; idea parked,
+not a decision.` It knew, and it wrote it down.
+
+### Soft axis: the judge, independent of the corpus labels
+
+Judge `qwen3.8-flash-next-iq3_xxs`, temperature 0, reasoning suppressed, seeds 7 and 11, never the writer.
+73 ops judged per seed (`SKIP` excluded — a deliberate non-write is not a write to grade), 0
+verdict-less. `shouldNotStore`:
+
+| class | seed 7 | seed 11 |
+| --- | --- | --- |
+| chunks labelled nothing-durable | 12/23 | 14/23 |
+| attribution pairs, keep side | 9/26 | 8/26 |
+| attribution pairs, quote side | 7/24 | 5/24 |
+
+- **The two seeds agree on 68 of 73 ops** — 25 noise both times, 43 keepable both times, 5 split. The
+  splits are the interesting ones and they are all borderline transient state.
+- Durability across both seeds: 50 durable, 43 marginal, 53 noise. Unsupported 1/73 and 0/73; missed
+  durable facts 4 and 3.
+- The label does separate — 52–61 % noise on the nothing-durable chunks against 21–35 % on the
+  attribution chunks — but not as the corpus assumes. **Nine to eleven of the 23 facts banked from
+  "nothing durable" chunks were judged worth keeping**, including all four the manual read flagged as
+  defensible and three it called intrusions (`idea parked, not a decision`, the abandoned
+  `--check-rename` failure, `User questioned why doctor output has twelve keys`). The corpus's empty
+  class is about half what an independent judge concludes — which is evidence that the label is ambiguous
+  on a substantial subset, not proof that the labels are wrong, and not a correction of the 0/10.
+- One fidelity flag named rather than counted: the judge called the `tctl list` update on
+  `hy-resp-empty-10` a hallucination because the fact it *replaced* described a dry-run with 3 pending
+  keys, which is absent from that chunk. The writer did not invent it — that fact came from
+  `attr-06`, and an `UPDATE` reached across chunks. A judge shown a chunk and not the bank will read
+  every cross-chunk merge as invented context, so judge numbers on `UPDATE` carry that bias and it is
+  stated here rather than left to be rediscovered.
+
+**What this rules out.** A prompt clause telling the writer to abstain is not the obvious next move: on
+the pair axis the bank is already nearly clean once a merge is scored as a merge, and the failure that
+remains is the draft gate — the writer proposes a restatement it cannot know is redundant, because
+extract never sees the bank. The empty-chunk failure is the opposite shape: nothing to merge with, and
+still no refusal. Those are two different problems and the baseline says which one is bigger.

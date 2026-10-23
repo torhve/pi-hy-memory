@@ -64,7 +64,13 @@ export interface PairRow {
 	quoteCarrying: DraftRow[];
 	quoteDraftStrict: boolean | null;
 	quoteDraftAttributed: boolean | null;
-	quoteBankCarrying: { id: string; statement: string; fromUser: boolean }[];
+	quoteBankCarrying: { id: string; statement: string; fromUser: boolean; merged: boolean }[];
+	/** Quote-side facts that merged into the keep-side fact, and ones that stand as new facts. */
+	quoteMerged: number;
+	quoteAdded: number;
+	/** Active facts across the whole pair: 1 is one memory, 2+ is the bank holding the subject twice. */
+	pairFacts: number;
+	bankDuplicated: boolean;
 	quoteBankStrict: boolean;
 	quoteBankAttributed: boolean;
 	pairStrict: boolean;
@@ -81,6 +87,9 @@ export interface EmptyRow {
 	rejectedCount: number;
 	outcome: "abstained" | "code-suppressed" | "intruded" | "dropped";
 	inBank: number;
+	/** What actually landed, because "the bank kept 2 facts from a chunk with nothing durable" is not
+	 * yet a verdict: some of those facts are tool capabilities the bank should keep. */
+	facts: { task: string; statement: string }[];
 }
 
 export interface RunScore {
@@ -192,13 +201,33 @@ export function scoreRun(chunks: CorpusChunk[], ledger: LedgerRecord[]): RunScor
 		else evidence.set(key, { present: false, drafts: [], rejectedCount: 0, ops });
 	}
 
-	const bank = foldLedger(ledger).filter((entry) => entry.status === "active");
+	const allEntries = foldLedger(ledger);
+	const entryById = new Map(allEntries.map((e) => [e.id, e]));
+	const bank = allEntries.filter((entry) => entry.status === "active");
 	const bankByChunk = new Map<string, BankEntry[]>();
 	for (const entry of bank) {
 		const key = base(entry.chunkId);
 		bankByChunk.set(key, [...(bankByChunk.get(key) ?? []), entry]);
 	}
 
+	/**
+	 * Which chunks a surviving fact came from. An UPDATE writes a *new* entry whose own chunkId is the
+	 * newer chunk and whose `supersedes` points back at the fact it replaced. A claim stated on the
+	 * keep side and merged on the quote side is therefore still in the bank, and reading only the
+	 * entry's own chunkId counted it as lost — which is how the first real run printed 13 % recall on a
+	 * corpus where every claim survived.
+	 */
+	function chainChunks(entry: BankEntry): string[] {
+		const seen = new Set<string>();
+		const chunks: string[] = [];
+		let cur: BankEntry | undefined = entry;
+		while (cur && !seen.has(cur.id)) {
+			seen.add(cur.id);
+			chunks.push(base(cur.chunkId));
+			cur = cur.supersedes ? entryById.get(cur.supersedes) : undefined;
+		}
+		return chunks;
+	}
 	const pairs = new Map<string, { keep: CorpusChunk; quote: CorpusChunk }>();
 	const empties: CorpusChunk[] = [];
 	for (const chunk of chunks) {
@@ -226,22 +255,44 @@ export function scoreRun(chunks: CorpusChunk[], ledger: LedgerRecord[]): RunScor
 		const keepCarrying = keepEv?.present
 			? keepEv.drafts.filter((d) => anchors.some((a) => carries(a, textOf(d))))
 			: [];
+		// Recall follows the supersede chain: the claim counts if a surviving fact carries it and that
+		// fact's history includes the keep chunk, whether reconcile kept the original entry or merged it.
 		const keepBanked = keepEv?.present
-			? (bankByChunk.get(base(keep.chunkId)) ?? []).some((e) => anchors.some((a) => carries(a, textOf(e))))
+			? bank.some(
+					(e) => anchors.some((a) => carries(a, textOf(e))) && chainChunks(e).includes(base(keep.chunkId)),
+				)
 			: null;
 
 		const quoteCarrying = quoteEv?.present
 			? quoteEv.drafts.filter((d) => anchors.some((a) => carries(a, textOf(d))))
 			: [];
-		const quoteBankCarrying = (bankByChunk.get(base(quote.chunkId)) ?? [])
-			.filter((e) => anchors.some((a) => carries(a, textOf(e))))
-			.map((e) => ({ id: e.id, statement: e.statement, fromUser: e.fromUser === true }));
+		const quoteFacts = (bankByChunk.get(base(quote.chunkId)) ?? []).filter((e) =>
+			anchors.some((a) => carries(a, textOf(e))),
+		);
+		// Two different things a quote-side fact can be. Merging into the keep-side fact is reconcile
+		// doing its job on a restatement; adding a second active fact about the same subject is the
+		// duplication restraint is meant to prevent. Scoring them together hid which one happened.
+		const quoteBankCarrying = quoteFacts.map((e) => ({
+			id: e.id,
+			statement: e.statement,
+			fromUser: e.fromUser === true,
+			merged: chainChunks(e).includes(base(keep.chunkId)),
+		}));
+		const quoteAdded = quoteBankCarrying.filter((e) => !e.merged).length;
+		const quoteMerged = quoteBankCarrying.length - quoteAdded;
+		const pairFacts = bank.filter(
+			(e) =>
+				anchors.some((a) => carries(a, textOf(e))) &&
+				chainChunks(e).some((c) => c === base(keep.chunkId) || c === base(quote.chunkId)),
+		);
 
 		const quoteDraftStrict = quoteEv?.present ? quoteCarrying.length === 0 : null;
 		const quoteDraftAttributed = quoteEv?.present
 			? quoteCarrying.length === 0 || quoteCarrying.some((d) => namesMarker(marker, d))
 			: null;
-		const quoteBankStrict = quoteBankCarrying.length === 0;
+		// Restraint at the bank gate means the quote side added nothing new. A merge is not an
+		// intrusion; a second active fact about the same subject is.
+		const quoteBankStrict = quoteAdded === 0;
 		const quoteBankAttributed = quoteBankCarrying.every((e) =>
 			namesMarker(marker, { task: "", statement: e.statement, keys: [] }),
 		);
@@ -274,6 +325,10 @@ export function scoreRun(chunks: CorpusChunk[], ledger: LedgerRecord[]): RunScor
 			quoteDraftStrict,
 			quoteDraftAttributed,
 			quoteBankCarrying,
+			quoteMerged,
+			quoteAdded,
+			pairFacts: pairFacts.length,
+			bankDuplicated: pairFacts.length >= 2,
 			quoteBankStrict,
 			quoteBankAttributed,
 			pairStrict: Boolean(keepBanked) && quoteDraftStrict === true && quoteBankStrict,
@@ -293,6 +348,7 @@ export function scoreRun(chunks: CorpusChunk[], ledger: LedgerRecord[]): RunScor
 				rejectedCount: 0,
 				outcome: "dropped",
 				inBank: 0,
+				facts: [],
 			};
 		}
 		const inBank = (bankByChunk.get(base(chunk.chunkId)) ?? []).length;
@@ -310,6 +366,10 @@ export function scoreRun(chunks: CorpusChunk[], ledger: LedgerRecord[]): RunScor
 			rejectedCount: ev.rejectedCount,
 			outcome,
 			inBank,
+			facts: (bankByChunk.get(base(chunk.chunkId)) ?? []).map((e) => ({
+				task: e.task,
+				statement: e.statement,
+			})),
 		};
 	});
 
@@ -329,6 +389,9 @@ export interface Totals {
 	pairStrict: number;
 	pairAttributed: number;
 	paraphraseSuspects: number;
+	bankMerged: number;
+	bankDuplicated: number;
+	bankAdded: number;
 	abstained: number;
 	suppressed: number;
 	intruded: number;
@@ -349,6 +412,9 @@ export function totals(score: RunScore): Totals {
 		pairStrict: score.pairs.filter((p) => p.pairStrict).length,
 		pairAttributed: score.pairs.filter((p) => p.pairAttributed).length,
 		paraphraseSuspects: score.pairs.filter((p) => p.paraphraseSuspects.length > 0).length,
+		bankMerged: score.pairs.filter((p) => p.quoteMerged > 0).length,
+		bankAdded: score.pairs.filter((p) => p.quoteAdded > 0).length,
+		bankDuplicated: score.pairs.filter((p) => p.bankDuplicated).length,
 		abstained: score.empties.filter((e) => e.outcome === "abstained").length,
 		suppressed: score.empties.filter((e) => e.outcome === "code-suppressed").length,
 		intruded: score.empties.filter((e) => e.outcome === "intruded").length,
@@ -400,11 +466,11 @@ function main(): void {
 
 		console.log("\nattribution pairs — identical claim, only the speaker frame flips");
 		console.log(
-			`${"pair".padEnd(10)} ${"keep draft".padStart(12)} ${"keep bank".padStart(11)} ${"quote draft".padStart(12)} ${"quote bank".padStart(12)} ${"pair strict".padStart(12)} ${"pair attrib".padStart(12)} ${"paraphrase".padStart(11)}`,
+			`${"pair".padEnd(10)} ${"keep draft".padStart(12)} ${"keep bank".padStart(11)} ${"quote draft".padStart(12)} ${"quote bank".padStart(12)} ${"pair strict".padStart(12)} ${"pair attrib".padStart(12)} ${"paraphrase".padStart(11)} ${"facts".padStart(6)}`,
 		);
 		for (const p of score.pairs) {
 			console.log(
-				`${p.pair.padEnd(10)} ${cell(p.keepDrafted).padStart(12)} ${cell(p.keepBanked).padStart(11)} ${cell(p.quoteDraftStrict).padStart(12)} ${cell(p.quoteBankStrict).padStart(12)} ${cell(p.pairStrict).padStart(12)} ${cell(p.pairAttributed).padStart(12)} ${(p.paraphraseSuspects.length > 0 ? "suspect" : "-").padStart(11)}`,
+				`${p.pair.padEnd(10)} ${cell(p.keepDrafted).padStart(12)} ${cell(p.keepBanked).padStart(11)} ${cell(p.quoteDraftStrict).padStart(12)} ${cell(p.quoteBankStrict).padStart(12)} ${cell(p.pairStrict).padStart(12)} ${cell(p.pairAttributed).padStart(12)} ${(p.paraphraseSuspects.length > 0 ? "suspect" : "-").padStart(11)} ${String(p.pairFacts).padStart(6)}`,
 			);
 		}
 
@@ -426,6 +492,9 @@ function main(): void {
 			`  paraphrase suspects             ${t.paraphraseSuspects}/${t.pairs}  ${pct(t.paraphraseSuspects, t.pairs)}   (quote side clean by anchor, ≥3 content words shared with the keep-side fact: reported, not scored)`,
 		);
 		console.log(
+			`  what the bank did with the pair: merged into the keep-side fact ${t.bankMerged}   quote side added a new fact ${t.bankAdded}   subject held twice ${t.bankDuplicated}`,
+		);
+		console.log(
 			"  headline contract is attributed-ok; strict is kept so the external number stays comparable. Raw counts are the number — with 8 pairs the percentage is orientation, not a measurement.",
 		);
 
@@ -441,6 +510,17 @@ function main(): void {
 		console.log(
 			`\n  abstained ${t.abstained}/${score.empties.length}  ${pct(t.abstained, score.empties.length)}   code-suppressed ${t.suppressed}   intruded ${t.intruded}   dropped ${t.dropped}   facts the bank kept from empty chunks: ${t.bankFactsFromEmpty}`,
 		);
+		const banked = score.empties.filter((e) => e.facts.length > 0);
+		if (banked.length > 0) {
+			console.log(
+				"\nwhat the bank kept from the chunks labelled nothing-durable — each line has to be read, not counted:",
+			);
+			for (const e of banked) {
+				for (const f of e.facts) {
+					console.log(`  ${e.chunkId.padEnd(20)} ${f.task} | ${f.statement.slice(0, 130)}`);
+				}
+			}
+		}
 
 		const opLine = [...score.opTotals.entries()].map(([action, n]) => `${action} ${n}`).join("  ") || "none";
 		console.log(`\nops across the run: ${opLine}`);
@@ -465,7 +545,7 @@ function main(): void {
 			for (const e of p.quoteBankCarrying) {
 				const named = namesMarker(p.marker, { task: "", statement: e.statement, keys: [] });
 				notes.push(
-					`${p.quoteChunk}: the claim reached the bank ${named ? `naming ${p.marker}` : "unattributed"} (${e.id}): "${e.statement.slice(0, 150)}"`,
+					`${p.quoteChunk}: the claim reached the bank ${e.merged ? "merged into the keep-side fact" : "as a new fact"} ${named ? `naming ${p.marker}` : "unattributed"} (${e.id}): "${e.statement.slice(0, 150)}"`,
 				);
 			}
 			if (p.keepBanked === false) {

@@ -219,14 +219,33 @@ gate.
       suspect). `hy.gap` records carry no `chunkId` and must be skipped. **Decision on 7.4**: the
       headline is `attributed-ok`, with `strict` printed beside it so the external number stays
       comparable.
-- [ ] 7.5 `restraint-base` run on current `src/prompts.ts`, unchanged, scored before any variant.
+- [x] 7.3a The first real run found the scorer wrong rather than the writer. `keepBanked` read only an
+      entry's own `chunkId`, and an `UPDATE` writes a *new* entry whose `chunkId` is the newer chunk, so
+      every pair whose quote side merged into the keep-side fact scored as a lost claim: recall printed
+      1/8 on a corpus where every claim survived. Recall now follows the `supersedes` chain (8/8), and
+      the bank gate separates **merged into the keep-side fact** from **added a second active fact** —
+      the first is reconcile doing its job, the second is the duplication restraint is about. Fixture
+      pair `g` is that merge shape, which the original fixture had no case for.
+- [x] 7.5 `restraint-base` run on current `src/prompts.ts`, unchanged, scored before any variant.
       Local writer, temp 0, `reasoning_effort: none`, background task. Judge twice (seeds 7, 11,
       never the writer) for the soft axis only: `shouldNotStore` and `supported: none` on the quote
       and empty chunks.
+      Measured (`out/restraint-base`: 26 chunks, 74 drafts, 0 rejected, 43 active facts): recall 8/8;
+      quote side withheld at the draft gate 0/8; added nothing new at the bank gate 7/8; pair-correct
+      0/8 strict, 5/8 attributed-ok; 8 pairs merged into the keep-side fact, 1 added a new fact, 2 end
+      with the subject held twice; `SKIP` used once in the whole run. Empty chunks: 0/10 abstained, 21
+      facts banked — about 15 chatter, about 6 defensible memories the corpus label was too strict to
+      admit. Written up in `EXPERIMENTS.md`.
 - [ ] 7.6 Decide from the baseline, not from the prediction: abstention ≈ 0 means abstention is not
       a prompt property and opens a separate plan for a deterministic filter beside `SECRET_PATTERNS`
       in `src/protocol.ts`; abstention high with attribution intrusions high opens a speaker-clause
       variant; both high makes this corpus a regression guard.
+      Reading from the baseline, for the decision rather than against the prediction: draft-gate
+      abstention is 0/8, which is the branch that says "abstention is not a prompt property". But the
+      same run shows the bank gate nearly clean (7/8 added nothing new, 8 merges, 1 new fact) and the
+      judge keeping 9–11 of the 23 facts banked from nothing-durable chunks. A deterministic filter
+      beside `SECRET_PATTERNS` would suppress facts an independent judge calls keepable, which is not
+      the trade 7.6 anticipated. Decision left open.
 - [ ] 7.7 Deferred to slice 2, gated on 7.3 being stable: the dedup class (intrusion only when two
       active facts cover one subject or the existing one is not superseded — an `UPDATE` is not an
       intrusion unless it loses source refs or narrows a fact that stayed true) and the policy class

@@ -191,7 +191,11 @@ async function main(): Promise<void> {
 	const seed = Number(flag("seed", "7"));
 	const runDir = join("out", runId);
 
-	const chunks = (JSON.parse(readFileSync(corpusPath, "utf8")).chunks ?? []) as { path: string }[];
+	const chunks = (JSON.parse(readFileSync(corpusPath, "utf8")).chunks ?? []) as {
+		path?: string;
+		chunkId?: string;
+		text?: string;
+	}[];
 	const records = readFileSync(join(runDir, "ledger.jsonl"), "utf8")
 		.split("\n")
 		.filter((l) => l.trim())
@@ -216,7 +220,11 @@ async function main(): Promise<void> {
 	let verdictless = 0;
 
 	for (const item of chunks) {
-		const file = JSON.parse(readFileSync(join("captures-dev", item.path), "utf8")) as ChunkFile;
+		// An authored corpus carries its text inline; a captured one points at captures-dev/.
+		const file: { chunkId: string; text: string } =
+			item.path !== undefined
+				? (JSON.parse(readFileSync(join("captures-dev", item.path), "utf8")) as ChunkFile)
+				: { chunkId: item.chunkId ?? "", text: item.text ?? "" };
 		const ops = judgeOps(records, file.chunkId, draftsByChunk);
 		if (ops.length === 0) {
 			console.log(`${file.chunkId}: no ops (skipped)`);
