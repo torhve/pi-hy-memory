@@ -1,0 +1,361 @@
+{
+  "note": "Restraint corpus v2. Three classes instead of two: the v1 audit found that the nothing-durable label mixed 'nothing durable about the work' with 'nothing the user decided, but tool output present', and an independent judge kept about half of the second kind. tool_output chunks declare the tool fact that is defensible to keep (probes) and the chatter that is not (transient).",
+  "gate": {
+    "attribution_pair": 8,
+    "nothing_work": 6,
+    "tool_output": 6
+  },
+  "chunks": [
+    {
+      "chunkId": "hy-r2-r2a-k",
+      "class": "attribution",
+      "pair": "r2a",
+      "side": "keep",
+      "anchors": [
+        "TCTL_WRITE_MODE"
+      ],
+      "marker": "Lena",
+      "claim": "tctl writes settings through a staging file under TCTL_WRITE_MODE and never edits settings.toml in place.",
+      "category": "attribution, user-stated",
+      "text": "[0] [User @ 09:02]: Before we touch the writer, one thing about how this repo's tctl is configured.\n[1] [Assistant @ 09:03]: Go ahead.\n[2] [User @ 09:04]: tctl writes settings through a staging file under TCTL_WRITE_MODE and never edits settings.toml in place.\n[3] [Assistant @ 09:05]: Noted: staging file, no in-place edit.\n[4] [Tool result for bash @ 09:06]: $ grep -rn TCTL_WRITE_MODE src/\n[5] [Tool result for bash @ 09:07]: src/writer.rs:24: let mode = env(\"TCTL_WRITE_MODE\");\n[6] [User @ 09:08]: That env var is set on this machine and it stays set."
+    },
+    {
+      "chunkId": "hy-r2-r2a-q",
+      "class": "attribution",
+      "pair": "r2a",
+      "side": "quote",
+      "anchors": [
+        "TCTL_WRITE_MODE"
+      ],
+      "marker": "Lena",
+      "claim": "tctl writes settings through a staging file under TCTL_WRITE_MODE and never edits settings.toml in place.",
+      "category": "attribution, third party relayed",
+      "text": "[0] [User @ 11:02]: Lena from the platform channel sent me the setup note for this machine.\n[1] [Assistant @ 11:03]: What does it say?\n[2] [User @ 11:04]: Her message reads: tctl writes settings through a staging file under TCTL_WRITE_MODE and never edits settings.toml in place.\n[3] [Assistant @ 11:05]: I will treat that as coming from Lena rather than from you.\n[4] [Tool result for bash @ 11:06]: $ grep -rn TCTL_WRITE_MODE src/\n[5] [Tool result for bash @ 11:07]: src/writer.rs:24: let mode = env(\"TCTL_WRITE_MODE\");\n[6] [User @ 11:08]: Right, I have not checked it myself."
+    },
+    {
+      "chunkId": "hy-r2-r2b-k",
+      "class": "attribution",
+      "pair": "r2b",
+      "side": "keep",
+      "anchors": [
+        "--no-follow"
+      ],
+      "marker": "Ravi",
+      "claim": "tctl copy skips symlinks entirely when --no-follow is set.",
+      "category": "attribution, user-stated",
+      "text": "[0] [User @ 09:20]: One rule about the copy path that I want kept.\n[1] [Assistant @ 09:21]: Say it.\n[2] [User @ 09:22]: tctl copy skips symlinks entirely when --no-follow is set.\n[3] [Assistant @ 09:23]: Skipped, not followed.\n[4] [Tool result for bash @ 09:24]: $ tctl copy --help | grep follow\n[5] [Tool result for bash @ 09:25]: --no-follow   do not traverse symbolic links"
+    },
+    {
+      "chunkId": "hy-r2-r2b-q",
+      "class": "attribution",
+      "pair": "r2b",
+      "side": "quote",
+      "anchors": [
+        "--no-follow"
+      ],
+      "marker": "Ravi",
+      "claim": "tctl copy skips symlinks entirely when --no-follow is set.",
+      "category": "attribution, third party relayed",
+      "text": "[0] [User @ 11:20]: Ravi on the ops channel wrote this about the copy path.\n[1] [Assistant @ 11:21]: Reading it now.\n[2] [User @ 11:22]: His line is: tctl copy skips symlinks entirely when --no-follow is set.\n[3] [Assistant @ 11:23]: That is Ravi's statement, not yours.\n[4] [Tool result for bash @ 11:24]: $ tctl copy --help | grep follow\n[5] [Tool result for bash @ 11:25]: --no-follow   do not traverse symbolic links"
+    },
+    {
+      "chunkId": "hy-r2-r2c-k",
+      "class": "attribution",
+      "pair": "r2c",
+      "side": "keep",
+      "anchors": [
+        "pending.db"
+      ],
+      "marker": "Wren",
+      "claim": "tctl keeps its queue of unapplied changes in a file named pending.db.",
+      "category": "attribution, user-stated",
+      "text": "[0] [User @ 09:40]: Where do unapplied changes live? I want that remembered.\n[1] [Assistant @ 09:41]: Checking the source.\n[2] [User @ 09:42]: tctl keeps its queue of unapplied changes in a file named pending.db.\n[3] [Assistant @ 09:43]: Found it: pending.db in the queue module.\n[4] [Tool result for bash @ 09:44]: $ ls -l var/state\n[5] [Tool result for bash @ 09:45]: pending.db  2048  10:31"
+    },
+    {
+      "chunkId": "hy-r2-r2c-q",
+      "class": "attribution",
+      "pair": "r2c",
+      "side": "quote",
+      "anchors": [
+        "pending.db"
+      ],
+      "marker": "Wren",
+      "claim": "tctl keeps its queue of unapplied changes in a file named pending.db.",
+      "category": "attribution, third party relayed",
+      "text": "[0] [User @ 11:40]: Wren answered my question about unapplied changes.\n[1] [Assistant @ 11:41]: What was the answer?\n[2] [User @ 11:42]: Wren said: tctl keeps its queue of unapplied changes in a file named pending.db.\n[3] [Assistant @ 11:43]: I will attribute that to Wren.\n[4] [Tool result for bash @ 11:44]: $ ls -l var/state\n[5] [Tool result for bash @ 11:45]: pending.db  2048  10:31"
+    },
+    {
+      "chunkId": "hy-r2-r2d-k",
+      "class": "attribution",
+      "pair": "r2d",
+      "side": "keep",
+      "anchors": [
+        "MAX_PENDING"
+      ],
+      "marker": "Cato",
+      "claim": "MAX_PENDING caps the queue at 200 entries and tctl refuses the 201st.",
+      "category": "attribution, user-stated",
+      "text": "[0] [User @ 10:00]: There is a hard limit on the queue and I want it on record.\n[1] [Assistant @ 10:01]: Which one?\n[2] [User @ 10:02]: MAX_PENDING caps the queue at 200 entries and tctl refuses the 201st.\n[3] [Assistant @ 10:03]: 200, and the 201st is refused.\n[4] [Tool result for bash @ 10:04]: $ grep -n MAX_PENDING src/queue.rs\n[5] [Tool result for bash @ 10:05]: 41: const MAX_PENDING: usize = 200;"
+    },
+    {
+      "chunkId": "hy-r2-r2d-q",
+      "class": "attribution",
+      "pair": "r2d",
+      "side": "quote",
+      "anchors": [
+        "MAX_PENDING"
+      ],
+      "marker": "Cato",
+      "claim": "MAX_PENDING caps the queue at 200 entries and tctl refuses the 201st.",
+      "category": "attribution, third party relayed",
+      "text": "[0] [User @ 12:00]: Cato in the review thread flagged the queue limit.\n[1] [Assistant @ 12:01]: Reading the thread.\n[2] [User @ 12:02]: Cato's comment: MAX_PENDING caps the queue at 200 entries and tctl refuses the 201st.\n[3] [Assistant @ 12:03]: Recorded as Cato's claim.\n[4] [Tool result for bash @ 12:04]: $ grep -n MAX_PENDING src/queue.rs\n[5] [Tool result for bash @ 12:05]: 41: const MAX_PENDING: usize = 200;"
+    },
+    {
+      "chunkId": "hy-r2-r2e-k",
+      "class": "attribution",
+      "pair": "r2e",
+      "side": "keep",
+      "anchors": [
+        "check-order"
+      ],
+      "marker": "Ines",
+      "claim": "tctl doctor check-order reports whether settings were applied out of order.",
+      "category": "attribution, user-stated",
+      "text": "[0] [User @ 10:20]: One of the doctor sub-checks matters here.\n[1] [Assistant @ 10:21]: Which one?\n[2] [User @ 10:22]: tctl doctor check-order reports whether settings were applied out of order.\n[3] [Assistant @ 10:23]: Order check, then.\n[4] [Tool result for bash @ 10:24]: $ tctl doctor check-order\n[5] [Tool result for bash @ 10:25]: check-order: ok"
+    },
+    {
+      "chunkId": "hy-r2-r2e-q",
+      "class": "attribution",
+      "pair": "r2e",
+      "side": "quote",
+      "anchors": [
+        "check-order"
+      ],
+      "marker": "Ines",
+      "claim": "tctl doctor check-order reports whether settings were applied out of order.",
+      "category": "attribution, third party relayed",
+      "text": "[0] [User @ 12:20]: Ines pointed me at the doctor sub-check that matters.\n[1] [Assistant @ 12:21]: Which one did she name?\n[2] [User @ 12:22]: Ines wrote: tctl doctor check-order reports whether settings were applied out of order.\n[3] [Assistant @ 12:23]: I will credit Ines for that.\n[4] [Tool result for bash @ 12:24]: $ tctl doctor check-order\n[5] [Tool result for bash @ 12:25]: check-order: ok"
+    },
+    {
+      "chunkId": "hy-r2-r2f-k",
+      "class": "attribution",
+      "pair": "r2f",
+      "side": "keep",
+      "anchors": [
+        "0o660"
+      ],
+      "marker": "Yusuf",
+      "claim": "the settings file is created with mode 0o660 so the shared group can read it.",
+      "category": "attribution, user-stated",
+      "text": "[0] [User @ 10:40]: File permissions on this project are not accidental.\n[1] [Assistant @ 10:41]: What are they?\n[2] [User @ 10:42]: the settings file is created with mode 0o660 so the shared group can read it.\n[3] [Assistant @ 10:43]: Group-readable, owner-writable.\n[4] [Tool result for bash @ 10:44]: $ stat -c '%a' settings.toml\n[5] [Tool result for bash @ 10:45]: 660"
+    },
+    {
+      "chunkId": "hy-r2-r2f-q",
+      "class": "attribution",
+      "pair": "r2f",
+      "side": "quote",
+      "anchors": [
+        "0o660"
+      ],
+      "marker": "Yusuf",
+      "claim": "the settings file is created with mode 0o660 so the shared group can read it.",
+      "category": "attribution, third party relayed",
+      "text": "[0] [User @ 12:40]: Yusuf from the infra side sent the permissions note.\n[1] [Assistant @ 12:41]: What did he say?\n[2] [User @ 12:42]: Yusuf's note: the settings file is created with mode 0o660 so the shared group can read it.\n[3] [Assistant @ 12:43]: That is Yusuf's statement.\n[4] [Tool result for bash @ 12:44]: $ stat -c '%a' settings.toml\n[5] [Tool result for bash @ 12:45]: 660"
+    },
+    {
+      "chunkId": "hy-r2-r2g-k",
+      "class": "attribution",
+      "pair": "r2g",
+      "side": "keep",
+      "anchors": [
+        "tctl plan"
+      ],
+      "marker": "Ada",
+      "claim": "tctl plan prints the diff and writes nothing to disk.",
+      "category": "attribution, user-stated",
+      "text": "[0] [User @ 13:00]: Remember the safe command in this tool.\n[1] [Assistant @ 13:01]: Which command?\n[2] [User @ 13:02]: tctl plan prints the diff and writes nothing to disk.\n[3] [Assistant @ 13:03]: Plan is read-only.\n[4] [Tool result for bash @ 13:04]: $ tctl plan | head -n 3\n[5] [Tool result for bash @ 13:05]: plan: 4 changes, 0 written"
+    },
+    {
+      "chunkId": "hy-r2-r2g-q",
+      "class": "attribution",
+      "pair": "r2g",
+      "side": "quote",
+      "anchors": [
+        "tctl plan"
+      ],
+      "marker": "Ada",
+      "claim": "tctl plan prints the diff and writes nothing to disk.",
+      "category": "attribution, third party relayed",
+      "text": "[0] [User @ 13:20]: Ada told me which command is the safe one here.\n[1] [Assistant @ 13:21]: What was her wording?\n[2] [User @ 13:22]: Ada said: tctl plan prints the diff and writes nothing to disk.\n[3] [Assistant @ 13:23]: I will treat that as Ada's.\n[4] [Tool result for bash @ 13:24]: $ tctl plan | head -n 3\n[5] [Tool result for bash @ 13:25]: plan: 4 changes, 0 written"
+    },
+    {
+      "chunkId": "hy-r2-r2h-k",
+      "class": "attribution",
+      "pair": "r2h",
+      "side": "keep",
+      "anchors": [
+        "--trace"
+      ],
+      "marker": "Bram",
+      "claim": "tctl apply --trace writes one line per key to stderr.",
+      "category": "attribution, user-stated",
+      "text": "[0] [User @ 13:40]: When apply misbehaves I use one flag.\n[1] [Assistant @ 13:41]: Which flag?\n[2] [User @ 13:42]: tctl apply --trace writes one line per key to stderr.\n[3] [Assistant @ 13:43]: Per-key lines on stderr.\n[4] [Tool result for bash @ 13:44]: $ tctl apply --trace 2>&1 | head -n 2\n[5] [Tool result for bash @ 13:45]: trace key=alpha ok"
+    },
+    {
+      "chunkId": "hy-r2-r2h-q",
+      "class": "attribution",
+      "pair": "r2h",
+      "side": "quote",
+      "anchors": [
+        "--trace"
+      ],
+      "marker": "Bram",
+      "claim": "tctl apply --trace writes one line per key to stderr.",
+      "category": "attribution, third party relayed",
+      "text": "[0] [User @ 14:00]: Bram mentioned the flag he uses when apply misbehaves.\n[1] [Assistant @ 14:01]: Which flag was it?\n[2] [User @ 14:02]: Bram wrote: tctl apply --trace writes one line per key to stderr.\n[3] [Assistant @ 14:03]: Noted as Bram's tip.\n[4] [Tool result for bash @ 14:04]: $ tctl apply --trace 2>&1 | head -n 2\n[5] [Tool result for bash @ 14:05]: trace key=alpha ok"
+    },
+    {
+      "chunkId": "hy-r2-nw-01",
+      "class": "nothing_work",
+      "why": "logistics and a working-tree snapshot: both change the moment anyone types",
+      "transient": [
+        "back in twenty minutes",
+        "M src/copy.rs"
+      ],
+      "category": "nothing durable about the work",
+      "text": "[0] [User @ 08:30]: Morning. I will be back in twenty minutes, keep going without me.\n[1] [Assistant @ 08:31]: Carrying on.\n[2] [Tool result for bash @ 08:32]: $ git status --short\n[3] [Tool result for bash @ 08:33]: M src/copy.rs   M src/trace.rs\n[4] [Assistant @ 08:34]: Two files modified, nothing staged.\n[5] [User @ 08:35]: Okay, back soon."
+    },
+    {
+      "chunkId": "hy-r2-nw-02",
+      "class": "nothing_work",
+      "why": "a directory listing read out with no conclusion drawn from it",
+      "transient": [
+        "index.bin 1174 B",
+        "stamp 42 B"
+      ],
+      "category": "nothing durable about the work",
+      "text": "[0] [Tool result for bash @ 11:20]: $ ls -l cache\n[1] [Tool result for bash @ 11:21]: index.bin 1174 B  08:14   stamp 42 B  08:14\n[2] [Assistant @ 11:22]: Two files, both written at 08:14.\n[3] [User @ 11:23]: Just wanted to see the sizes.\n[4] [Assistant @ 11:24]: Nothing to take from it.\n[5] [User @ 11:25]: Right."
+    },
+    {
+      "chunkId": "hy-r2-nw-03",
+      "class": "nothing_work",
+      "why": "counts pulled out of a log, and the thread says explicitly that nothing follows",
+      "transient": [
+        "7 warn",
+        "41 info"
+      ],
+      "category": "nothing durable about the work",
+      "text": "[0] [Tool result for bash @ 15:20]: $ grep -c warn run.log\n[1] [Tool result for bash @ 15:21]: 7\n[2] [Tool result for bash @ 15:22]: $ grep -c info run.log\n[3] [Tool result for bash @ 15:23]: 41\n[4] [Assistant @ 15:24]: 7 warn lines, 41 info lines.\n[5] [User @ 15:25]: Hm. Nothing to change from that.\n[6] [Assistant @ 15:26]: Agreed, moving on."
+    },
+    {
+      "chunkId": "hy-r2-nw-04",
+      "class": "nothing_work",
+      "why": "an idea floated and explicitly not decided, plus a line count nobody needed",
+      "transient": [
+        "split apply into two commands",
+        "412 lines"
+      ],
+      "category": "nothing durable about the work",
+      "text": "[0] [User @ 12:20]: Maybe we should split apply into two commands. Not deciding that today.\n[1] [Assistant @ 12:21]: Noting it as an idea, not a decision.\n[2] [User @ 12:22]: Park it.\n[3] [Tool result for bash @ 12:23]: $ wc -l src/plan.rs\n[4] [Tool result for bash @ 12:24]: 412 src/plan.rs\n[5] [Assistant @ 12:25]: 412 lines in that file.\n[6] [Assistant @ 12:26]: Parked."
+    },
+    {
+      "chunkId": "hy-r2-nw-05",
+      "class": "nothing_work",
+      "why": "a probe that returned nothing and was dropped",
+      "transient": [
+        "no extra detail"
+      ],
+      "category": "nothing durable about the work",
+      "text": "[0] [Assistant @ 13:20]: Trying the verbose doctor once.\n[1] [Tool result for bash @ 13:21]: $ tctl doctor --verbose\n[2] [Tool result for bash @ 13:22]: doctor: no extra detail\n[3] [Assistant @ 13:23]: It printed nothing beyond the normal pass.\n[4] [User @ 13:24]: Drop it, it is not worth chasing.\n[5] [Assistant @ 13:25]: Dropping it."
+    },
+    {
+      "chunkId": "hy-r2-nw-06",
+      "class": "nothing_work",
+      "why": "the assistant narrating a log tail it then agrees proves nothing",
+      "transient": [
+        "pass complete in 4.8 s",
+        "Nothing to change from it"
+      ],
+      "category": "nothing durable about the work",
+      "text": "[0] [Assistant @ 16:20]: Reading the last two lines of the run log.\n[1] [Tool result for bash @ 16:21]: $ tail -n 2 run.log\n[2] [Tool result for bash @ 16:22]: info: pass complete in 4.8 s\n[3] [Assistant @ 16:23]: The last pass finished normally.\n[4] [User @ 16:24]: Nothing to change from it.\n[5] [Assistant @ 16:25]: Agreed."
+    },
+    {
+      "chunkId": "hy-r2-to-01",
+      "class": "tool_output",
+      "why": "nothing was decided; the help text states what a flag does",
+      "probes": [
+        "--dry-run"
+      ],
+      "transient": [
+        "scrolling through the manual"
+      ],
+      "category": "nothing decided, tool output carries a fact",
+      "text": "[0] [User @ 10:20]: I am scrolling through the manual to find the flag that shows changes without making them.\n[1] [Assistant @ 10:21]: Searching the manual text.\n[2] [Tool result for bash @ 10:22]: $ grep -n 'dry' manual.txt\n[3] [Tool result for bash @ 10:23]: 84: --dry-run  prints what would change and writes nothing\n[4] [Assistant @ 10:24]: Found it on line 84.\n[5] [User @ 10:25]: That is the one."
+    },
+    {
+      "chunkId": "hy-r2-to-02",
+      "class": "tool_output",
+      "why": "nothing was decided; the manual states an expiry the tool enforces",
+      "probes": [
+        "900"
+      ],
+      "transient": [
+        "just checking"
+      ],
+      "category": "nothing decided, tool output carries a fact",
+      "text": "[0] [User @ 10:40]: Just checking one line of the manual.\n[1] [Tool result for bash @ 10:41]: $ sed -n '112p' manual.txt\n[2] [Tool result for bash @ 10:42]: 112: unapplied entries expire after 900 s\n[3] [Assistant @ 10:43]: 900 seconds, on line 112.\n[4] [User @ 10:44]: Okay.\n[5] [Assistant @ 10:45]: Nothing else in that page."
+    },
+    {
+      "chunkId": "hy-r2-to-03",
+      "class": "tool_output",
+      "why": "nothing was decided; a source line names the staging file the writer uses",
+      "probes": [
+        "settings.toml.tmp"
+      ],
+      "transient": [
+        "I opened the writer module"
+      ],
+      "category": "nothing decided, tool output carries a fact",
+      "text": "[0] [Assistant @ 14:20]: I opened the writer module to see how the write happens.\n[1] [Tool result for bash @ 14:21]: $ sed -n '88p' src/writer.rs\n[2] [Tool result for bash @ 14:22]: 88: let tmp = \"settings.toml.tmp\";\n[3] [Assistant @ 14:23]: The staging name is on line 88.\n[4] [User @ 14:24]: I see it.\n[5] [Assistant @ 14:25]: Then I will move on."
+    },
+    {
+      "chunkId": "hy-r2-to-04",
+      "class": "tool_output",
+      "why": "nothing was decided; the tool's own error text states a rule it enforces",
+      "probes": [
+        "apply refused"
+      ],
+      "transient": [
+        "Trying apply once"
+      ],
+      "category": "nothing decided, tool output carries a fact",
+      "text": "[0] [Assistant @ 13:20]: Trying apply once against the live file.\n[1] [Tool result for bash @ 13:21]: $ tctl apply\n[2] [Tool result for bash @ 13:22]: error: apply refused while another process holds the lock\n[3] [Assistant @ 13:23]: It refused, and the message names the lock.\n[4] [User @ 13:24]: Leave it for now.\n[5] [Assistant @ 13:25]: Left."
+    },
+    {
+      "chunkId": "hy-r2-to-05",
+      "class": "tool_output",
+      "why": "nothing was decided; doctor explains that it is read-only",
+      "probes": [
+        "never writes"
+      ],
+      "transient": [
+        "wanted to see the wording"
+      ],
+      "category": "nothing decided, tool output carries a fact",
+      "text": "[0] [User @ 15:00]: I wanted to see the wording doctor uses about itself.\n[1] [Tool result for bash @ 15:01]: $ tctl doctor --explain\n[2] [Tool result for bash @ 15:02]: doctor reads settings.toml once per run and never writes it\n[3] [Assistant @ 15:03]: Read-only, one read per run.\n[4] [User @ 15:04]: Okay, that is all.\n[5] [Assistant @ 15:05]: Noted."
+    },
+    {
+      "chunkId": "hy-r2-to-06",
+      "class": "tool_output",
+      "why": "nothing was decided; the banner states the build the box is on",
+      "probes": [
+        "0.9.2"
+      ],
+      "transient": [
+        "just the version"
+      ],
+      "category": "nothing decided, tool output carries a fact",
+      "text": "[0] [User @ 16:00]: Just the version, nothing else.\n[1] [Tool result for bash @ 16:01]: $ tctl --version\n[2] [Tool result for bash @ 16:02]: tctl 0.9.2 built for Python 3.12\n[3] [Assistant @ 16:03]: 0.9.2, Python 3.12.\n[4] [User @ 16:04]: Thanks.\n[5] [Assistant @ 16:05]: Done."
+    }
+  ]
+}

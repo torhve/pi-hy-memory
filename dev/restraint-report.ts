@@ -37,13 +37,18 @@ import type { BankEntry, LedgerRecord } from "../src/types.js";
 
 export interface CorpusChunk {
 	chunkId: string;
-	class: "attribution" | "empty";
+	class: "attribution" | "empty" | "nothing_work" | "tool_output";
 	pair?: string;
 	side?: "keep" | "quote";
 	anchors?: string[];
 	marker?: string;
 	claim?: string;
 	why?: string;
+	/** tool_output only: the tool fact defensible to bank, and the chatter that is not. */
+	probes?: string[];
+	transient?: string[];
+	/** Authored corpora carry their transcript inline; the scorer reads the tool-result lines out of it. */
+	text?: string;
 }
 
 export interface DraftRow {
@@ -64,7 +69,15 @@ export interface PairRow {
 	quoteCarrying: DraftRow[];
 	quoteDraftStrict: boolean | null;
 	quoteDraftAttributed: boolean | null;
-	quoteBankCarrying: { id: string; statement: string; fromUser: boolean; merged: boolean }[];
+	quoteBankCarrying: {
+		id: string;
+		statement: string;
+		fromUser: boolean;
+		merged: boolean;
+		toolDerived: boolean;
+	}[];
+	/** Quote-side bank facts that restate the chunk's own tool output: reported, never scored. */
+	quoteBankToolDerived: number;
 	/** Quote-side facts that merged into the keep-side fact, and ones that stand as new facts. */
 	quoteMerged: number;
 	quoteAdded: number;
@@ -75,6 +88,10 @@ export interface PairRow {
 	quoteBankAttributed: boolean;
 	pairStrict: boolean;
 	pairAttributed: boolean;
+	/** Quote-side drafts that restate the chunk's own tool output: reported, never scored. */
+	quoteDraftToolDerived: number;
+	/** Diagnostic: attributed-ok pair-correct with the pair's own tool-output facts removed. */
+	pairEvidenceFree: boolean;
 	/** Quote side scored clean by anchor, yet word-overlaps the keep-side fact: possible paraphrase. */
 	paraphraseSuspects: { where: "draft" | "bank"; text: string; shared: string[] }[];
 }
@@ -92,9 +109,34 @@ export interface EmptyRow {
 	facts: { task: string; statement: string }[];
 }
 
+/** A chunk where the user decided nothing and the tool output stated something. The corpus names
+ * both halves, so the score can be wrong in either direction: keeping the tool fact is the
+ * defensible call, keeping the chatter is the failure the v1 label hid. */
+export interface ToolRow {
+	chunkId: string;
+	why: string;
+	present: boolean;
+	drafts: DraftRow[];
+	rejectedCount: number;
+	probes: string[];
+	transient: string[];
+	/** Bank facts whose supersede chain reaches this chunk, tagged with which half each kept. */
+	facts: { task: string; statement: string; probe: string | null; chatter: string | null }[];
+	outcome:
+		| "kept-fact"
+		| "kept-both"
+		| "kept-chatter"
+		| "kept-other"
+		| "not-banked"
+		| "abstained"
+		| "code-suppressed"
+		| "dropped";
+}
+
 export interface RunScore {
 	pairs: PairRow[];
 	empties: EmptyRow[];
+	tools: ToolRow[];
 	activeFacts: number;
 	opTotals: Map<string, number>;
 }
@@ -102,9 +144,14 @@ export interface RunScore {
 /** Split-chunk arms write `hy-…-001.1` and `…001.2` over one corpus chunk: fold them together. */
 const base = (chunkId: string): string => chunkId.replace(/\.\d+$/, "");
 
-/** A claim survives paraphrase as a token, not as a sentence: match the anchor as a word. */
+/** A claim survives paraphrase as a token, not as a sentence: match the anchor as a whole token.
+ * A flag-shaped token needs a boundary that does not assume a word character on its outside — a `\b`
+ * in front of `--dry-run` matches nothing — while an ordinary token keeps `\b`, which is the boundary
+ * every earlier score in this repo was computed with. */
 export function carries(anchor: string, text: string): boolean {
-	return new RegExp(`\\b${anchor.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`, "i").test(text);
+	const esc = anchor.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+	const pattern = anchor.startsWith("-") ? `(?<![\\w-])${esc}(?![\\w-])` : `\\b${esc}\\b`;
+	return new RegExp(pattern, "i").test(text);
 }
 
 const textOf = (row: { task: string; statement: string; keys: string[] }): string =>
@@ -169,6 +216,17 @@ export function sharedTokens(a: string, b: string): string[] {
 	return [...words(b)].filter((w) => left.has(w));
 }
 
+/**
+ * The lines of an authored chunk that are tool output rather than something a participant said.
+ * A contrast pair deliberately shows the same tool output on both sides — that is what keeps the
+ * speaker frame the only variable — and the tool output carries the anchor too. So a bank fact that
+ * repeats the anchor is not automatically a restatement of the relayed claim: it can be the user's
+ * own evidence, which needs no attribution because nobody relayed it.
+ */
+function toolLines(chunk: CorpusChunk): string[] {
+	return (chunk.text ?? "").split("\n").filter((line) => /^\[\d+\] \[Tool result/.test(line));
+}
+
 export function scoreRun(chunks: CorpusChunk[], ledger: LedgerRecord[]): RunScore {
 	const evidence = new Map<
 		string,
@@ -230,9 +288,16 @@ export function scoreRun(chunks: CorpusChunk[], ledger: LedgerRecord[]): RunScor
 	}
 	const pairs = new Map<string, { keep: CorpusChunk; quote: CorpusChunk }>();
 	const empties: CorpusChunk[] = [];
+	const toolChunks: CorpusChunk[] = [];
 	for (const chunk of chunks) {
-		if (chunk.class === "empty") {
+		if (chunk.class === "empty" || chunk.class === "nothing_work") {
+			// Same contract, different claim about why: `empty` is the v1 label, `nothing_work` is
+			// the narrowed one the label audit produced. Both expect {"drafts":[]}.
 			empties.push(chunk);
+			continue;
+		}
+		if (chunk.class === "tool_output") {
+			toolChunks.push(chunk);
 			continue;
 		}
 		if (!chunk.pair) continue;
@@ -269,6 +334,15 @@ export function scoreRun(chunks: CorpusChunk[], ledger: LedgerRecord[]): RunScor
 		const quoteFacts = (bankByChunk.get(base(quote.chunkId)) ?? []).filter((e) =>
 			anchors.some((a) => carries(a, textOf(e))),
 		);
+		/**
+		 * A draft or a fact that repeats the chunk's own tool output is not a relayed claim, and the
+		 * pair's tool output carries the anchor on both sides by design. The published gates count
+		 * those as quote-side facts about the claim; the diagnostic below shows how much of the gap
+		 * is the instrument rather than the writer.
+		 */
+		const derived = (text: string): boolean =>
+			toolLines(quote).some((line) => sharedTokens(line, text).length >= 3);
+		const quoteDraftToolDerived = quoteCarrying.filter((d) => derived(textOf(d))).length;
 		// Two different things a quote-side fact can be. Merging into the keep-side fact is reconcile
 		// doing its job on a restatement; adding a second active fact about the same subject is the
 		// duplication restraint is meant to prevent. Scoring them together hid which one happened.
@@ -277,6 +351,8 @@ export function scoreRun(chunks: CorpusChunk[], ledger: LedgerRecord[]): RunScor
 			statement: e.statement,
 			fromUser: e.fromUser === true,
 			merged: chainChunks(e).includes(base(keep.chunkId)),
+			/** Restates the chunk's own tool output rather than the relayed claim. Reported, not scored. */
+			toolDerived: derived(textOf(e)),
 		}));
 		const quoteAdded = quoteBankCarrying.filter((e) => !e.merged).length;
 		const quoteMerged = quoteBankCarrying.length - quoteAdded;
@@ -296,6 +372,18 @@ export function scoreRun(chunks: CorpusChunk[], ledger: LedgerRecord[]): RunScor
 		const quoteBankAttributed = quoteBankCarrying.every((e) =>
 			namesMarker(marker, { task: "", statement: e.statement, keys: [] }),
 		);
+		// Diagnostic, not a published gate: the same attributed-ok contract with the pair's own
+		// tool-output facts removed from the quote side. The distance between this and pairAttributed
+		// is how much of the published gap the instrument itself created.
+		const draftWithoutEvidence = quoteCarrying.filter((d) => !derived(textOf(d)));
+		const bankWithoutEvidence = quoteBankCarrying.filter((e) => !e.toolDerived);
+		const draftOkWithoutEvidence = quoteEv?.present
+			? draftWithoutEvidence.length === 0 || draftWithoutEvidence.some((d) => namesMarker(marker, d))
+			: null;
+		const bankOkWithoutEvidence = bankWithoutEvidence.every((e) =>
+			namesMarker(marker, { task: "", statement: e.statement, keys: [] }),
+		);
+		const pairEvidenceFree = Boolean(keepBanked) && draftOkWithoutEvidence === true && bankOkWithoutEvidence;
 
 		// The blind spot of anchor matching, made visible instead of assumed away.
 		const keepText = (bankByChunk.get(base(keep.chunkId)) ?? []).map((e) => textOf(e)).join(" ");
@@ -325,6 +413,7 @@ export function scoreRun(chunks: CorpusChunk[], ledger: LedgerRecord[]): RunScor
 			quoteDraftStrict,
 			quoteDraftAttributed,
 			quoteBankCarrying,
+			quoteBankToolDerived: quoteBankCarrying.filter((e) => e.toolDerived).length,
 			quoteMerged,
 			quoteAdded,
 			pairFacts: pairFacts.length,
@@ -333,6 +422,8 @@ export function scoreRun(chunks: CorpusChunk[], ledger: LedgerRecord[]): RunScor
 			quoteBankAttributed,
 			pairStrict: Boolean(keepBanked) && quoteDraftStrict === true && quoteBankStrict,
 			pairAttributed: Boolean(keepBanked) && quoteDraftAttributed === true && quoteBankAttributed,
+			quoteDraftToolDerived,
+			pairEvidenceFree,
 			paraphraseSuspects,
 		});
 	}
@@ -373,7 +464,52 @@ export function scoreRun(chunks: CorpusChunk[], ledger: LedgerRecord[]): RunScor
 		};
 	});
 
-	return { pairs: pairRows, empties: emptyRows, activeFacts: bank.length, opTotals };
+	const toolRows: ToolRow[] = toolChunks.map((chunk) => {
+		const ev = evidence.get(base(chunk.chunkId));
+		const probes = chunk.probes ?? [];
+		const chatter = chunk.transient ?? [];
+		const facts = bank
+			.filter((e) => chainChunks(e).includes(base(chunk.chunkId)))
+			.map((e) => {
+				const text = textOf({ task: e.task, statement: e.statement, keys: e.keys });
+				return {
+					task: e.task,
+					statement: e.statement,
+					probe: probes.find((p) => carries(p, text)) ?? null,
+					chatter: chatter.find((c) => carries(c, text)) ?? null,
+				};
+			});
+		const keptProbe = facts.some((f) => f.probe !== null);
+		const keptChatter = facts.some((f) => f.chatter !== null);
+		const outcome: ToolRow["outcome"] = !ev?.present
+			? "dropped"
+			: ev.drafts.length === 0 && ev.rejectedCount === 0
+				? "abstained"
+				: ev.drafts.length === 0
+					? "code-suppressed"
+					: facts.length === 0
+						? "not-banked"
+						: keptProbe && keptChatter
+							? "kept-both"
+							: keptProbe
+								? "kept-fact"
+								: keptChatter
+									? "kept-chatter"
+									: "kept-other";
+		return {
+			chunkId: chunk.chunkId,
+			why: chunk.why ?? "",
+			present: Boolean(ev?.present),
+			drafts: ev?.drafts ?? [],
+			rejectedCount: ev?.rejectedCount ?? 0,
+			probes,
+			transient: chatter,
+			facts,
+			outcome,
+		};
+	});
+
+	return { pairs: pairRows, empties: emptyRows, tools: toolRows, activeFacts: bank.length, opTotals };
 }
 
 export interface Totals {
@@ -392,11 +528,29 @@ export interface Totals {
 	bankMerged: number;
 	bankDuplicated: number;
 	bankAdded: number;
+	/** Quote-side bank facts that restate the chunk's own tool output — reported, never scored. */
+	bankToolDerivedFacts: number;
+	pairsToolDerived: number;
+	/** Diagnostic only: attributed-ok pair-correct ignoring the pair's own tool-output facts. */
+	pairsEvidenceFree: number;
 	abstained: number;
 	suppressed: number;
 	intruded: number;
 	dropped: number;
 	bankFactsFromEmpty: number;
+	/** tool_output: keeping the tool fact is the defensible call, keeping the chatter is the failure. */
+	toolChunks: number;
+	toolFactKept: number;
+	toolBothKept: number;
+	toolChatterKept: number;
+	toolOtherKept: number;
+	toolNotBanked: number;
+	toolAbstained: number;
+	toolSuppressed: number;
+	toolDropped: number;
+	toolFactsBanked: number;
+	/** The stricter reading: every fact the bank kept from the chunk carries the declared tool fact. */
+	toolFactsOnly: number;
 }
 
 export function totals(score: RunScore): Totals {
@@ -415,11 +569,25 @@ export function totals(score: RunScore): Totals {
 		bankMerged: score.pairs.filter((p) => p.quoteMerged > 0).length,
 		bankAdded: score.pairs.filter((p) => p.quoteAdded > 0).length,
 		bankDuplicated: score.pairs.filter((p) => p.bankDuplicated).length,
+		bankToolDerivedFacts: score.pairs.reduce((n, p) => n + p.quoteBankToolDerived, 0),
+		pairsToolDerived: score.pairs.filter((p) => p.quoteBankToolDerived > 0).length,
+		pairsEvidenceFree: score.pairs.filter((p) => p.pairEvidenceFree).length,
 		abstained: score.empties.filter((e) => e.outcome === "abstained").length,
 		suppressed: score.empties.filter((e) => e.outcome === "code-suppressed").length,
 		intruded: score.empties.filter((e) => e.outcome === "intruded").length,
 		dropped: score.empties.filter((e) => e.outcome === "dropped").length,
 		bankFactsFromEmpty: score.empties.reduce((n, e) => n + e.inBank, 0),
+		toolChunks: score.tools.length,
+		toolFactKept: score.tools.filter((c) => c.outcome === "kept-fact").length,
+		toolBothKept: score.tools.filter((c) => c.outcome === "kept-both").length,
+		toolChatterKept: score.tools.filter((c) => c.outcome === "kept-chatter").length,
+		toolOtherKept: score.tools.filter((c) => c.outcome === "kept-other").length,
+		toolNotBanked: score.tools.filter((c) => c.outcome === "not-banked").length,
+		toolAbstained: score.tools.filter((c) => c.outcome === "abstained").length,
+		toolSuppressed: score.tools.filter((c) => c.outcome === "code-suppressed").length,
+		toolDropped: score.tools.filter((c) => c.outcome === "dropped").length,
+		toolFactsBanked: score.tools.reduce((n, c) => n + c.facts.length, 0),
+		toolFactsOnly: score.tools.filter((c) => c.facts.length > 0 && c.facts.every((f) => f.probe !== null)).length,
 	};
 }
 
@@ -444,7 +612,7 @@ function main(): void {
 	const show = showAt >= 0 ? Number(process.argv[showAt + 1]) : 6;
 
 	const corpus = JSON.parse(readFileSync(corpusPath, "utf8")) as {
-		gate?: { attribution_pair?: number; empty_chunk?: number };
+		gate?: { attribution_pair?: number; empty_chunk?: number; nothing_work?: number; tool_output?: number };
 		chunks: CorpusChunk[];
 	};
 	const gate = corpus.gate ?? {};
@@ -461,7 +629,7 @@ function main(): void {
 
 		console.log(`\n=== ${run} — ${corpus.chunks.length} chunks, ${score.activeFacts} active facts ===`);
 		console.log(
-			`corpus gate: ${t.pairs} attribution pairs (need ${gate.attribution_pair ?? 0}), ${score.empties.length} empty chunks (need ${gate.empty_chunk ?? 0})`,
+			`corpus gate: ${t.pairs} attribution pairs (need ${gate.attribution_pair ?? 0}), ${score.empties.length} nothing-durable chunks (need ${gate.empty_chunk ?? 0} empty, ${gate.nothing_work ?? 0} nothing_work), ${t.toolChunks} tool_output chunks (need ${gate.tool_output ?? 0})`,
 		);
 
 		console.log("\nattribution pairs — identical claim, only the speaker frame flips");
@@ -495,6 +663,12 @@ function main(): void {
 			`  what the bank did with the pair: merged into the keep-side fact ${t.bankMerged}   quote side added a new fact ${t.bankAdded}   subject held twice ${t.bankDuplicated}`,
 		);
 		console.log(
+			`  bank facts restating the chunk's own tool output: ${t.bankToolDerivedFacts} across ${t.pairsToolDerived}/${t.pairs} pairs — the bank gate and bank attributed-ok count these as quote-side facts about the relayed claim, which they are not: reported, never scored`,
+		);
+		console.log(
+			`  pair-correct, attributed-ok ignoring those facts: ${t.pairsEvidenceFree}/${t.pairs}  ${pct(t.pairsEvidenceFree, t.pairs)}   (diagnostic, not a published gate: the distance from the number above is what the instrument itself created)`,
+		);
+		console.log(
 			"  headline contract is attributed-ok; strict is kept so the external number stays comparable. Raw counts are the number — with 8 pairs the percentage is orientation, not a measurement.",
 		);
 
@@ -522,6 +696,30 @@ function main(): void {
 			}
 		}
 
+		if (score.tools.length > 0) {
+			console.log(
+				"\ntool_output chunks — nothing decided, tool output states a fact: keeping the fact is the defensible call, keeping the chatter is the failure the v1 label hid",
+			);
+			console.log(
+				`${"chunk".padEnd(20)} ${"drafts".padStart(7)} ${"rejected".padStart(9)} ${"outcome".padStart(16)} ${"facts".padStart(6)} ${"probe".padStart(6)} ${"chatter".padStart(8)}`,
+			);
+			for (const c of score.tools) {
+				console.log(
+					`${c.chunkId.padEnd(20)} ${(c.present ? String(c.drafts.length) : "-").padStart(7)} ${(c.present ? String(c.rejectedCount) : "-").padStart(9)} ${c.outcome.padStart(16)} ${String(c.facts.length).padStart(6)} ${String(c.facts.filter((f) => f.probe).length).padStart(6)} ${String(c.facts.filter((f) => f.chatter).length).padStart(8)}`,
+				);
+			}
+			console.log(
+				`\n  kept the declared tool fact ${t.toolFactKept}/${t.toolChunks}  ${pct(t.toolFactKept, t.toolChunks)}   kept it and nothing else ${t.toolFactsOnly}/${t.toolChunks}  ${pct(t.toolFactsOnly, t.toolChunks)}   fact and chatter ${t.toolBothKept}   chatter only ${t.toolChatterKept}   something else ${t.toolOtherKept}   drafted but not banked ${t.toolNotBanked}   abstained ${t.toolAbstained}   facts banked from these chunks: ${t.toolFactsBanked}`,
+			);
+			console.log("\nwhat each tool_output chunk kept:");
+			for (const c of score.tools) {
+				for (const f of c.facts) {
+					const tag = f.probe ? "tool fact" : f.chatter ? "chatter" : "neither";
+					console.log(`  ${c.chunkId.padEnd(20)} ${tag.padEnd(9)} ${f.task} | ${f.statement.slice(0, 120)}`);
+				}
+			}
+		}
+
 		const opLine = [...score.opTotals.entries()].map(([action, n]) => `${action} ${n}`).join("  ") || "none";
 		console.log(`\nops across the run: ${opLine}`);
 		if ((score.opTotals.get("SKIP") ?? 0) === 0) {
@@ -545,7 +743,7 @@ function main(): void {
 			for (const e of p.quoteBankCarrying) {
 				const named = namesMarker(p.marker, { task: "", statement: e.statement, keys: [] });
 				notes.push(
-					`${p.quoteChunk}: the claim reached the bank ${e.merged ? "merged into the keep-side fact" : "as a new fact"} ${named ? `naming ${p.marker}` : "unattributed"} (${e.id}): "${e.statement.slice(0, 150)}"`,
+					`${p.quoteChunk}: the claim reached the bank ${e.merged ? "merged into the keep-side fact" : "as a new fact"} ${named ? `naming ${p.marker}` : "unattributed"}${e.toolDerived ? " and restating this chunk's own tool output" : ""} (${e.id}): "${e.statement.slice(0, 150)}"`,
 				);
 			}
 			if (p.keepBanked === false) {
@@ -566,6 +764,22 @@ function main(): void {
 				notes.push(`${e.chunkId}: no hy.extract record — a dropped chunk is not abstention`);
 			for (const d of e.drafts)
 				notes.push(`${e.chunkId}: proposed "${d.statement.slice(0, 150)}" on a chunk with nothing durable`);
+		}
+		for (const c of score.tools) {
+			for (const f of c.facts) {
+				if (f.chatter)
+					notes.push(
+						`${c.chunkId}: banked "${f.statement.slice(0, 150)}" carrying the declared chatter "${f.chatter}"`,
+					);
+				if (!f.probe && !f.chatter)
+					notes.push(
+						`${c.chunkId}: banked "${f.statement.slice(0, 150)}" carrying neither the declared tool fact nor the declared chatter`,
+					);
+			}
+			if (c.outcome === "abstained")
+				notes.push(
+					`${c.chunkId}: withheld on a chunk whose tool output states a fact — reported as a judgment, not scored either way`,
+				);
 		}
 		if (notes.length > 0) {
 			console.log(`\nfailures, in corpus order (first ${show}):`);

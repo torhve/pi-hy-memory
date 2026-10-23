@@ -10,9 +10,15 @@
  *
  * It also runs the repo's privacy rules over the authored text, because this corpus is committed
  * while the transcripts it imitates are not.
+ * Three classes, because the v1 label audit found the old two-class split was doing two jobs at once:
+ * `nothing_work` is a chunk where nothing durable about the work occurred, and `tool_output` is a chunk
+ * where the user decided nothing but the tool output states a fact worth keeping. A tool_output chunk
+ * must name both halves — the probe that is defensible to bank and the chatter that is not — or the
+ * score cannot be wrong, which is the same reason a contrast pair must name its one variable.
  */
 
 import { readFileSync } from "node:fs";
+import { carries } from "../dev/restraint-report.js";
 import { EXTRACT_SYSTEM, reconcileSystem } from "../src/prompts.js";
 
 // `--corpus <file>` exists so the check can be pointed at a deliberately broken copy and shown
@@ -32,6 +38,8 @@ interface CorpusChunk {
 	marker?: string;
 	claim?: string;
 	why?: string;
+	probes?: string[];
+	transient?: string[];
 	text: string;
 }
 
@@ -42,8 +50,12 @@ function assert(cond: boolean, label: string): void {
 	}
 }
 
+// The scorer's own token matcher, imported rather than restated: the corpus check and the score
+// must disagree about nothing except which chunk they are looking at.
+const wordMatch = carries;
+
 const doc = JSON.parse(readFileSync(CORPUS, "utf8")) as {
-	gate?: { attribution_pair?: number; empty_chunk?: number };
+	gate?: { attribution_pair?: number; empty_chunk?: number; nothing_work?: number; tool_output?: number };
 	chunks: CorpusChunk[];
 };
 
@@ -55,7 +67,10 @@ const ids = new Set<string>();
 for (const c of chunks) {
 	assert(!ids.has(c.chunkId), `duplicate chunkId ${c.chunkId}`);
 	ids.add(c.chunkId);
-	assert(c.class === "attribution" || c.class === "empty", `${c.chunkId}: unknown class "${c.class}"`);
+	assert(
+		c.class === "attribution" || c.class === "empty" || c.class === "nothing_work" || c.class === "tool_output",
+		`${c.chunkId}: unknown class "${c.class}"`,
+	);
 	assert(c.text.trim().length > 0, `${c.chunkId}: empty text`);
 	// Every labelled line carries a positional ref, and refs count from 0.
 	const lines = c.text.split("\n");
@@ -71,11 +86,31 @@ for (const c of chunks) {
 
 const pairs = new Map<string, CorpusChunk[]>();
 const empties: CorpusChunk[] = [];
+const nothingWork: CorpusChunk[] = [];
+const toolOutput: CorpusChunk[] = [];
 for (const c of chunks) {
-	if (c.class === "empty") {
-		assert(Boolean(c.why), `${c.chunkId}: an empty chunk must say why nothing in it is durable`);
-		assert(!c.anchors?.length && !c.marker, `${c.chunkId}: an empty chunk declares no anchors or marker`);
-		empties.push(c);
+	if (c.class === "empty" || c.class === "nothing_work") {
+		assert(Boolean(c.why), `${c.chunkId}: a nothing-durable chunk must say why nothing in it is durable`);
+		assert(!c.anchors?.length && !c.marker, `${c.chunkId}: a nothing-durable chunk declares no anchors or marker`);
+		(c.class === "empty" ? empties : nothingWork).push(c);
+		continue;
+	}
+	if (c.class === "tool_output") {
+		// The class the v1 label audit forced: nothing was decided, but the tool output carries a
+		// fact. The chunk has to name both halves or the score is unfalsifiable — a banked fact
+		// could be the defensible one or the chatter, and nothing in the corpus would say which.
+		assert(Boolean(c.why), `${c.chunkId}: a tool-output chunk must say that nothing was decided`);
+		assert(!c.anchors?.length && !c.marker, `${c.chunkId}: a tool-output chunk declares no pair anchors or marker`);
+		assert(Boolean(c.probes?.length), `${c.chunkId}: a tool-output chunk must name the tool fact it tests for`);
+		assert(
+			Boolean(c.transient?.length),
+			`${c.chunkId}: a tool-output chunk must name the chatter that must not be banked`,
+		);
+		for (const probe of c.probes!)
+			assert(wordMatch(probe, c.text), `${c.chunkId}: probe "${probe}" is not in the chunk`);
+		for (const small of c.transient!)
+			assert(wordMatch(small, c.text), `${c.chunkId}: transient "${small}" is not in the chunk`);
+		toolOutput.push(c);
 		continue;
 	}
 	assert(
@@ -96,13 +131,17 @@ for (const [pair, sides] of pairs) {
 const pairCount = pairs.size;
 const wantPairs = gate.attribution_pair ?? 0;
 const wantEmpty = gate.empty_chunk ?? 0;
-console.log(`corpus: ${chunks.length} chunks, ${pairCount} attribution pairs, ${empties.length} empty chunks`);
+const wantNothing = gate.nothing_work ?? 0;
+const wantTool = gate.tool_output ?? 0;
+console.log(
+	`corpus: ${chunks.length} chunks, ${pairCount} attribution pairs, ${empties.length + nothingWork.length} nothing-durable chunks (${empties.length} empty, ${nothingWork.length} nothing_work), ${toolOutput.length} tool_output chunks`,
+);
 assert(pairCount >= wantPairs, `gate: ${pairCount} attribution pairs, needs ${wantPairs}`);
 assert(empties.length >= wantEmpty, `gate: ${empties.length} empty chunks, needs ${wantEmpty}`);
+assert(nothingWork.length >= wantNothing, `gate: ${nothingWork.length} nothing_work chunks, needs ${wantNothing}`);
+assert(toolOutput.length >= wantTool, `gate: ${toolOutput.length} tool_output chunks, needs ${wantTool}`);
 
 // ---- 2. pair isolation --------------------------------------------------------
-const wordMatch = (needle: string, text: string): boolean =>
-	new RegExp(`\\b${needle.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`, "i").test(text);
 
 for (const [pair, sides] of pairs) {
 	const keep = sides.find((s) => s.side === "keep")!;
@@ -147,6 +186,26 @@ for (const [pair, sides] of pairs) {
 	}
 }
 
+// The same rule for the classes that name their own probes: a tool fact declared in one chunk
+// and found in another makes a banked fact there ambiguous too.
+for (const c of [...nothingWork, ...toolOutput]) {
+	for (const probe of c.probes ?? []) {
+		for (const other of chunks) {
+			if (other.chunkId === c.chunkId) continue;
+			assert(!wordMatch(probe, other.text), `leak: probe "${probe}" of ${c.chunkId} appears in ${other.chunkId}`);
+		}
+	}
+	for (const small of c.transient ?? []) {
+		for (const other of chunks) {
+			if (other.chunkId === c.chunkId) continue;
+			assert(
+				!wordMatch(small, other.text),
+				`leak: transient "${small}" of ${c.chunkId} appears in ${other.chunkId}`,
+			);
+		}
+	}
+}
+
 // ---- 4. contamination guard ---------------------------------------------------
 // The external benchmark caught a model inventing a fact out of its own instructions. This
 // repo's own measured version of that is 19/590 observations copying a rendered id label.
@@ -161,6 +220,19 @@ for (const [pair, sides] of pairs) {
 		);
 	}
 	assert(!wordMatch(keep.marker!, promptText), `contamination: marker "${keep.marker}" appears in the writer prompt`);
+}
+
+for (const c of [...nothingWork, ...toolOutput]) {
+	for (const probe of c.probes ?? [])
+		assert(
+			!wordMatch(probe, promptText),
+			`contamination: probe "${probe}" of ${c.chunkId} appears in the writer prompt`,
+		);
+	for (const small of c.transient ?? [])
+		assert(
+			!wordMatch(small, promptText),
+			`contamination: transient "${small}" of ${c.chunkId} appears in the writer prompt`,
+		);
 }
 
 // ---- 5. privacy (AGENTS.md) ---------------------------------------------------

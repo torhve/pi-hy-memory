@@ -66,6 +66,12 @@ const corpus: CorpusChunk[] = [
 		anchors: [ANCHORS[1]!],
 		marker: "Devin",
 		claim: "c",
+		text: [
+			"[0] [User @ 10:02]: Devin (ops) parses settings.toml with tomllib.",
+			"[1] [Assistant @ 10:03]: Noting that as Devin's.",
+			"[2] [Tool result for bash @ 10:04]: $ grep -rn tomllib src/config.rs",
+			"[3] [Tool result for bash @ 10:05]: 112: let map = tomllib::parse(&text);",
+		].join("\n"),
 	},
 	{
 		chunkId: "hy-x-attr-c",
@@ -193,10 +199,78 @@ const corpus: CorpusChunk[] = [
 		marker: "Bo",
 		claim: "c",
 	},
+	{
+		chunkId: "hy-x-attr-j",
+		class: "attribution",
+		pair: "j",
+		side: "keep",
+		anchors: [ANCHORS[4]!],
+		marker: "Nils",
+		claim: "c",
+	},
+	{
+		chunkId: "hy-x-attr-jq",
+		class: "attribution",
+		pair: "j",
+		side: "quote",
+		anchors: [ANCHORS[4]!],
+		marker: "Nils",
+		claim: "c",
+		text: [
+			"[0] [User @ 10:10]: Nils says tctl reports a stale-schema error when the cache is older.",
+			"[1] [Assistant @ 10:11]: Noting that as Nils's.",
+			"[2] [Tool result for bash @ 10:12]: $ tail doctor.log",
+			"[3] [Tool result for bash @ 10:13]: doctor.log: schema: stale (cache older than settings)",
+		].join("\n"),
+	},
 	{ chunkId: "hy-x-empty-01", class: "empty", why: "aborted probe" },
 	{ chunkId: "hy-x-empty-02", class: "empty", why: "unanswered question" },
 	{ chunkId: "hy-x-empty-03", class: "empty", why: "log numbers, no conclusion" },
 	{ chunkId: "hy-x-empty-04", class: "empty", why: "never extracted" },
+	// tool_output: the class the v1 label audit forced. Each chunk names the tool fact that is
+	// defensible to bank and the chatter that is not, so both failure directions are visible.
+	{
+		chunkId: "hy-x-tool-01",
+		class: "tool_output",
+		why: "nothing decided; help text states what a flag does",
+		probes: ["--dry-run"],
+		transient: ["scrolling through the manual"],
+	},
+	{
+		chunkId: "hy-x-tool-02",
+		class: "tool_output",
+		why: "nothing decided; the manual states an expiry",
+		probes: ["900"],
+		transient: ["just checking"],
+	},
+	{
+		chunkId: "hy-x-tool-03",
+		class: "tool_output",
+		why: "nothing decided; a source line names the staging file",
+		probes: ["settings.toml.tmp"],
+		transient: ["opened the writer module"],
+	},
+	{
+		chunkId: "hy-x-tool-04",
+		class: "tool_output",
+		why: "nothing decided; the banner states the build",
+		probes: ["0.9.2"],
+		transient: ["just the version"],
+	},
+	{
+		chunkId: "hy-x-tool-05",
+		class: "tool_output",
+		why: "nothing decided; the error text states a rule",
+		probes: ["apply refused"],
+		transient: ["trying apply once"],
+	},
+	{
+		chunkId: "hy-x-tool-06",
+		class: "tool_output",
+		why: "nothing decided; doctor explains itself",
+		probes: ["check-order"],
+		transient: ["wanted to see the wording"],
+	},
 ];
 
 const draft = (task: string, statement: string, fromUser: boolean) => ({
@@ -258,8 +332,14 @@ const ledger: LedgerRecord[] = [
 	// b: quote carries the claim but names the third party.
 	extract("hy-x-attr-b", [draft("parser", "settings.toml is parsed with tomllib.", true)]),
 	ops("hy-x-attr-b", [{ action: "ADD", draft: 0 }]),
-	extract("hy-x-attr-bq", [draft("Devin's setup", "Devin (ops) parses settings.toml with tomllib.", true)]),
-	ops("hy-x-attr-bq", [{ action: "ADD", draft: 0 }]),
+	extract("hy-x-attr-bq", [
+		draft("Devin's setup", "Devin (ops) parses settings.toml with tomllib.", true),
+		draft("Devin's grep", "Devin's grep over src/config.rs shows tomllib used at line 112.", true),
+	]),
+	ops("hy-x-attr-bq", [
+		{ action: "ADD", draft: 0 },
+		{ action: "ADD", draft: 1 },
+	]),
 
 	// c: keep drafted, reconcile dropped it — recall lost at the second call.
 	extract("hy-x-attr-c", [draft("locking", "flock is what we use for the rename path.", true)]),
@@ -316,6 +396,14 @@ const ledger: LedgerRecord[] = [
 		draft("scheduler rewrite", "The retry window was removed entirely in the scheduler rewrite.", true),
 	]),
 	ops("hy-x-attr-iq", [{ action: "UPDATE", draft: 0, target: newId("hy-x-attr-i:0:ADD") }]),
+	// j: the quote side's only anchor-carrying fact restates this chunk's own tool output. Both
+	// published gates fail the pair; the diagnostic does not. That gap is the instrument, not the writer.
+	extract("hy-x-attr-j", [
+		draft("stale schema", "tctl reports a stale-schema error when the cache is older.", false),
+	]),
+	ops("hy-x-attr-j", [{ action: "ADD", draft: 0 }]),
+	extract("hy-x-attr-jq", [draft("doctor log", "The doctor log printed schema: stale at 10:12.", false)]),
+	ops("hy-x-attr-jq", [{ action: "ADD", draft: 0 }]),
 	// empties: abstained, code-suppressed, intruded, dropped.
 	extract("hy-x-empty-01", []),
 	ops("hy-x-empty-01", []),
@@ -323,6 +411,31 @@ const ledger: LedgerRecord[] = [
 	ops("hy-x-empty-02", []),
 	extract("hy-x-empty-03", [draft("log counts", "doctor.log has 7 warn lines.", false)]),
 	ops("hy-x-empty-03", [{ action: "ADD", draft: 0 }]),
+	// tool_output outcomes, one per branch the scorer can reach.
+	// 01: kept the tool fact and nothing else.
+	extract("hy-x-tool-01", [
+		draft("dry-run flag", "tctl --dry-run prints what would change and writes nothing.", false),
+	]),
+	ops("hy-x-tool-01", [{ action: "ADD", draft: 0 }]),
+	// 02: kept the chatter and missed the fact.
+	extract("hy-x-tool-02", [draft("session note", "The user was just checking one line of the manual.", false)]),
+	ops("hy-x-tool-02", [{ action: "ADD", draft: 0 }]),
+	// 03: kept both halves in one fact.
+	extract("hy-x-tool-03", [
+		draft("staging file", "Opened the writer module: the staging file is settings.toml.tmp.", false),
+	]),
+	ops("hy-x-tool-03", [{ action: "ADD", draft: 0 }]),
+	// 04: withheld. A judgment on this class, not a failure.
+	extract("hy-x-tool-04", []),
+	ops("hy-x-tool-04", []),
+	// 05: drafted the fact, reconcile banked nothing.
+	extract("hy-x-tool-05", [
+		draft("lock rule", "tctl says apply refused while another process holds the lock.", false),
+	]),
+	ops("hy-x-tool-05", [{ action: "SKIP", draft: 0 }]),
+	// 06: banked a fact that is neither the declared tool fact nor the declared chatter.
+	extract("hy-x-tool-06", [draft("doctor pass", "doctor runs once per pass over the settings.", false)]),
+	ops("hy-x-tool-06", [{ action: "ADD", draft: 0 }]),
 ];
 
 // ---- anchor matching -----------------------------------------------------------
@@ -332,13 +445,24 @@ assert(carries("schema", "a stale-schema error"), "schema matches inside a hyphe
 assert(!carries("schema", "schemata"), "schema must not match a longer word");
 assert(carries("TCTL_LOCK", "TCTL_LOCK=off"), "TCTL_LOCK matches with its value attached");
 
+// Flag-shaped tokens need a different boundary: a `\\b` in front of `--dry-run` matches nothing at
+// all, which is how the first draft of this corpus failed its own check. Ordinary anchors keep `\\b`,
+// so every score computed before this change still means what it meant.
+assert(carries("--dry-run", "tctl --dry-run prints what would change"), "a flag anchor matches its flag");
+assert(!carries("--dry-run", "--dry-run-all is a different flag"), "a flag must not match inside a longer flag");
+assert(!carries("900", "1900 s is a different expiry"), "a number must not match inside a longer number");
+assert(
+	carries("O_EXCL", "O_EXCL-only locking was rejected"),
+	"an ordinary anchor still matches inside a hyphenated compound",
+);
+
 const score = scoreRun(corpus, ledger);
 const t = totals(score);
 const byPair = new Map(score.pairs.map((p) => [p.pair, p]));
 const byEmpty = new Map(score.empties.map((e) => [e.chunkId, e]));
 
 console.log(
-	`fixture: ${score.pairs.length} pairs, ${score.empties.length} empty chunks, ${score.activeFacts} active facts`,
+	`fixture: ${score.pairs.length} pairs, ${score.empties.length} empty chunks, ${score.tools.length} tool_output chunks, ${score.activeFacts} active facts`,
 );
 
 // a: unattributed intrusion at both gates.
@@ -363,6 +487,17 @@ assert(
 );
 assert(b.quoteDraftAttributed === true && b.quoteBankAttributed === true, "b: attributed-ok accepts it at both gates");
 assert(b.pairStrict === false && b.pairAttributed === true, "b: the two contracts must disagree on this pair");
+
+// The pair's own tool output carries the anchor too. A bank fact repeating it is the user's
+// evidence, not a restatement of the relayed claim, and the scorer must say which it counted.
+assert(
+	b.quoteBankToolDerived === 1,
+	`b: one of the two quote-side bank facts restates the chunk's grep output, got ${b.quoteBankToolDerived}`,
+);
+assert(
+	b.quoteBankCarrying.some((e) => e.toolDerived) && !b.quoteBankCarrying.every((e) => e.toolDerived),
+	"b: the claim fact and the evidence fact must not be classified the same way",
+);
 
 // c: recall lost at reconcile, quote side clean.
 const c = byPair.get("c")!;
@@ -428,6 +563,24 @@ assert(
 	"i: a lost claim is not pair-correct under either contract",
 );
 
+// j: the pair's own tool output carries the anchor, and the quote side's only anchor-carrying fact
+// repeats it. Both published gates fail; the diagnostic passes. Pinned so the diagnostic can never be
+// quietly promoted into the published number.
+const j = byPair.get("j")!;
+assert(j.keepBanked === true, "j: the keep side is banked, so the pair is eligible");
+assert(
+	j.quoteDraftToolDerived === 1 && j.quoteBankToolDerived === 1,
+	`j: the quote side's draft and its bank fact both restate this chunk's doctor.log line, got ${j.quoteDraftToolDerived}/${j.quoteBankToolDerived}`,
+);
+assert(
+	j.pairStrict === false && j.pairAttributed === false,
+	"j: unattributed and anchor-carrying, so both published contracts fail it",
+);
+assert(
+	j.pairEvidenceFree === true,
+	"j: with the tool-output fact excluded the pair is pair-correct — the gap is the instrument",
+);
+
 // empties: four outcomes, four different meanings.
 assert(byEmpty.get("hy-x-empty-01")!.outcome === "abstained", "empty-01: model withheld");
 assert(byEmpty.get("hy-x-empty-02")!.outcome === "code-suppressed", "empty-02: model proposed, code refused");
@@ -438,21 +591,21 @@ assert(
 assert(byEmpty.get("hy-x-empty-04")!.outcome === "dropped", "empty-04: no extract record is not abstention");
 
 // ---- aggregates ---------------------------------------------------------------
-assert(t.pairs === 9, `pairs 9, got ${t.pairs}`);
-assert(t.keepBanked === 7, `keep banked 7 of 9 (c dropped, i superseded), got ${t.keepBanked}`);
+assert(t.pairs === 10, `pairs 10, got ${t.pairs}`);
+assert(t.keepBanked === 8, `keep banked 8 of 10 (c dropped, i superseded), got ${t.keepBanked}`);
 assert(
 	t.restraintDraftStrict === 4,
-	`draft gate clean on 4 of 9 quote sides (a,b,d,g,h restated the claim), got ${t.restraintDraftStrict}`,
+	`draft gate clean on 4 of 10 quote sides (a,b,d,g,h restated the claim; j restated its own tool output), got ${t.restraintDraftStrict}`,
 );
 assert(
 	t.restraintBankStrict === 7,
-	`bank gate clean on 7 of 9 (a,b added a second fact), got ${t.restraintBankStrict}`,
+	`bank gate clean on 7 of 10 (a,b,j added a second fact), got ${t.restraintBankStrict}`,
 );
 assert(
 	t.restraintDraftAttributed === 7,
-	`draft gate attributed-ok on 7 of 9 (a, d restated and named nothing), got ${t.restraintDraftAttributed}`,
+	`draft gate attributed-ok on 7 of 10 (a, d, j restated and named nothing), got ${t.restraintDraftAttributed}`,
 );
-assert(t.restraintBankAttributed === 8, `bank gate attributed-ok on 8 of 9, got ${t.restraintBankAttributed}`);
+assert(t.restraintBankAttributed === 8, `bank gate attributed-ok on 8 of 10, got ${t.restraintBankAttributed}`);
 assert(
 	t.restraintStrict === 4 && t.restraintAttributed === 7,
 	`both-gate restraint 4 strict / 7 attributed, got ${t.restraintStrict}/${t.restraintAttributed}`,
@@ -461,6 +614,10 @@ assert(
 	t.pairStrict === 2 && t.pairAttributed === 5,
 	`pair-correct 2 strict / 5 attributed, got ${t.pairStrict}/${t.pairAttributed}`,
 );
+assert(
+	t.pairsEvidenceFree === 6,
+	`pair-correct attributed-ok rises to 6 of 10 once the pair's own tool-output facts are excluded — the fixture pins that the diagnostic can only ever be reported alongside the published number, got ${t.pairsEvidenceFree}`,
+);
 assert(t.abstained === 1 && t.suppressed === 1 && t.intruded === 1 && t.dropped === 1, "one of each empty outcome");
 assert(t.bankFactsFromEmpty === 1, "exactly one fact the bank kept from an empty chunk");
 assert(t.paraphraseSuspects === 1, `exactly one pair flagged as a possible paraphrase, got ${t.paraphraseSuspects}`);
@@ -468,13 +625,47 @@ assert(
 	t.bankMerged === 1,
 	`one pair merged with the surviving entry still on the quote side (g); h merged too but a third chunk refined it since, and this metric counts what the bank holds now, got ${t.bankMerged}`,
 );
-assert(t.bankAdded === 2, `two pairs got a new second fact (a, b), got ${t.bankAdded}`);
-assert(t.bankDuplicated === 2, `two pairs hold the subject twice (a, b), got ${t.bankDuplicated}`);
+assert(t.bankAdded === 3, `three pairs got a new second fact (a, b, j), got ${t.bankAdded}`);
+assert(t.bankDuplicated === 3, `three pairs hold the subject twice (a, b, j), got ${t.bankDuplicated}`);
 assert(
-	(score.opTotals.get("SKIP") ?? 0) === 1,
-	"the fixture used SKIP once, so the report must not claim SKIP was never used",
+	t.bankToolDerivedFacts === 2 && t.pairsToolDerived === 2,
+	`two bank facts across two pairs restate their own tool output (b, j), got ${t.bankToolDerivedFacts} across ${t.pairsToolDerived}`,
+);
+assert(
+	(score.opTotals.get("SKIP") ?? 0) === 2,
+	"the fixture used SKIP twice (d and tool-05), so the report must not claim SKIP was never used",
+);
+
+// ---- tool_output: both failure directions, and every branch in between ----------
+const byTool = new Map(score.tools.map((c) => [c.chunkId, c]));
+assert(score.tools.length === 6, `6 tool_output chunks, got ${score.tools.length}`);
+assert(byTool.get("hy-x-tool-01")!.outcome === "kept-fact", "tool-01: kept the tool fact and nothing else");
+assert(
+	byTool.get("hy-x-tool-01")!.facts[0].probe === "--dry-run",
+	"tool-01: the flag is what matched, not the prose around it",
+);
+assert(byTool.get("hy-x-tool-02")!.outcome === "kept-chatter", "tool-02: kept the chatter and missed the fact");
+assert(byTool.get("hy-x-tool-03")!.outcome === "kept-both", "tool-03: one fact carrying both halves");
+assert(
+	byTool.get("hy-x-tool-04")!.outcome === "abstained",
+	"tool-04: withheld — a judgment on this class, not a failure",
+);
+assert(byTool.get("hy-x-tool-05")!.outcome === "not-banked", "tool-05: drafted the fact, reconcile banked nothing");
+assert(byTool.get("hy-x-tool-06")!.outcome === "kept-other", "tool-06: banked something the corpus declared neither");
+assert(
+	t.toolFactKept === 1 && t.toolChatterKept === 1 && t.toolBothKept === 1,
+	`one fact-only, one chatter-only, one both, got ${t.toolFactKept}/${t.toolChatterKept}/${t.toolBothKept}`,
+);
+assert(
+	t.toolOtherKept === 1 && t.toolNotBanked === 1 && t.toolAbstained === 1,
+	`one neither, one not banked, one withheld, got ${t.toolOtherKept}/${t.toolNotBanked}/${t.toolAbstained}`,
+);
+assert(t.toolFactsBanked === 4, `four facts banked across the six tool chunks, got ${t.toolFactsBanked}`);
+assert(
+	t.toolFactsOnly === 2,
+	`only 2 of the six kept the tool fact and nothing else (01, 03); 02 kept chatter, 06 kept neither, 04 and 05 kept nothing — the stricter reading is the honest headline, got ${t.toolFactsOnly}`,
 );
 
 console.log(
-	`ok: unattributed vs attributed, draft gate vs bank gate, drafted-then-dropped, merge vs second fact, supersede chains two hops long and one that lost the claim, the paraphrase blind spot, and all four empty outcomes score as intended`,
+	`ok: unattributed vs attributed, draft gate vs bank gate, drafted-then-dropped, merge vs second fact, supersede chains two hops long and one that lost the claim, the paraphrase blind spot, all four empty outcomes, and every tool_output branch (fact, chatter, both, neither, withheld, drafted-but-not-banked) score as intended`,
 );

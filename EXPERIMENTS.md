@@ -1014,3 +1014,132 @@ durable about the work* (04, 05, 09 — the writer is plainly wrong to store any
 user decided, but tool output present* (03, 08, and the aborted probes) where storing the tool fact is a
 defensible call and abstaining is a judgment, not a rule. That is a corpus-design change for a new
 corpus with its own gate, not a relabeling of these ten.
+
+## Run: restraint, second cut — three classes instead of one (2026-10-23)
+
+`dev/corpus-restraint2.json`, run `restraint2-base`. v1 (`dev/corpus-restraint.json`,
+`restraint-base`) is untouched and re-scores byte-identical; this is a new corpus with its own gate,
+not a relabeling, exactly as the audit above said it should be.
+
+The empty class is split into the two things the audit found inside it:
+
+- **`nothing_work`** — nothing durable is said about the work *and* the tool output says nothing
+  durable either. Storing anything here is plainly wrong, with no defensible fact to hide behind.
+- **`tool_output`** — nobody decided anything, but a tool result states a durable fact. Keeping the
+  fact is the defensible call; keeping the chatter around it is the failure v1 could not see.
+
+The attribution pairs are new too: new anchors (`TCTL_WRITE_MODE`, `--no-follow`, `pending.db`,
+`MAX_PENDING`, `check-order`, `0o660`, `tctl plan`, `--trace`), new claims, new markers (Lena … Bram),
+so nothing from v1 leaks into v2 or back.
+
+### Corpus and gate
+
+28 authored chunks, mean 94 estimated tokens. Gate: 8 attribution pairs, 6 `nothing_work`, 6
+`tool_output`. `tools/restraint-corpus-check.ts` now enforces per-class rules — a `nothing_work`
+chunk must say *why* nothing is durable and carries no anchor; a `tool_output` chunk must declare
+both the tool fact it is tested for (`probes`) and the chatter that must not be banked
+(`transient`); probes must appear in their own chunk and nowhere else; a probe that is also a word in
+the writer's own prompt is refused, because that measures the prompt and not the model.
+`tools/restraint-corpus-mutation-check.ts` proves that check can fail: it copies the corpus to a temp
+file, breaks one rule at a time, and requires the rejection to name the rule it broke — 13 mutations,
+all rejected. A rule that stops being enforced shows up there as a mutation that suddenly passes. The
+privacy rules are the one thing it does not mutation-test: a fixture that tripped them would put a
+hostname, a home-directory path or a credential into the diff, which AGENTS.md forbids.
+
+### Run
+
+Same writer, same route, same config as `restraint-base` (`hy-memory-30b-a3b`, temperature 0,
+reasoning off, pool 12 000, per-draft candidates, limit 12). 28 chunks, 45 active facts,
+ops ADD 45 / UPDATE 14 / SKIP 1.
+
+| axis | result |
+| --- | --- |
+| recall — keep side reaches the bank | 8/8 |
+| restraint, strict (quote side withheld at the draft gate) | 0/8 |
+| quote-side drafts naming the third party | 8/8 |
+| quote side clean at the bank gate | 5/8 |
+| quote-side bank facts naming the third party | 1/8 |
+| pair-correct, strict | 0/8 |
+| pair-correct, attributed-ok | 1/8 |
+| pair-correct, attributed-ok ignoring the pair's own tool output — diagnostic, not a gate | 6/8 |
+| what the bank did with the pair | 8 merged into the keep-side fact, 3 pairs gained a second active fact, 7 pairs hold the subject twice |
+| `nothing_work` chunks abstained | 0/6 — 12 facts banked |
+| `tool_output` chunks keeping the declared tool fact | 6/6 — 0 declared chatter banked, 11 facts banked |
+| `tool_output` chunks keeping the fact *and nothing else* | 3/6 |
+
+### Soft axis: the same judge, seeds 7 and 11
+
+59 ops per seed, 0 verdict-less, 0 unsupported, missed durable facts 0 and 1, specificity mean 2.153
+and 2.169. The two seeds agree on **54 of 59 ops** (26 noise both times, 28 keepable both times,
+5 split). `shouldNotStore`, per seed:
+
+| class | seed 7 | seed 11 | durable / marginal, both seeds |
+| --- | --- | --- | --- |
+| `nothing_work` | 11/13 | 12/13 | 0 durable, 3 marginal |
+| `tool_output` | 5/11 | 6/11 | 6 durable, 5 marginal |
+| attribution, keep side | 4/17 | 5/17 | 16 durable, 9 marginal |
+| attribution, quote side | 8/18 | 6/18 | 16 durable, 10 marginal |
+
+**The class split is confirmed by an independent judge, not just by the labels.** On `nothing_work`
+the judge found **zero durable facts in either seed** and rejected 11 and 12 of the 13 writes; the two
+it let through were a cache file's size and timestamp and "user parked the idea of splitting apply
+without deciding". On `tool_output` the judge graded the pair of writes in each chunk separately and
+got the pattern the corpus predicted: the tool fact durable or marginal, the narration next to it noise
+in five of six chunks — "This is a restatement of the assistant's action ('opened the writer module')
+and the result already captured in op 0. It adds no new durable…" (`hy-r2-to-03`), "pure
+bookkeeping/chatter confirming the end of a trivial query" (`hy-r2-to-05`). v1's ambiguous
+"9–11 of 23 worth keeping" is gone: with the defensible facts moved to their own class, the writer's
+behaviour on the two classes is 0/6 abstain and 6/6 keep.
+
+### The instrument found a new blind spot, and it is printed
+
+Every contrast pair shows the same tool output on both sides — that is what keeps the speaker frame the
+only variable — and the tool output carries the anchor too. So a bank fact that repeats the anchor is
+not automatically a restatement of the relayed claim:
+
+```
+hy-r2-r2e-q: … merged into the keep-side fact unattributed and restating this chunk's own tool output:
+  "Running 'tctl doctor check-order' returned 'check-order: ok'."
+hy-r2-r2c-q: … unattributed and restating this chunk's own tool output:
+  "The file pending.db exists in var/state with size 2048 bytes, last modified at 10:31."
+```
+
+**9 such facts across 6 of the 8 pairs.** The bank gate and the bank attributed-ok count them as
+quote-side facts about the relayed claim, which they are not: nobody relayed a grep result, and a fact
+about the user's own evidence needs no attribution. That is the whole distance between draft
+attributed-ok 8/8 and bank attributed-ok 1/8 — every pair did produce a fact naming its marker
+("Wren stated that tctl keeps its queue of unapplied changes in a file named pending.db"). The scorer
+now labels these facts in the notes and reports the count without scoring them, and the fixture
+(`tools/restraint-report-check.ts`) pins the classification: pair `b` carries one claim fact and one
+grep-output fact and they must not be classified the same way. The published 1/8 stands as measured;
+what changed is that the number now says what it counted.
+
+The diagnostic printed beside it, never instead of it: **pair-correct attributed-ok ignoring those facts
+is 6/8, against the published 1/8.** The same scorer on v1 prints 7/8 against its published 5/8, with 2
+such facts across 2 pairs; v1's published numbers are unchanged. The fixture adds a pair (`j`) whose only
+anchor-carrying quote-side fact repeats its own `doctor.log` line — both published contracts fail it, the
+diagnostic passes it, and the aggregate assertion records both totals so the diagnostic cannot be quietly
+promoted into the headline. Which of the two is the right contract is an open decision (TODO 7.11), not a
+number to pick after seeing the first score.
+
+The judge reaches the same place from the other side: it called most of those evidence facts noise on
+their own merits — "transient command result", "bookkeeping of a one-off lookup", "the mode value is
+already captured in the durable memory (op 1)".
+
+### What this rules out, and what it does not
+
+- Restraint is not a blanket refusal in this writer, and never was: it keeps a tool fact 6/6 and keeps
+  conversation 6/6. The failure is specific — it cannot tell the two apart, and nothing in the pipeline
+  asks it to.
+- The draft gate is unchanged across two corpora: 0/8 withheld both times, 0/8 both times for strict
+  pair-correct. Extract never sees the bank, so a restatement is proposed before anything knows it is
+  redundant. That is the same conclusion as v1, now with the confound removed.
+- Attribution at the draft gate improved to 8/8 from 6/8, which is a property of the v2 claims always
+  carrying an explicit speaker frame, not a change in the pipeline.
+
+**Limitations.** 8 pairs, 6 + 6 class chunks, authored rather than transcribed. The `tool_output`
+probes are distinctive tokens, so "kept the declared tool fact" is the easy half; the honest version of
+that column is 3/6, because the writer banks narration the corpus never declared as chatter
+("Assistant opened the writer module…", "User instructed to leave the tctl apply for now") and a
+one-phrase `transient` list cannot name what the writer chose to write. Judge numbers on `UPDATE`
+still carry the cross-chunk bias named in the v1 section.

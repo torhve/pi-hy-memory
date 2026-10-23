@@ -415,3 +415,4 @@ is required to use the extension.
 | `dev/live-cadence.sh` | compare model-initiated writes against the token threshold in one live session |
 | `dev/corpus-restraint.json` | authored contrast pairs with known-correct output: 8 attribution pairs, 10 empty chunks (contract enforced by `tools/restraint-corpus-check.ts`) |
 | `dev/restraint-report.ts` | score a run against those pairs: abstention, speaker attribution, at the draft gate and the bank gate |
+| `dev/corpus-restraint2.json` | the second cut, its own gate: 8 new attribution pairs, 6 `nothing_work` chunks, 6 `tool_output` chunks (same contract check, plus `tools/restraint-corpus-mutation-check.ts` proving it rejects a broken corpus) |

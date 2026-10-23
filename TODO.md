@@ -257,12 +257,26 @@ gate.
       op both seeds rejected says something about what the participants did. Labels, the `empty_chunk: 10`
       gate and the published 0/10 are unchanged; relabeling three chunks would drop the class to 7 and
       fail the corpus check, which is the reason the audit is findings and not a re-score.
-- [ ] 7.9 Slice 2 corpus work the audit implies, gated on 7.6: split the nothing-durable class into
-      *nothing durable about the work* (the writer is plainly wrong to store any of it) and *nothing the
-      user decided, but tool output present* (storing the tool fact is a defensible call), as a new corpus
-      with its own gate rather than a relabeling of the ten. The bank-aware draft-gate experiment —
-      extract sees a task-line bank index, measured on draft-gate restraint, extraction recall and
-      precision, attribution and token cost — comes after that, not before.
+- [x] 7.9 Slice 2 corpus work the audit implied (`EXPERIMENTS.md`, 2026-10-23). `dev/corpus-restraint2.json`
+      with its own gate — 8 new attribution pairs, 6 `nothing_work`, 6 `tool_output` — a new corpus rather
+      than a relabeling of the ten. `restraint2-base`: `nothing_work` 0/6 abstained, 12 facts banked, the
+      judge finding **0 durable in either seed**; `tool_output` 6/6 keep the declared tool fact and 0
+      declared chatter, but only 3/6 keep the fact and nothing else; draft gate 0/8 withheld again, same as
+      v1. `tools/restraint-corpus-mutation-check.ts` now proves the corpus check rejects 13 different ways
+      of breaking the corpus, each by the rule it broke.
+- [ ] 7.10 The bank-aware draft-gate experiment, which both corpora now point at: extract sees a task-line
+      bank index, measured against `restraint-base` and `restraint2-base` on draft-gate restraint, extraction
+      recall and precision, attribution behaviour and token cost, with leakage and privacy checks. The
+      failure sits in the same place twice — 0/8 withheld — so this is the branch with evidence behind it.
+      Behind an experiment flag, not default without measurement.
+- [ ] 7.11 Named by the v2 run rather than planned: a contrast pair's tool output carries the pair anchor on
+      both sides, so the bank gate and bank attributed-ok count the user's own evidence as a quote-side
+      restatement (9 facts across 6 of 8 pairs; v1 has 2 across 2). The scorer now labels those facts and
+      prints a diagnostic beside the published gate — attributed-ok 6/8 against the published 1/8 on v2,
+      7/8 against 5/8 on v1 — and the fixture pins both so the diagnostic cannot be promoted by accident.
+      The open decision is which contract is the real one: the corpus declares which anchor-carrying lines
+      are shared evidence, or the bank gate scores only facts carrying the claim's wording. No re-scoring
+      of published numbers until that is decided.
 ## Notes
 
 - Writer route: primary `remote/hy-memory-30b-a3b`, measured in this session on a 10.9 k-token
