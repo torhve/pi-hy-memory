@@ -365,6 +365,9 @@ to break silently:
 | `budget-check`, `reload-budget-check` | pool eviction order, reload semantics, summary budget |
 | `render-check` | compaction summary budget, omission reporting, and newest-first admission |
 | `bank-index-check` | the experimental bank-aware extract call: index arrives as background rather than transcript, carries no bank ids, drops whole entries newest-first, and the flagless request is byte-identical to the shipped one |
+| `restraint-corpus-check` | the authored restraint corpora keep their promises to each other: contrast pairs differ in exactly one thing, declared values appear only in their own chunk, nothing leaks onto the side that must not name it, no probe is a word in the writer's own prompt |
+| `restraint-corpus-mutation-check` | deliberate breakings of the three corpora, each rejected by the rule it breaks — the count is printed by the check itself, not written down here, because a corpus that cannot fail is not evidence |
+| `restraint-report-check` | the scorer's own gates score as intended, including two blind spots it now reports rather than hides: a declared value banked twice from one chunk, and a fact credited to a chunk that did not author it |
 | `prune-check` | retention deletes old sessions and nothing else |
 | `config-docs-check` | every setting in the code is in the table above, with the same default |
 | `status-check` | footer rendering, including a stale context |
@@ -415,5 +418,6 @@ is required to use the extension.
 | `dev/live-flush.sh` | run pi headless with the extension loaded and ask whether the model calls `hy_flush` |
 | `dev/live-cadence.sh` | compare model-initiated writes against the token threshold in one live session |
 | `dev/corpus-restraint.json` | authored contrast pairs with known-correct output: 8 attribution pairs, 10 empty chunks (contract enforced by `tools/restraint-corpus-check.ts`) |
-| `dev/restraint-report.ts` | score a run against those pairs: abstention, speaker attribution, at the draft gate and the bank gate |
+| `dev/restraint-report.ts` | score a run against those pairs: abstention, speaker attribution at the draft gate and the bank gate, and the `tool_output` axis — what each tool chunk banked, including which facts repeat a declared value, which carry neither half, and which a later merge carried in from another chunk (reported columns, not gates) |
 | `dev/corpus-restraint2.json` | the second cut, its own gate: 8 new attribution pairs, 6 `nothing_work` chunks, 6 `tool_output` chunks (same contract check, plus `tools/restraint-corpus-mutation-check.ts` proving it rejects a broken corpus) |
+| `dev/corpus-restraint3.json` | the `tool_output` class at width: 12 tool-output chunks against 4 attribution pairs (8 chunks) and 2 `nothing_work` — 22 chunks — measured before any rule is written for the class |

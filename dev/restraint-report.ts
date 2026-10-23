@@ -121,7 +121,38 @@ export interface ToolRow {
 	probes: string[];
 	transient: string[];
 	/** Bank facts whose supersede chain reaches this chunk, tagged with which half each kept. */
-	facts: { task: string; statement: string; probe: string | null; chatter: string | null }[];
+	facts: {
+		task: string;
+		statement: string;
+		probe: string | null;
+		chatter: string | null;
+		repeat: boolean;
+		authoredHere: boolean;
+	}[];
+	/**
+	 * A declared value banked more than once from the same chunk. A restatement in an actor frame
+	 * ("User confirmed the flag is…") carries the value, so `facts` alone counts it as a kept fact
+	 * and the duplication is invisible. Reported as a diagnostic, never folded into the outcome or
+	 * into the stricter "every fact carries the value" column.
+	 *
+	 * Structural, not semantic: a repeat is two banked facts in one authored chunk whose *declared*
+	 * value both match. It needs the corpus's probe list and does not detect paraphrase.
+	 */
+	duplicateValueFacts: number;
+	duplicateValueProbes: string[];
+	/** How many banked facts from this chunk are a first copy of a declared value, its repeat, the
+	 * declared chatter, or neither — the four kinds at fact level, since one chunk's outcome alone
+	 * cannot tell narration banked beside a value from a chunk that banked only the value. `authoredHere`
+	 * separates facts the chunk itself banked from facts a later merge pulled in: the chain reaches a chunk
+	 * when a fact authored here was absorbed into a fact authored somewhere else. */
+	factsValue: number;
+	factsRepeat: number;
+	factsChatter: number;
+	factsNeither: number;
+	factsCarriedIn: number;
+	/** Exactly one fact banked from the chunk, and it carries a declared value: nothing repeated,
+	 * no chatter, no narration. The narrowest reading of "kept the tool fact and nothing else". */
+	singleCleanFact: boolean;
 	outcome:
 		| "kept-fact"
 		| "kept-both"
@@ -477,8 +508,33 @@ export function scoreRun(chunks: CorpusChunk[], ledger: LedgerRecord[]): RunScor
 					statement: e.statement,
 					probe: probes.find((p) => carries(p, text)) ?? null,
 					chatter: chatter.find((c) => carries(c, text)) ?? null,
+					repeat: false,
+					// The chain reaches this chunk when a fact authored here was later absorbed into a
+					// fact authored elsewhere, so a fact in this list is not always one this chunk banked.
+					authoredHere: base(e.chunkId) === base(chunk.chunkId),
 				};
 			});
+		// A declared value can be banked more than once from one chunk: a restatement in an
+		// actor frame ("User confirmed the flag is…") still carries the value, so the columns
+		// above call it a kept fact. Mark the second copy and count the repeats separately —
+		// counting only facts this chunk authored, since a value reaching the bank once per
+		// chunk across several chunks is the cross-chunk duplication `bankDuplicated` already covers.
+		const valueUses = new Map<string, number>();
+		for (const f of facts) {
+			if (!f.probe || !f.authoredHere) continue;
+			const seen = valueUses.get(f.probe) ?? 0;
+			if (seen > 0) f.repeat = true;
+			valueUses.set(f.probe, seen + 1);
+		}
+		const duplicateValueProbes = [...valueUses.entries()].filter(([, n]) => n > 1).map(([p]) => p);
+		const duplicateValueFacts = [...valueUses.values()].reduce((n, k) => n + Math.max(0, k - 1), 0);
+		const factsCarriedIn = facts.filter((f) => !f.authoredHere).length;
+		const authored = facts.filter((f) => f.authoredHere);
+		const factsValue = authored.filter((f) => f.probe !== null && !f.repeat).length;
+		const factsRepeat = authored.filter((f) => f.repeat).length;
+		const factsChatter = authored.filter((f) => f.probe === null && f.chatter !== null).length;
+		const factsNeither = authored.filter((f) => f.probe === null && f.chatter === null).length;
+		const singleCleanFact = authored.length === 1 && authored[0].probe !== null && authored[0].chatter === null;
 		const keptProbe = facts.some((f) => f.probe !== null);
 		const keptChatter = facts.some((f) => f.chatter !== null);
 		const outcome: ToolRow["outcome"] = !ev?.present
@@ -505,6 +561,14 @@ export function scoreRun(chunks: CorpusChunk[], ledger: LedgerRecord[]): RunScor
 			probes,
 			transient: chatter,
 			facts,
+			duplicateValueFacts,
+			duplicateValueProbes,
+			factsValue,
+			factsRepeat,
+			factsChatter,
+			factsNeither,
+			factsCarriedIn,
+			singleCleanFact,
 			outcome,
 		};
 	});
@@ -551,6 +615,24 @@ export interface Totals {
 	toolFactsBanked: number;
 	/** The stricter reading: every fact the bank kept from the chunk carries the declared tool fact. */
 	toolFactsOnly: number;
+	/**
+	 * Chunks that banked one declared value twice, and how many facts were repeats. Reported beside
+	 * `toolFactsOnly`, never inside it: a repeat carries the value too, so the stricter reading above
+	 * counts it as clean and the duplication has nowhere else to go.
+	 */
+	toolValueDupChunks: number;
+	toolValueDupFacts: number;
+	/**
+	 * The narrowest reading: the chunk banked exactly one fact, it carried a declared value, and it
+	 * carried none of the declared chatter. Stricter than `toolFactsOnly`, because one fact can carry
+	 * the value and the chatter together and `toolFactsOnly` cannot tell that from a clean keep.
+	 */
+	toolSingleCleanChunks: number;
+	/** Banked facts that carry neither a declared value nor declared chatter — narration kept as fact. */
+	toolNarrationFacts: number;
+	/** Banked facts whose supersede chain passes through the chunk but were authored in another chunk —
+	 * a later merge absorbed this chunk's fact into a fact written somewhere else. */
+	toolFactsCarriedIn: number;
 }
 
 export function totals(score: RunScore): Totals {
@@ -588,6 +670,11 @@ export function totals(score: RunScore): Totals {
 		toolDropped: score.tools.filter((c) => c.outcome === "dropped").length,
 		toolFactsBanked: score.tools.reduce((n, c) => n + c.facts.length, 0),
 		toolFactsOnly: score.tools.filter((c) => c.facts.length > 0 && c.facts.every((f) => f.probe !== null)).length,
+		toolValueDupChunks: score.tools.filter((c) => c.duplicateValueFacts > 0).length,
+		toolValueDupFacts: score.tools.reduce((n, c) => n + c.duplicateValueFacts, 0),
+		toolSingleCleanChunks: score.tools.filter((c) => c.singleCleanFact).length,
+		toolNarrationFacts: score.tools.reduce((n, c) => n + c.factsNeither, 0),
+		toolFactsCarriedIn: score.tools.reduce((n, c) => n + c.factsCarriedIn, 0),
 	};
 }
 
@@ -701,20 +788,34 @@ function main(): void {
 				"\ntool_output chunks — nothing decided, tool output states a fact: keeping the fact is the defensible call, keeping the chatter is the failure the v1 label hid",
 			);
 			console.log(
-				`${"chunk".padEnd(20)} ${"drafts".padStart(7)} ${"rejected".padStart(9)} ${"outcome".padStart(16)} ${"facts".padStart(6)} ${"probe".padStart(6)} ${"chatter".padStart(8)}`,
+				`${"chunk".padEnd(20)} ${"drafts".padStart(7)} ${"rejected".padStart(9)} ${"outcome".padStart(16)} ${"facts".padStart(6)} ${"own".padStart(5)} ${"probe".padStart(6)} ${"chatter".padStart(8)}`,
 			);
 			for (const c of score.tools) {
 				console.log(
-					`${c.chunkId.padEnd(20)} ${(c.present ? String(c.drafts.length) : "-").padStart(7)} ${(c.present ? String(c.rejectedCount) : "-").padStart(9)} ${c.outcome.padStart(16)} ${String(c.facts.length).padStart(6)} ${String(c.facts.filter((f) => f.probe).length).padStart(6)} ${String(c.facts.filter((f) => f.chatter).length).padStart(8)}`,
+					`${c.chunkId.padEnd(20)} ${(c.present ? String(c.drafts.length) : "-").padStart(7)} ${(c.present ? String(c.rejectedCount) : "-").padStart(9)} ${c.outcome.padStart(16)} ${String(c.facts.length).padStart(6)} ${String(c.facts.length - c.factsCarriedIn).padStart(5)} ${String(c.facts.filter((f) => f.probe).length).padStart(6)} ${String(c.facts.filter((f) => f.chatter).length).padStart(8)}`,
 				);
 			}
 			console.log(
 				`\n  kept the declared tool fact ${t.toolFactKept}/${t.toolChunks}  ${pct(t.toolFactKept, t.toolChunks)}   kept it and nothing else ${t.toolFactsOnly}/${t.toolChunks}  ${pct(t.toolFactsOnly, t.toolChunks)}   fact and chatter ${t.toolBothKept}   chatter only ${t.toolChatterKept}   something else ${t.toolOtherKept}   drafted but not banked ${t.toolNotBanked}   abstained ${t.toolAbstained}   facts banked from these chunks: ${t.toolFactsBanked}`,
 			);
+			console.log(
+				`  same declared value banked more than once from one chunk: ${t.toolValueDupChunks}/${t.toolChunks} chunks, ${t.toolValueDupFacts} repeat facts   reported beside "kept it and nothing else", never inside it: a restatement carries the value too, so the column above cannot see it`,
+			);
+			console.log(
+				`  banked exactly one fact, and it carried the value: ${t.toolSingleCleanChunks}/${t.toolChunks} chunks  ${pct(t.toolSingleCleanChunks, t.toolChunks)}   facts this chunk authored: ${t.toolFactsBanked - t.toolFactsCarriedIn}, carried in by a later merge: ${t.toolFactsCarriedIn}   narration facts this chunk banked beside a value: ${t.toolNarrationFacts}   narrower than the stricter reading above: one fact can carry the value and the chatter at once`,
+			);
 			console.log("\nwhat each tool_output chunk kept:");
 			for (const c of score.tools) {
 				for (const f of c.facts) {
-					const tag = f.probe ? "tool fact" : f.chatter ? "chatter" : "neither";
+					const tag = !f.authoredHere
+						? "carried-in"
+						: f.probe
+							? f.repeat
+								? "repeat"
+								: "tool fact"
+							: f.chatter
+								? "chatter"
+								: "neither";
 					console.log(`  ${c.chunkId.padEnd(20)} ${tag.padEnd(9)} ${f.task} | ${f.statement.slice(0, 120)}`);
 				}
 			}

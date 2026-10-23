@@ -1,0 +1,275 @@
+{
+  "note": "Tool-output axis, wide on purpose: 12 tool_output chunks (the measurement axis), 4 attribution pairs and 2 nothing_work chunks kept so the isolation, leakage and contamination rules still apply. Narration is authored against the contract - an actor-action phrase per chunk, varied wording - never harvested from what a writer banked.",
+  "gate": {
+    "attribution_pair": 4,
+    "empty_chunk": 0,
+    "nothing_work": 2,
+    "tool_output": 12
+  },
+  "chunks": [
+    {
+      "chunkId": "hy-r3-to-01",
+      "class": "tool_output",
+      "why": "nobody decided anything; the manual line states what the flag does",
+      "probes": [
+        "--purge-age",
+        "line 63"
+      ],
+      "transient": [
+        "reading the manual for a few minutes"
+      ],
+      "text": "[0] [User @ 09:05]: I am reading the manual for a few minutes to find the age flag.\n[1] [Tool result for bash @ 09:06]: $ grep -n 'age' manual.txt\n[2] [Tool result for bash @ 09:07]: 63: --purge-age <n> drops queue entries older than n seconds\n[3] [Assistant @ 09:08]: Found it on line 63: --purge-age drops queue entries older than n seconds.\n[4] [User @ 09:09]: That is the line I wanted, thanks."
+    },
+    {
+      "chunkId": "hy-r3-to-02",
+      "class": "tool_output",
+      "why": "nobody decided anything; the file line states the expiry value",
+      "probes": [
+        "420",
+        "line 77"
+      ],
+      "transient": [
+        "glancing at one line"
+      ],
+      "text": "[0] [Assistant @ 09:20]: Glancing at one line of the settings reference.\n[1] [Tool result for bash @ 09:21]: $ sed -n '77p' manual.txt\n[2] [Tool result for bash @ 09:22]: 77: queue entries expire after 420 s unless pinned\n[3] [Assistant @ 09:23]: 420 seconds, line 77.\n[4] [User @ 09:24]: Right."
+    },
+    {
+      "chunkId": "hy-r3-to-03",
+      "class": "tool_output",
+      "why": "nobody decided anything; the source line states the staging name",
+      "probes": [
+        "queue.tmp",
+        "src/queue.rs:52"
+      ],
+      "transient": [
+        "I pulled up the queue module"
+      ],
+      "text": "[0] [Assistant @ 10:10]: I pulled up the queue module to see where a write lands.\n[1] [Tool result for bash @ 10:11]: $ grep -n 'tmp' src/queue.rs\n[2] [Tool result for bash @ 10:12]: 52: let staging = \"queue.tmp\";\n[3] [Assistant @ 10:13]: The staging name is queue.tmp at src/queue.rs:52.\n[4] [User @ 10:14]: Ok, noted."
+    },
+    {
+      "chunkId": "hy-r3-to-04",
+      "class": "tool_output",
+      "why": "nobody decided anything; the command output states the refusal and its cause",
+      "probes": [
+        "lock held by pid",
+        "tctl drain"
+      ],
+      "transient": [
+        "running it once to see"
+      ],
+      "text": "[0] [Assistant @ 11:00]: Running it once to see what the failure says.\n[1] [Tool result for bash @ 11:01]: $ tctl drain\n[2] [Tool result for bash @ 11:02]: error: drain refused, lock held by pid 4412\n[3] [Assistant @ 11:03]: It refuses because the lock is held by pid 4412.\n[4] [User @ 11:04]: Leave that for now.\n[5] [Assistant @ 11:05]: Leaving it."
+    },
+    {
+      "chunkId": "hy-r3-to-05",
+      "class": "tool_output",
+      "why": "nobody decided anything; the tool output states what the reader does",
+      "probes": [
+        "reads settings.toml once",
+        "never writes"
+      ],
+      "transient": [
+        "wanted the exact wording"
+      ],
+      "text": "[0] [User @ 12:00]: I wanted the exact wording the reader prints about itself.\n[1] [Tool result for bash @ 12:01]: $ tctl reader --explain\n[2] [Tool result for bash @ 12:02]: reader reads settings.toml once per run and never writes it\n[3] [Assistant @ 12:03]: Reads settings.toml once per run, never writes it.\n[4] [User @ 12:04]: That is all."
+    },
+    {
+      "chunkId": "hy-r3-to-06",
+      "class": "tool_output",
+      "why": "nobody decided anything; the build output states the release value",
+      "probes": [
+        "0.9.4",
+        "Python 3.12"
+      ],
+      "transient": [
+        "only the release line"
+      ],
+      "text": "[0] [User @ 13:00]: Only the release line.\n[1] [Tool result for bash @ 13:01]: $ tctl --release\n[2] [Tool result for bash @ 13:02]: tctl 0.9.4 built for Python 3.12\n[3] [Assistant @ 13:03]: 0.9.4, Python 3.12.\n[4] [User @ 13:04]: Thanks."
+    },
+    {
+      "chunkId": "hy-r3-to-07",
+      "class": "tool_output",
+      "why": "nobody decided anything; the directory listing states the file size",
+      "probes": [
+        "audit.db",
+        "32768"
+      ],
+      "transient": [
+        "looking at the folder"
+      ],
+      "text": "[0] [Assistant @ 14:00]: Looking at the folder to see what is there.\n[1] [Tool result for bash @ 14:01]: $ ls -l state/\n[2] [Tool result for bash @ 14:02]: audit.db  32768  14:02\n[3] [Assistant @ 14:03]: audit.db is 32768 bytes, stamped 14:02.\n[4] [User @ 14:04]: I see it."
+    },
+    {
+      "chunkId": "hy-r3-to-08",
+      "class": "tool_output",
+      "why": "nobody decided anything; the stat output states the file mode",
+      "probes": [
+        "0640",
+        "audit.toml"
+      ],
+      "transient": [
+        "checking permissions"
+      ],
+      "text": "[0] [User @ 15:00]: Checking permissions on the audit file.\n[1] [Tool result for bash @ 15:01]: $ stat -c '%a' audit.toml\n[2] [Tool result for bash @ 15:02]: 640\n[3] [Assistant @ 15:03]: audit.toml is mode 0640.\n[4] [User @ 15:04]: Ok, that answers it."
+    },
+    {
+      "chunkId": "hy-r3-to-09",
+      "class": "tool_output",
+      "why": "nobody decided anything; the source line states the retry count",
+      "probes": [
+        "MAX_RETRY",
+        "src/retry.rs:18"
+      ],
+      "transient": [
+        "hunting for the constant"
+      ],
+      "text": "[0] [Assistant @ 16:00]: Hunting for the constant in the source.\n[1] [Tool result for bash @ 16:01]: $ grep -rn 'MAX_RETRY' src/ | head -n 3\n[2] [Tool result for bash @ 16:02]: src/retry.rs:18: const MAX_RETRY: u32 = 3;\n[3] [Assistant @ 16:03]: MAX_RETRY is 3, declared at src/retry.rs:18.\n[4] [User @ 16:04]: Got it."
+    },
+    {
+      "chunkId": "hy-r3-to-10",
+      "class": "tool_output",
+      "why": "nobody decided anything; the exit code states what interrupted run means",
+      "probes": [
+        "exit 130",
+        "--wait"
+      ],
+      "transient": [
+        "trying the flag once"
+      ],
+      "text": "[0] [Assistant @ 17:00]: Trying the flag once against a live run.\n[1] [Tool result for bash @ 17:01]: $ tctl flush --wait\n[2] [Tool result for bash @ 17:02]: interrupted; exit 130\n[3] [Assistant @ 17:03]: Exit 130 means the flush was interrupted, not failed.\n[4] [User @ 17:04]: Understood, nothing to change."
+    },
+    {
+      "chunkId": "hy-r3-to-11",
+      "class": "tool_output",
+      "why": "nobody decided anything; the log tail states when the last pass finished",
+      "probes": [
+        "pass complete in 6.2 s",
+        "audit.log"
+      ],
+      "transient": [
+        "tailing the log briefly"
+      ],
+      "text": "[0] [User @ 18:00]: Tailing the log briefly to see where it stopped.\n[1] [Tool result for bash @ 18:01]: $ tail -n 2 audit.log\n[2] [Tool result for bash @ 18:02]: info: pass complete in 6.2 s\n[3] [Assistant @ 18:03]: The last pass finished normally: 6.2 s.\n[4] [User @ 18:04]: Fine, nothing else."
+    },
+    {
+      "chunkId": "hy-r3-to-12",
+      "class": "tool_output",
+      "why": "nobody decided anything; the tool output states what the flag skips",
+      "probes": [
+        "--dry-run",
+        "prints the diff"
+      ],
+      "transient": [
+        "told to look at the help text"
+      ],
+      "text": "[0] [User @ 19:00]: I was told to look at the help text for the preview flag.\n[1] [Tool result for bash @ 19:01]: $ tctl apply --help\n[2] [Tool result for bash @ 19:02]: --dry-run  prints the diff and writes nothing\n[3] [Assistant @ 19:03]: --dry-run prints the diff and writes nothing.\n[4] [User @ 19:04]: That is what I needed."
+    },
+    {
+      "chunkId": "hy-r3-r3a-k",
+      "class": "attribution",
+      "pair": "r3a",
+      "side": "keep",
+      "anchors": [
+        "HY_SNAPSHOT_INTERVAL"
+      ],
+      "marker": "Ilse",
+      "claim": "snapshots are taken every 300 seconds",
+      "text": "[0] [User @ 08:00]: What cadence do snapshots run on?\n[1] [Assistant @ 08:01]: The code sets HY_SNAPSHOT_INTERVAL=300, so snapshots are taken every 300 seconds.\n[2] [User @ 08:02]: Set it to 300 then and keep it there.\n[3] [Assistant @ 08:03]: Set, and leaving it at 300."
+    },
+    {
+      "chunkId": "hy-r3-r3a-q",
+      "class": "attribution",
+      "pair": "r3a",
+      "side": "quote",
+      "anchors": [
+        "HY_SNAPSHOT_INTERVAL"
+      ],
+      "marker": "Ilse",
+      "claim": "snapshots are taken every 300 seconds",
+      "text": "[0] [User @ 08:10]: Ilse from the platform channel said snapshots are taken every 300 seconds.\n[1] [Assistant @ 08:11]: Ilse's note matches HY_SNAPSHOT_INTERVAL=300 as configured here.\n[2] [User @ 08:12]: Just relaying what Ilse wrote, nothing new.\n[3] [Assistant @ 08:13]: Noted as Ilse's statement."
+    },
+    {
+      "chunkId": "hy-r3-r3b-k",
+      "class": "attribution",
+      "pair": "r3b",
+      "side": "keep",
+      "anchors": [
+        "--purge-target"
+      ],
+      "marker": "Jori",
+      "claim": "purge only touches the queue directory",
+      "text": "[0] [User @ 08:30]: Does purge reach the state directory too?\n[1] [Assistant @ 08:31]: No, --purge-target limits it: purge only touches the queue directory.\n[2] [User @ 08:32]: Keep it limited to the queue.\n[3] [Assistant @ 08:33]: Limited to the queue directory."
+    },
+    {
+      "chunkId": "hy-r3-r3b-q",
+      "class": "attribution",
+      "pair": "r3b",
+      "side": "quote",
+      "anchors": [
+        "--purge-target"
+      ],
+      "marker": "Jori",
+      "claim": "purge only touches the queue directory",
+      "text": "[0] [User @ 08:40]: Jori on the ops channel wrote that purge only touches the queue directory.\n[1] [Assistant @ 08:41]: Jori's rule matches --purge-target as configured here.\n[2] [User @ 08:42]: Relaying Jori, not deciding anything.\n[3] [Assistant @ 08:43]: Recorded as Jori's rule."
+    },
+    {
+      "chunkId": "hy-r3-r3c-k",
+      "class": "attribution",
+      "pair": "r3c",
+      "side": "keep",
+      "anchors": [
+        "journal.db"
+      ],
+      "marker": "Kest",
+      "claim": "the journal is appended, never rewritten",
+      "text": "[0] [User @ 09:00]: Can the journal be rewritten in place?\n[1] [Assistant @ 09:01]: journal.db is append-only: the journal is appended, never rewritten.\n[2] [User @ 09:02]: Append-only, understood.\n[3] [Assistant @ 09:03]: Nothing rewritten."
+    },
+    {
+      "chunkId": "hy-r3-r3c-q",
+      "class": "attribution",
+      "pair": "r3c",
+      "side": "quote",
+      "anchors": [
+        "journal.db"
+      ],
+      "marker": "Kest",
+      "claim": "the journal is appended, never rewritten",
+      "text": "[0] [User @ 09:12]: Kest said in review that the journal is appended, never rewritten.\n[1] [Assistant @ 09:13]: That is how journal.db behaves here.\n[2] [User @ 09:14]: Just passing along Kest's review line.\n[3] [Assistant @ 09:15]: Noted as Kest's review line."
+    },
+    {
+      "chunkId": "hy-r3-r3d-k",
+      "class": "attribution",
+      "pair": "r3d",
+      "side": "keep",
+      "anchors": [
+        "0750"
+      ],
+      "marker": "Marn",
+      "claim": "the audit file must stay group-readable",
+      "text": "[0] [User @ 09:30]: What mode should the audit file have?\n[1] [Assistant @ 09:31]: Mode 0750, so the audit file must stay group-readable.\n[2] [User @ 09:32]: Keep it group-readable.\n[3] [Assistant @ 09:33]: Left at 0750."
+    },
+    {
+      "chunkId": "hy-r3-r3d-q",
+      "class": "attribution",
+      "pair": "r3d",
+      "side": "quote",
+      "anchors": [
+        "0750"
+      ],
+      "marker": "Marn",
+      "claim": "the audit file must stay group-readable",
+      "text": "[0] [User @ 09:42]: Marn from infra said the audit file must stay group-readable.\n[1] [Assistant @ 09:43]: Marn's requirement matches mode 0750 on this file.\n[2] [User @ 09:44]: Passing Marn's requirement along.\n[3] [Assistant @ 09:45]: Recorded as Marn's requirement."
+    },
+    {
+      "chunkId": "hy-r3-nw-01",
+      "class": "nothing_work",
+      "why": "only the shape of the queue came up; no decision, no constraint, no tool fact about the work",
+      "text": "[0] [User @ 20:00]: How many entries are sitting in the queue right now?\n[1] [Assistant @ 20:01]: Eleven, seven of them pinned.\n[2] [User @ 20:02]: That is all I wanted to know.\n[3] [Assistant @ 20:03]: Nothing to change."
+    },
+    {
+      "chunkId": "hy-r3-nw-02",
+      "class": "nothing_work",
+      "why": "the user asked for a recap of what was already said; nothing new was established",
+      "text": "[0] [User @ 20:10]: Give me the three things we settled so far.\n[1] [Assistant @ 20:11]: The queue file, the purge scope, and the file mode.\n[2] [User @ 20:12]: Right, I just wanted the recap.\n[3] [Assistant @ 20:13]: Recap only, no change."
+    }
+  ]
+}

@@ -1217,3 +1217,111 @@ noise is unmeasured, and is not implied by a bank that got five facts smaller on
 Cost is measured and is real: ~2.2× the extract input, +35 % total input tokens, for no movement in either
 published gate. Wall time is unusable in these two runs — the endpoint was contended, and several calls
 took 90–180 s against ~3 s in the baselines.
+
+## Run: the tool_output class at width, and the instrument that could not see the failure (2026-10-23)
+
+**Question.** The second cut measured narration on 6 `tool_output` chunks: 6/6 kept the declared tool
+fact, 3/6 kept it and nothing else. Six chunks is not enough to say what the failure is. The plan was
+to widen the class — 12 chunks, more narration shapes — and measure the baseline before writing any rule.
+
+**Corpus.** `dev/corpus-restraint3.json`: 22 chunks — 12 `tool_output`, 4 attribution pairs (to catch a
+suppression rule collateral-damaging them), 2 `nothing_work`. No empty chunks; the class split of the
+previous cut is kept. `tools/restraint-corpus-mutation-check.ts` now runs over all three corpora — 21
+mutations, each rejected by the rule it breaks, including r3-specific ones (a declared value leaked into
+an unrelated chunk, declared chatter removed, an undeclared phrase treated as chatter). One mutation the
+corpus checker caught while authoring: a probe that is also a word in the writer's own prompt
+(`durable`) measures the prompt, not the model.
+
+**Run.** `restraint3-base`, writer `hy-memory-30b-a3b`, temperature 0, pool 12 000, per-draft candidates,
+limit 12 — the shipped config. 22 chunks, 34 active facts.
+
+| measure | result |
+|---|---|
+| chunks where the declared value reached the bank | 12/12 (10 kept-fact + 2 kept-both) |
+| declared value banked more than once from the same chunk | 8/12 chunks, 8 repeat facts |
+| chunks where every banked fact carries a declared value | 8/12 |
+| chunks that banked exactly one authored fact, carrying the value and no chatter | 2/12 |
+| declared chatter banked alongside the value | 2/12 |
+| chatter instead of the value | 0/12 |
+| authored facts carrying neither the value nor the declared chatter | 1 |
+| banked facts credited to a chunk that did not author them | 2 |
+| drafted but not banked / withheld | 0/12, 0/12 |
+| attribution pairs reach the bank | 4/4 |
+| `nothing_work` drafts | 2/2 drafted, 0 skipped — unchanged from the previous cuts |
+
+**Read these as one run, not a rate.** One run, one model, temperature 0, no repeat runs, no judge verdicts.
+Temperature 0 makes the run reproducible, not the finding general: "12/12 got the value into the bank and
+8/12 banked it twice" is what this corpus did on this day, 12 chunks is a small class, and the repeats and
+carried-in facts are properties of this run's writes as much as of the writer.
+
+In this one run, at twelve chunks, the class does not look like the v1 story. Every chunk got its declared
+value into the bank, nobody banked chatter *instead of* a value (chatter-only 0/12, "something the corpus
+declared neither" 0/12), and only two chunks banked the declared chatter alongside the value. That reading is
+weaker than it looks: every `tool_output` chunk in this corpus declares a durable value, so 0/12 says the
+writer does not swap the value out for chatter when a value is present. It does not say narration is never
+banked, and the corpus as authored cannot test that case — a tool chunk with chatter and no value is not in
+it. Narration banked *beside* a value shows at fact level: of 22 facts the tool chunks authored, 1 carries
+neither a declared value nor declared chatter ("User instructed to leave the drain lock for now; Assistant
+confirmed leaving it"). Two more facts that look like that were not authored by the chunk they appear under
+at all: the audit-file-mode fact was written by an attribution chunk, and a user-confirmation fact by a
+`nothing_work` chunk — both reached a tool chunk's listing only because a later merge superseded a fact that
+chunk had authored.
+
+**The instrument was blind to the bigger failure.** Counting facts that carry a declared value, `--purge-age`
+is banked twice from one chunk and the staging name `queue.tmp` twice from another. The second copy is
+usually a confirmation in an actor frame ("User confirmed the flag drops entries older than n seconds"),
+which carries the value, so `probe` matches it and every existing column calls the chunk clean — including
+the stricter "every fact carries the declared value" reading. Eight of twelve chunks banked one value more
+than once, eight repeat facts. The narrowest reading — one authored fact, carrying the value, carrying no
+chatter — is 2/12.
+
+What "repeat" means, stated plainly: two facts *authored by one authored chunk* whose declared value both
+match. It is a structural signal that needs the corpus's probe list, not a semantic duplicate detector: it
+does not run on unlabelled real conversations, would not catch a paraphrase that drops the value, and it
+ignores a value banked once per chunk across several chunks, which `bankDuplicated` already counts. The
+authored/carried-in split exists because the supersede chain reaches a chunk when a fact authored there is
+absorbed into a fact written elsewhere, and a chain-only count credits that chunk with a fact it never
+banked.
+
+**Fix, as reported columns rather than gates.** `dev/restraint-report.ts` now marks the second copy of a
+declared value `repeat`, tags each banked fact `tool fact` / `repeat` / `chatter` / `neither` / `carried-in`
+in the per-chunk listing, splits each chunk's facts into the ones it authored and the ones a later merge
+carried in, and totals three things beside the existing ones: `same declared value banked more than once`
+(chunks and repeat facts), `banked exactly one fact, and it carried the value` — the narrowest reading, which
+also excludes a fact carrying the value and the chatter in one sentence — and the authored/carried-in split.
+All three are deliberately outside `toolFactsOnly`: folding them in would silently redefine the published
+numbers of the two earlier cuts. `tools/restraint-report-check.ts` adds a seventh tool chunk whose two facts
+carry the same value and asserts that it still scores as a clean fact-only keep while the repeat column alone
+sees it, and an eighth and ninth where the cap banked at one chunk is superseded by a merge authored at
+another: the outcome column still credits the first chunk, the authored column does not. Both blind spots are
+pinned, not just described.
+
+| run | value reached the bank | every fact carries a declared value | value banked twice | exactly one clean authored fact | facts (authored / carried in) |
+|---|---|---|---|---|---|
+| `restraint-base` (v1) | no tool chunks | — | — | — | — |
+| `restraint2-base` | 6/6 | 3/6 | 2/6 chunks, 2 facts | 1/6 | 11 / 0 |
+| `restraint2-bidx` | 6/6 | 5/6 | 5/6 chunks, 5 facts | 0/6 | 12 / 0 |
+| `restraint3-base` | 12/12 | 8/12 | 8/12 chunks, 8 facts | 2/12 | 22 / 2 |
+
+Reproduce the run: `POC_MODEL=hy-memory-30b-a3b npx tsx dev/run.ts --run restraint3-base --corpus
+dev/corpus-restraint3.json --pool 12000 --candidate-render-mode perDraft --candidate-limit 12`. Reproduce the
+numbers: `npx tsx dev/restraint-report.ts --run restraint3-base --corpus dev/corpus-restraint3.json`, and the
+same with `--run restraint2-base` / `--run restraint2-bidx` against `dev/corpus-restraint2.json`. Every number
+in the tables above comes out of those commands; no scratch script is involved.
+
+**It also corrects a cross-arm claim.** The bank-aware arm's tool axis was reported as better than the v2
+baseline on "every fact carries the value" (5/6 vs 3/6). Counting the facts behind that rate: the baseline
+banks 11 across 6 chunks and the arm 12; the arm repeats a value in 5 of 6 chunks where the baseline repeats
+in 2; its narration facts fall from 3 to 1; and chunks that banked exactly one clean fact go from 1/6 to 0/6.
+The arm banked less narration and more restatement, so the higher rate was partly duplication, and by the
+narrowest reading the arm is the worse of the two. The soft axis is unmeasured for these runs: the judge
+endpoint went away mid-day, so `restraint3-base` has no judge verdicts and no claim rests on one.
+**What this corpus cannot test.** Every `tool_output` chunk here declares a durable value, so the class has no
+control for the case the v1 label actually hid — a tool exchange with chatter and nothing worth keeping. The
+narration defect in its original form is measured only indirectly: one authored narration fact banked beside
+a value, and two facts credited to a chunk that did not author them.
+
+**Next.** The failure this class shows at width is a value banked twice, which reconcile is supposed to SKIP,
+and a suppression guard aimed at narration would not have touched it. Measure first whether reconcile merges
+two drafts that carry the same declared value, and add the missing control — tool chunks whose chatter is
+declared and whose durable content is none — before writing any rule for the class.

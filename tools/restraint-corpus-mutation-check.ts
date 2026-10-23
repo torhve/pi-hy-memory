@@ -21,7 +21,7 @@ import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-const CORPUS = "dev/corpus-restraint2.json";
+const CORPORA = ["dev/corpus-restraint.json", "dev/corpus-restraint2.json", "dev/corpus-restraint3.json"];
 const CHECK = "tools/restraint-corpus-check.ts";
 
 interface MutableChunk {
@@ -50,7 +50,7 @@ function assert(cond: boolean, label: string): void {
 	}
 }
 
-const base = JSON.parse(readFileSync(CORPUS, "utf8")) as MutableDoc;
+const bases = new Map(CORPORA.map((file) => [file, JSON.parse(readFileSync(file, "utf8")) as MutableDoc]));
 const dir = mkdtempSync(join(tmpdir(), "restraint-corpus-mutation-"));
 
 function chunk(doc: MutableDoc, id: string): MutableChunk {
@@ -72,6 +72,8 @@ function appendToLastLine(target: MutableChunk, extra: string): void {
 }
 
 interface Mutation {
+	/** Which committed corpus this break is applied to. */
+	corpus?: string;
 	name: string;
 	/** The rule the check must name when it rejects this corpus. */
 	expect: string;
@@ -178,11 +180,81 @@ const mutations: Mutation[] = [
 			quote.text = quote.text.split("pending.db").join("the queue file");
 		},
 	},
+	// ---- the wide tool-output corpus: same rules, new file ---------------------------
+	{
+		corpus: "dev/corpus-restraint3.json",
+		name: "r3: tool_output chunk with no probe list",
+		expect: "must name the tool fact it tests for",
+		apply: (doc) => {
+			delete chunk(doc, "hy-r3-to-03").probes;
+		},
+	},
+	{
+		corpus: "dev/corpus-restraint3.json",
+		name: "r3: probe leaked into an unrelated chunk",
+		expect: 'leak: probe "MAX_RETRY" of hy-r3-to-09 appears in hy-r3-to-11',
+		apply: (doc) => {
+			appendToLastLine(chunk(doc, "hy-r3-to-11"), "MAX_RETRY");
+		},
+	},
+	{
+		corpus: "dev/corpus-restraint3.json",
+		name: "r3: declared chatter leaked into an unrelated chunk",
+		expect: 'leak: transient "glancing at one line" of hy-r3-to-02 appears in hy-r3-to-07',
+		apply: (doc) => {
+			appendToLastLine(chunk(doc, "hy-r3-to-07"), "glancing at one line");
+		},
+	},
+	{
+		corpus: "dev/corpus-restraint3.json",
+		name: "r3: chatter declared but absent from its own chunk",
+		expect: 'transient "wanted the exact wording" is not in the chunk',
+		apply: (doc) => {
+			const c = chunk(doc, "hy-r3-to-05");
+			c.text = c.text.replace("wanted the exact wording", "wanted the rough wording");
+		},
+	},
+	{
+		corpus: "dev/corpus-restraint3.json",
+		name: "r3: probe that is also a word in the writer's own prompt",
+		expect: 'contamination: probe "durable" of hy-r3-to-06 appears in the writer prompt',
+		apply: (doc) => {
+			const c = chunk(doc, "hy-r3-to-06");
+			appendToLastLine(c, "nothing durable here");
+			c.probes = ["durable"];
+		},
+	},
+	{
+		corpus: "dev/corpus-restraint3.json",
+		name: "r3: gate promises one more tool_output chunk than the corpus has",
+		expect: "gate: 12 tool_output chunks, needs 13",
+		apply: (doc) => {
+			doc.gate.tool_output = 13;
+		},
+	},
+	{
+		corpus: "dev/corpus-restraint3.json",
+		name: "r3: an anchor that stops appearing on the quote side",
+		expect: 'anchor "journal.db" is not on the quote side',
+		apply: (doc) => {
+			const quote = chunk(doc, "hy-r3-r3c-q");
+			quote.text = quote.text.split("journal.db").join("the journal file");
+		},
+	},
+	{
+		corpus: "dev/corpus-restraint3.json",
+		name: "r3: the third party's name moved onto the side that must not name it",
+		expect: "the keep side names",
+		apply: (doc) => {
+			const keep = chunk(doc, "hy-r3-r3d-k");
+			appendToLastLine(keep, `(as ${keep.marker} put it)`);
+		},
+	},
 ];
 
 let ran = 0;
 for (const mutation of mutations) {
-	const doc = structuredClone(base);
+	const doc = structuredClone(bases.get(mutation.corpus ?? "dev/corpus-restraint2.json")!);
 	mutation.apply(doc);
 	const file = join(dir, `mutated-${ran}.json`);
 	writeFileSync(file, `${JSON.stringify(doc, null, 2)}\n`);
@@ -201,5 +273,5 @@ for (const mutation of mutations) {
 }
 
 console.log(
-	`ok: ${ran} mutations, each rejected by the rule it breaks (${CORPUS} itself is checked by ${CHECK} in npm run test)`,
+	`ok: ${ran} mutations across ${CORPORA.length} committed corpora, each rejected by the rule it breaks (each corpus itself is checked by ${CHECK} in npm run test)`,
 );

@@ -290,6 +290,33 @@ gate.
       completions, then connection failures; raw outputs kept as `out/restraint2-bidx/judge-raw-*.txt`), so
       noise, unsupported and missed on `restraint-bidx` / `restraint2-bidx` are still unmeasured against the
       seeds-7-and-11 baselines. Not answered by 7.11.
+- [x] 7.13 The `tool_output` class at width, measured before any rule. `dev/corpus-restraint3.json` — 12
+      `tool_output` chunks, 4 attribution pairs, 2 `nothing_work` — run as `restraint3-base` on the shipped
+      config. In this one run the narration story the v1 label implied does not appear in its original form:
+      the declared value reached the bank in 12/12 chunks, the declared chatter was never banked *instead of*
+      a value (0/12), and only 2/12 banked it alongside. What it does instead is bank the same value twice —
+      8/12 chunks, 8 repeat facts, usually a confirmation in an actor frame — and the scorer could not see
+      that, because a repeat carries the value and every existing column calls the chunk clean. A second blind
+      spot surfaced with it: the supersede chain reaches a chunk when a fact authored there is absorbed into a
+      fact written elsewhere, so 2 of the facts listed under a tool chunk were not authored by it, and one of
+      them is why "the pair's audit-mode fact" looks like narration from a tool chunk. The report now marks
+      the second copy `repeat`, tags facts `tool fact`/`repeat`/`chatter`/`neither`/`carried-in`, splits each
+      chunk's facts into authored and carried-in, and totals the repeat and narrowest-reading columns beside
+      the existing ones rather than inside them, so the published numbers of the earlier cuts stay what they
+      are; `tools/restraint-report-check.ts` pins both blind spots. It also corrects 7.10: the bank-aware
+      arm's higher "every fact carries the value" rate (5/6 vs 3/6) comes with more duplication, not less
+      noise — 5/6 chunks repeat a value against the baseline's 2/6, its authored narration facts fall from 3
+      to 1, and chunks with exactly one clean authored fact go from 1/6 to 0/6. Sample size: one run,
+      temperature 0, no repeat runs, no judge verdicts, so 12/12 and 8/12 describe what this corpus did, not
+      a general rate.
+- [ ] 7.14 Named by 7.13 rather than planned. The failure this class actually shows is a declared value
+      banked twice, which reconcile is supposed to SKIP. Measure whether reconcile merges two drafts that
+      carry the same declared value before writing any narration rule — the suppression guard the previous
+      slice planned would not have touched it. Second gap 7.13 named: every `tool_output` chunk in all three
+      corpora declares a durable value, so none of them test the case the v1 label hid — chatter with nothing
+      worth keeping. That control chunk class has to exist before the narration claim can be settled. The
+      soft axis for `restraint3-base` is unmeasured (the judge endpoint was unreachable); no claim rests on
+      it.
 ## Notes
 
 - Writer route: primary `remote/hy-memory-30b-a3b`, measured in this session on a 10.9 k-token

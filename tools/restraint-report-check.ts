@@ -271,6 +271,27 @@ const corpus: CorpusChunk[] = [
 		probes: ["check-order"],
 		transient: ["wanted to see the wording"],
 	},
+	{
+		chunkId: "hy-x-tool-08",
+		class: "tool_output",
+		why: "nothing decided; the source states a cap",
+		probes: ["MAX_QUEUE"],
+		transient: ["reading the queue cap"],
+	},
+	{
+		chunkId: "hy-x-tool-09",
+		class: "tool_output",
+		why: "nothing decided; the file states where the queue rules live",
+		probes: ["queue.rs"],
+		transient: ["opening the queue file"],
+	},
+	{
+		chunkId: "hy-x-tool-07",
+		class: "tool_output",
+		why: "nothing decided; the help line states a rule, and the confirmation repeats it",
+		probes: ["--no-clobber"],
+		transient: ["skimming the flag list"],
+	},
 ];
 
 const draft = (task: string, statement: string, fromUser: boolean) => ({
@@ -436,6 +457,27 @@ const ledger: LedgerRecord[] = [
 	// 06: banked a fact that is neither the declared tool fact nor the declared chatter.
 	extract("hy-x-tool-06", [draft("doctor pass", "doctor runs once per pass over the settings.", false)]),
 	ops("hy-x-tool-06", [{ action: "ADD", draft: 0 }]),
+	// 07: one value banked twice, the second time as a confirmation. Both copies carry the value,
+	// so every column above calls this clean — the repeat column is the only one that can see it.
+	extract("hy-x-tool-07", [
+		draft("no-clobber flag", "tctl --no-clobber refuses to overwrite an existing file.", false),
+		draft("flag confirmed", "User confirmed --no-clobber is the flag for not overwriting.", false),
+	]),
+	ops("hy-x-tool-07", [
+		{ action: "ADD", draft: 0 },
+		{ action: "ADD", draft: 1 },
+	]),
+	// 08 → 09: the cap banked at 08 is later merged into a fact authored at 09. Under 08 the surviving
+	// fact is one this chunk never authored — its own copy is gone, superseded — so 08 cannot be credited
+	// with a clean keep even though a fact carrying its value sits in the bank.
+	extract("hy-x-tool-08", [draft("queue cap", "MAX_QUEUE is 200 in src/queue.rs.", false)]),
+	ops("hy-x-tool-08", [{ action: "ADD", draft: 0 }]),
+	extract("hy-x-tool-09", [
+		draft("cap location", "The queue cap lives in queue.rs: MAX_QUEUE caps the queue at 200.", false),
+	]),
+	ops("hy-x-tool-09", [
+		{ action: "UPDATE", draft: 0, target: newId("hy-x-tool-08:0:ADD"), reason: "same rule, one entry" },
+	]),
 ];
 
 // ---- anchor matching -----------------------------------------------------------
@@ -638,8 +680,15 @@ assert(
 
 // ---- tool_output: both failure directions, and every branch in between ----------
 const byTool = new Map(score.tools.map((c) => [c.chunkId, c]));
-assert(score.tools.length === 6, `6 tool_output chunks, got ${score.tools.length}`);
+assert(score.tools.length === 9, `9 tool_output chunks, got ${score.tools.length}`);
 assert(byTool.get("hy-x-tool-01")!.outcome === "kept-fact", "tool-01: kept the tool fact and nothing else");
+assert(
+	byTool.get("hy-x-tool-08")!.outcome === "kept-fact" &&
+		byTool.get("hy-x-tool-08")!.singleCleanFact === false &&
+		byTool.get("hy-x-tool-08")!.factsCarriedIn === 1,
+	"tool-08: a fact carrying its value sits in the bank, but 09 authored it — the outcome column credits 08, the authored column does not",
+);
+assert(byTool.get("hy-x-tool-09")!.facts[0].authoredHere === true, "tool-09: the merged fact is authored here");
 assert(
 	byTool.get("hy-x-tool-01")!.facts[0].probe === "--dry-run",
 	"tool-01: the flag is what matched, not the prose around it",
@@ -653,19 +702,41 @@ assert(
 assert(byTool.get("hy-x-tool-05")!.outcome === "not-banked", "tool-05: drafted the fact, reconcile banked nothing");
 assert(byTool.get("hy-x-tool-06")!.outcome === "kept-other", "tool-06: banked something the corpus declared neither");
 assert(
-	t.toolFactKept === 1 && t.toolChatterKept === 1 && t.toolBothKept === 1,
-	`one fact-only, one chatter-only, one both, got ${t.toolFactKept}/${t.toolChatterKept}/${t.toolBothKept}`,
+	t.toolFactKept === 4 && t.toolChatterKept === 1 && t.toolBothKept === 1,
+	`four chunks read as fact-only keeps (01, 07, 08, 09), one chatter-only, one both, got ${t.toolFactKept}/${t.toolChatterKept}/${t.toolBothKept}`,
 );
 assert(
 	t.toolOtherKept === 1 && t.toolNotBanked === 1 && t.toolAbstained === 1,
 	`one neither, one not banked, one withheld, got ${t.toolOtherKept}/${t.toolNotBanked}/${t.toolAbstained}`,
 );
-assert(t.toolFactsBanked === 4, `four facts banked across the six tool chunks, got ${t.toolFactsBanked}`);
+assert(t.toolFactsBanked === 8, `eight facts listed across the nine tool chunks, got ${t.toolFactsBanked}`);
 assert(
-	t.toolFactsOnly === 2,
-	`only 2 of the six kept the tool fact and nothing else (01, 03); 02 kept chatter, 06 kept neither, 04 and 05 kept nothing — the stricter reading is the honest headline, got ${t.toolFactsOnly}`,
+	t.toolFactsCarriedIn === 1 && t.toolFactsBanked - t.toolFactsCarriedIn === 7,
+	`seven facts were authored by the chunk they are listed under, one (08's) was carried in by a later merge, got ${t.toolFactsCarriedIn}`,
+);
+assert(
+	t.toolFactsOnly === 5,
+	`5 of the nine read as "every fact carries the value" (01, 03, 07, 08, 09) — including 08, which authored nothing; 02 kept chatter, 06 kept neither, 04 and 05 kept nothing, got ${t.toolFactsOnly}`,
+);
+assert(byTool.get("hy-x-tool-07")!.outcome === "kept-fact", "tool-07: still reads as a clean fact-only keep");
+assert(
+	byTool.get("hy-x-tool-07")!.duplicateValueFacts === 1 &&
+		byTool.get("hy-x-tool-07")!.duplicateValueProbes.join(",") === "--no-clobber",
+	`tool-07: one value banked twice, got ${byTool.get("hy-x-tool-07")!.duplicateValueFacts} repeat(s) of ${byTool.get("hy-x-tool-07")!.duplicateValueProbes.join(",")}`,
+);
+assert(
+	t.toolValueDupChunks === 1 && t.toolValueDupFacts === 1,
+	`the repeat column sees exactly the one chunk the stricter reading cannot, got ${t.toolValueDupChunks}/${t.toolValueDupFacts}`,
+);
+assert(
+	t.toolSingleCleanChunks === 2,
+	`the narrowest reading — one authored fact, carrying the value, carrying no chatter — is 2 of the nine (01 and 09); 03 carries value and chatter in one fact, 07 is the repeat pair, 08 authored nothing, got ${t.toolSingleCleanChunks}`,
+);
+assert(
+	t.toolNarrationFacts === 1,
+	`one banked fact authored by its own chunk carries neither a declared value nor declared chatter (06: the doctor describing itself), got ${t.toolNarrationFacts}`,
 );
 
 console.log(
-	`ok: unattributed vs attributed, draft gate vs bank gate, drafted-then-dropped, merge vs second fact, supersede chains two hops long and one that lost the claim, the paraphrase blind spot, all four empty outcomes, and every tool_output branch (fact, chatter, both, neither, withheld, drafted-but-not-banked) score as intended`,
+	`ok: unattributed vs attributed, draft gate vs bank gate, drafted-then-dropped, merge vs second fact, supersede chains two hops long and one that lost the claim, the paraphrase blind spot, all four empty outcomes, and every tool_output branch (fact, chatter, both, neither, withheld, drafted-but-not-banked), and a value banked twice that every other column reads as clean, and a fact credited to a chunk that did not author it`,
 );
