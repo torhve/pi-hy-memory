@@ -215,7 +215,8 @@ gate.
       known by construction, asserting the cases a table reader gets wrong — unattributed intrusion,
       attributed restatement (which *must* score `pairStrict=false` / `pairAttributed=true`), a
       draft-gate intrusion reconcile refused, a keep-side draft reconcile dropped, and one of each
-      empty outcome. `hy.gap` records carry no `chunkId` and must be skipped. **Decision on 7.4**: the
+      empty outcome, plus a paraphrase that drops the anchor token (scored as restraint, flagged as a
+      suspect). `hy.gap` records carry no `chunkId` and must be skipped. **Decision on 7.4**: the
       headline is `attributed-ok`, with `strict` printed beside it so the external number stays
       comparable.
 - [ ] 7.5 `restraint-base` run on current `src/prompts.ts`, unchanged, scored before any variant.

@@ -794,3 +794,31 @@ will read as a benefit the rule did not provide.
 Union is the right rule on this evidence: it is the only mode that keeps all 28
 candidates, and ratified-only actively evicts the user constraint it is supposed to
 protect. The bound is still not what limits anything — 2 192 tokens of a 60 000 cap.
+
+## Finding: the enumerable probe matcher over-counted retention in two ways (2026-10-23)
+
+`dev/enumerable-coverage.ts` asks whether a draft or a bank fact carried a probe like `exit code 3`.
+Two bugs made it answer yes when the writer had not kept the fact.
+
+1. **A template literal is not a regex literal.** The exit-code relaxation was written
+   ``new RegExp(`\\b${num}\s*(?:=|:)?`)``. In a template literal `\s` evaluates to a bare `s`, so the
+   pattern actually tested was `\b3s*(?:=|:)?`. Biome's autofix rewrote the source to `s*` — what it
+   already evaluated to — which is how the bug surfaced. The whitespace tolerance never existed.
+2. **Substring matching on numbers.** The literal path ran first, and `exit code 3` is a substring of
+   `exit code 313`: a code the writer never kept was counted as kept. Same shape for `max 12` inside
+   `max 12000`, and `HY-123` inside `HY-1234`.
+
+The fix splits the two jobs. Exit codes are matched by the **number as a standalone token** on a line
+that is about exit codes, or by the glossed form the writer actually produces (`130 = interrupted
+rename`). Every other category matches literally but refuses a match that cuts the inside of a longer
+number (`squashContains`).
+
+The one looseness left is asserted rather than hidden: `12 = max tokens` reads as exit code 12. Losing
+every `N = meaning` retention to avoid that collision is the worse trade, so the fixture states it as a
+choice instead of leaving it to be rediscovered.
+
+**Historical numbers are unchanged.** `enum-base` (58/58), `enum-noisy` (55/55) and `reload-replay`
+(66 stated, 61 proposed, 92%) produce byte-identical reports before and after the fix — none of those
+corpora contain a colliding pair, which is why the bug survived every number ever printed from it. The
+new behaviour is proven by a self-test that runs whenever the tool runs: nine cases, five of them
+negatives, including the known looseness.

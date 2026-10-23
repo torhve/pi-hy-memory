@@ -69,6 +69,8 @@ export interface PairRow {
 	quoteBankAttributed: boolean;
 	pairStrict: boolean;
 	pairAttributed: boolean;
+	/** Quote side scored clean by anchor, yet word-overlaps the keep-side fact: possible paraphrase. */
+	paraphraseSuspects: { where: "draft" | "bank"; text: string; shared: string[] }[];
 }
 
 export interface EmptyRow {
@@ -105,6 +107,57 @@ const textOf = (row: { task: string; statement: string; keys: string[] }): strin
  */
 export function namesMarker(marker: string, row: { task: string; statement: string; keys: string[] }): boolean {
 	return carries(marker, textOf(row));
+}
+
+const STOPWORDS = new Set([
+	"this",
+	"that",
+	"with",
+	"from",
+	"when",
+	"into",
+	"they",
+	"their",
+	"then",
+	"than",
+	"have",
+	"has",
+	"was",
+	"were",
+	"will",
+	"would",
+	"should",
+	"could",
+	"must",
+	"only",
+	"also",
+	"here",
+	"there",
+	"what",
+	"which",
+	"while",
+	"about",
+	"after",
+	"before",
+	"because",
+]);
+
+/**
+ * Content words, for the one thing an anchor cannot see: a quote-side draft that keeps the claim and
+ * drops every anchor token. Word overlap is reported as a *suspicion*, never scored as an intrusion —
+ * counting it as an intrusion would punish a legitimate related fact, and ignoring it would let a
+ * paraphrase pass as restraint.
+ */
+export function sharedTokens(a: string, b: string): string[] {
+	const words = (text: string): Set<string> =>
+		new Set(
+			text
+				.toLowerCase()
+				.split(/[^a-z0-9_]+/)
+				.filter((w) => w.length >= 4 && !STOPWORDS.has(w)),
+		);
+	const left = words(a);
+	return [...words(b)].filter((w) => left.has(w));
 }
 
 export function scoreRun(chunks: CorpusChunk[], ledger: LedgerRecord[]): RunScore {
@@ -193,6 +246,22 @@ export function scoreRun(chunks: CorpusChunk[], ledger: LedgerRecord[]): RunScor
 			namesMarker(marker, { task: "", statement: e.statement, keys: [] }),
 		);
 
+		// The blind spot of anchor matching, made visible instead of assumed away.
+		const keepText = (bankByChunk.get(base(keep.chunkId)) ?? []).map((e) => textOf(e)).join(" ");
+		const paraphraseSuspects: PairRow["paraphraseSuspects"] = [];
+		if (keepText) {
+			for (const d of quoteEv?.present ? quoteEv.drafts : []) {
+				if (anchors.some((a) => carries(a, textOf(d)))) continue;
+				const shared = sharedTokens(keepText, textOf(d));
+				if (shared.length >= 3) paraphraseSuspects.push({ where: "draft", text: d.statement, shared });
+			}
+			for (const e of bankByChunk.get(base(quote.chunkId)) ?? []) {
+				if (anchors.some((a) => carries(a, textOf(e)))) continue;
+				const shared = sharedTokens(keepText, textOf(e));
+				if (shared.length >= 3) paraphraseSuspects.push({ where: "bank", text: e.statement, shared });
+			}
+		}
+
 		pairRows.push({
 			pair,
 			keepChunk: keep.chunkId,
@@ -209,6 +278,7 @@ export function scoreRun(chunks: CorpusChunk[], ledger: LedgerRecord[]): RunScor
 			quoteBankAttributed,
 			pairStrict: Boolean(keepBanked) && quoteDraftStrict === true && quoteBankStrict,
 			pairAttributed: Boolean(keepBanked) && quoteDraftAttributed === true && quoteBankAttributed,
+			paraphraseSuspects,
 		});
 	}
 
@@ -258,6 +328,7 @@ export interface Totals {
 	restraintAttributed: number;
 	pairStrict: number;
 	pairAttributed: number;
+	paraphraseSuspects: number;
 	abstained: number;
 	suppressed: number;
 	intruded: number;
@@ -277,6 +348,7 @@ export function totals(score: RunScore): Totals {
 		restraintAttributed: score.pairs.filter((p) => p.quoteDraftAttributed && p.quoteBankAttributed).length,
 		pairStrict: score.pairs.filter((p) => p.pairStrict).length,
 		pairAttributed: score.pairs.filter((p) => p.pairAttributed).length,
+		paraphraseSuspects: score.pairs.filter((p) => p.paraphraseSuspects.length > 0).length,
 		abstained: score.empties.filter((e) => e.outcome === "abstained").length,
 		suppressed: score.empties.filter((e) => e.outcome === "code-suppressed").length,
 		intruded: score.empties.filter((e) => e.outcome === "intruded").length,
@@ -328,11 +400,11 @@ function main(): void {
 
 		console.log("\nattribution pairs — identical claim, only the speaker frame flips");
 		console.log(
-			`${"pair".padEnd(10)} ${"keep draft".padStart(12)} ${"keep bank".padStart(11)} ${"quote draft".padStart(12)} ${"quote bank".padStart(12)} ${"pair strict".padStart(12)} ${"pair attrib".padStart(12)}`,
+			`${"pair".padEnd(10)} ${"keep draft".padStart(12)} ${"keep bank".padStart(11)} ${"quote draft".padStart(12)} ${"quote bank".padStart(12)} ${"pair strict".padStart(12)} ${"pair attrib".padStart(12)} ${"paraphrase".padStart(11)}`,
 		);
 		for (const p of score.pairs) {
 			console.log(
-				`${p.pair.padEnd(10)} ${cell(p.keepDrafted).padStart(12)} ${cell(p.keepBanked).padStart(11)} ${cell(p.quoteDraftStrict).padStart(12)} ${cell(p.quoteBankStrict).padStart(12)} ${cell(p.pairStrict).padStart(12)} ${cell(p.pairAttributed).padStart(12)}`,
+				`${p.pair.padEnd(10)} ${cell(p.keepDrafted).padStart(12)} ${cell(p.keepBanked).padStart(11)} ${cell(p.quoteDraftStrict).padStart(12)} ${cell(p.quoteBankStrict).padStart(12)} ${cell(p.pairStrict).padStart(12)} ${cell(p.pairAttributed).padStart(12)} ${(p.paraphraseSuspects.length > 0 ? "suspect" : "-").padStart(11)}`,
 			);
 		}
 
@@ -349,6 +421,12 @@ function main(): void {
 		console.log(`  pair-correct, strict            ${t.pairStrict}/${t.pairs}  ${pct(t.pairStrict, t.pairs)}`);
 		console.log(
 			`  pair-correct, attributed-ok     ${t.pairAttributed}/${t.pairs}  ${pct(t.pairAttributed, t.pairs)}`,
+		);
+		console.log(
+			`  paraphrase suspects             ${t.paraphraseSuspects}/${t.pairs}  ${pct(t.paraphraseSuspects, t.pairs)}   (quote side clean by anchor, ≥3 content words shared with the keep-side fact: reported, not scored)`,
+		);
+		console.log(
+			"  headline contract is attributed-ok; strict is kept so the external number stays comparable. Raw counts are the number — with 8 pairs the percentage is orientation, not a measurement.",
 		);
 
 		console.log('\nempty chunks — the correct output is {"drafts":[]}');
@@ -395,6 +473,11 @@ function main(): void {
 					p.keepDrafted
 						? `${p.keepChunk}: drafted and then lost at reconcile — the bank holds no anchor`
 						: `${p.keepChunk}: the user-stated claim was never proposed at all`,
+				);
+			}
+			for (const s of p.paraphraseSuspects) {
+				notes.push(
+					`${p.quoteChunk}: scored clean at the ${s.where} gate by anchor, but "${s.text.slice(0, 120)}" shares ${s.shared.length} content words (${s.shared.slice(0, 6).join(", ")}) with the keep-side fact — a paraphrase would score as restraint here`,
 				);
 			}
 		}

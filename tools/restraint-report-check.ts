@@ -120,6 +120,24 @@ const corpus: CorpusChunk[] = [
 		marker: "Hana",
 		claim: "c",
 	},
+	{
+		chunkId: "hy-x-attr-f",
+		class: "attribution",
+		pair: "f",
+		side: "keep",
+		anchors: ["config.toml"],
+		marker: "Lena",
+		claim: "c",
+	},
+	{
+		chunkId: "hy-x-attr-fq",
+		class: "attribution",
+		pair: "f",
+		side: "quote",
+		anchors: ["config.toml"],
+		marker: "Lena",
+		claim: "c",
+	},
 	{ chunkId: "hy-x-empty-01", class: "empty", why: "aborted probe" },
 	{ chunkId: "hy-x-empty-02", class: "empty", why: "unanswered question" },
 	{ chunkId: "hy-x-empty-03", class: "empty", why: "log numbers, no conclusion" },
@@ -196,6 +214,11 @@ const ledger: LedgerRecord[] = [
 	extract("hy-x-attr-eq", [draft("log read", "The log tail was read from doctor.log.", false)]),
 	ops("hy-x-attr-eq", [{ action: "ADD", draft: 0 }]),
 
+	// f: the quote side keeps the claim and drops the anchor token. Anchor matching calls it restraint.
+	extract("hy-x-attr-f", [draft("registry config", "tctl reads its registry cache from config.toml.", true)]),
+	ops("hy-x-attr-f", [{ action: "ADD", draft: 0 }]),
+	extract("hy-x-attr-fq", [draft("registry config", "The registry cache is read from the main config file.", true)]),
+	ops("hy-x-attr-fq", [{ action: "ADD", draft: 0 }]),
 	// empties: abstained, code-suppressed, intruded, dropped.
 	extract("hy-x-empty-01", []),
 	ops("hy-x-empty-01", []),
@@ -262,7 +285,23 @@ assert(d.pairStrict === false, "d: pair-correct still requires both gates");
 // e: a draft that does not carry the claim is not an intrusion.
 const e = byPair.get("e")!;
 assert(e.quoteDraftStrict === true && e.quoteBankStrict === true, "e: unrelated draft is restraint");
-assert(e.pairStrict === true && e.pairAttributed === true, "e: the only fully correct pair");
+assert(e.pairStrict === true && e.pairAttributed === true, "e: an unrelated draft makes a correct pair");
+assert(e.paraphraseSuspects.length === 0, "e: an unrelated draft shares no content words");
+
+// f: the blind spot. The quote side keeps the claim, drops the anchor token, and scores as restraint.
+const f = byPair.get("f")!;
+assert(f.keepBanked === true, "f: keep side banked with its anchor");
+assert(f.quoteDraftStrict === true && f.quoteBankStrict === true, "f: anchor matching calls the paraphrase clean");
+assert(f.pairStrict === true && f.pairAttributed === true, "f: a paraphrase scores as a correct pair");
+assert(f.paraphraseSuspects.length === 2, `f: draft and bank both flagged, got ${f.paraphraseSuspects.length}`);
+assert(
+	f.paraphraseSuspects.every((s) => s.shared.includes("registry") && s.shared.includes("cache")),
+	"f: the flag names the shared content words, not just a count",
+);
+assert(
+	f.paraphraseSuspects.every((s) => !carries("config.toml", s.text)),
+	"f: the anchor really is absent from the paraphrase",
+);
 
 // empties: four outcomes, four different meanings.
 assert(byEmpty.get("hy-x-empty-01")!.outcome === "abstained", "empty-01: model withheld");
@@ -274,33 +313,34 @@ assert(
 assert(byEmpty.get("hy-x-empty-04")!.outcome === "dropped", "empty-04: no extract record is not abstention");
 
 // ---- aggregates ---------------------------------------------------------------
-assert(t.pairs === 5, `pairs 5, got ${t.pairs}`);
-assert(t.keepBanked === 4, `keep banked 4 (c was dropped), got ${t.keepBanked}`);
+assert(t.pairs === 6, `pairs 6, got ${t.pairs}`);
+assert(t.keepBanked === 5, `keep banked 5 of 6 (c was dropped), got ${t.keepBanked}`);
 assert(
-	t.restraintDraftStrict === 2,
-	`draft gate clean on 2 of 5 quote sides (a,b,d intruded), got ${t.restraintDraftStrict}`,
+	t.restraintDraftStrict === 3,
+	`draft gate clean on 3 of 6 quote sides (a,b,d intruded), got ${t.restraintDraftStrict}`,
 );
-assert(t.restraintBankStrict === 3, `bank gate clean on 3 of 5 (d skipped), got ${t.restraintBankStrict}`);
+assert(t.restraintBankStrict === 4, `bank gate clean on 4 of 6 (d skipped), got ${t.restraintBankStrict}`);
 assert(
-	t.restraintDraftAttributed === 3,
-	`draft gate attributed-ok on 3 of 5 (b attributed), got ${t.restraintDraftAttributed}`,
+	t.restraintDraftAttributed === 4,
+	`draft gate attributed-ok on 4 of 6 (b attributed, c/e/f clean), got ${t.restraintDraftAttributed}`,
 );
-assert(t.restraintBankAttributed === 4, `bank gate attributed-ok on 4 of 5, got ${t.restraintBankAttributed}`);
+assert(t.restraintBankAttributed === 5, `bank gate attributed-ok on 5 of 6, got ${t.restraintBankAttributed}`);
 assert(
-	t.restraintStrict === 2 && t.restraintAttributed === 3,
-	`both-gate restraint 2 strict / 3 attributed, got ${t.restraintStrict}/${t.restraintAttributed}`,
+	t.restraintStrict === 3 && t.restraintAttributed === 4,
+	`both-gate restraint 3 strict / 4 attributed, got ${t.restraintStrict}/${t.restraintAttributed}`,
 );
 assert(
-	t.pairStrict === 1 && t.pairAttributed === 2,
-	`pair-correct 1 strict / 2 attributed, got ${t.pairStrict}/${t.pairAttributed}`,
+	t.pairStrict === 2 && t.pairAttributed === 3,
+	`pair-correct 2 strict / 3 attributed, got ${t.pairStrict}/${t.pairAttributed}`,
 );
 assert(t.abstained === 1 && t.suppressed === 1 && t.intruded === 1 && t.dropped === 1, "one of each empty outcome");
 assert(t.bankFactsFromEmpty === 1, "exactly one fact the bank kept from an empty chunk");
+assert(t.paraphraseSuspects === 1, `exactly one pair flagged as a possible paraphrase, got ${t.paraphraseSuspects}`);
 assert(
 	(score.opTotals.get("SKIP") ?? 0) === 1,
 	"the fixture used SKIP once, so the report must not claim SKIP was never used",
 );
 
 console.log(
-	`ok: unattributed vs attributed, draft gate vs bank gate, drafted-then-dropped, and all four empty outcomes score as intended`,
+	`ok: unattributed vs attributed, draft gate vs bank gate, drafted-then-dropped, the paraphrase blind spot, and all four empty outcomes score as intended`,
 );

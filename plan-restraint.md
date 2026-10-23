@@ -217,6 +217,15 @@ Two things the fixture caught while being written:
   benchmark gets misread. The note now distinguishes *naming Mara (strict counts it, attributed-ok
   does not)* from *unattributed, and `fromUser=true`*.
 
+**The scorer's own blind spot is printed.** Anchor matching is lexical: a quote side that keeps the
+claim and drops every anchor token scores as restraint. Fixture pair `f` is exactly that — keep side
+"tctl reads its registry cache from `config.toml`", quote side "the registry cache is read from the main
+config file" — and it scores `pairStrict = true`, `pairAttributed = true`. The scorer does not pretend
+otherwise: it flags the pair as a **paraphrase suspect** when the quote side shares ≥ 3 content words
+with the keep-side fact, in a column of its own, *reported and not scored*. Counting it as an intrusion
+would punish a legitimate related fact; ignoring it would let a paraphrase pass as restraint. The
+check asserts both the flag firing (pair `f`) and it not firing (pair `e`, an unrelated draft).
+
 ## Explicit non-goals for slice 1
 
 No `src/prompts.ts` edit. No `src/protocol.ts` filter. No prompt variants — `dev/experiment.ts

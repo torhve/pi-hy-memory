@@ -280,26 +280,138 @@ function roleOfLine(line: string): Probe["role"] {
 
 /** Pull probes out of a chunk, one claim per text: a path is not also an identifier. */
 /**
- * Did a draft or a bank fact carry this probe? Retention is literal, with one relaxation: an exit code
- * stated as `exit code 65` is legitimately kept as `65 = partial write`, and the writer does compress
- * enumerations that way. Bare numbers are ambiguous, so the relaxation only applies to the exit-code
- * category and only where the number sits next to an exit-ish word or an `=`.
+ * Did a draft or a bank fact carry this probe?
+ *
+ * For most categories retention is literal, modulo whitespace: `45 s` stated, `45s` kept, is the same
+ * fact. Literal matching has a prefix trap, so a numeric edge has to land on a number boundary —
+ * `max 12` is not carried by `max 12000 tokens`, and `HY-123` is not carried by `HY-1234`.
+ *
+ * Exit codes are the exception, and the exception has to be the whole rule rather than a fallback
+ * after a literal match. The fact is the *number*, so `exit code 65` is legitimately kept as
+ * `65 = partial write`; checked per statement, so a bare number only counts where that statement is
+ * also talking about exit codes. Two bugs this shape used to have, both of which counted a code the
+ * writer never kept as kept:
+ *
+ *   - the literal match ran first, and `exit code 3` is a substring of `exit code 313`;
+ *   - `\\s` was written `\s`, which in a template literal evaluates to a bare "s", so the whitespace
+ *     tolerance never existed. Biome's autofix rewrote the source to what it already evaluated to,
+ *     which is how the second one surfaced.
  */
-function carried(category: Category, probe: string, haystack: string): boolean {
-	// Whitespace-insensitive: `45 s` stated, `45s` kept, is the same fact.
-	const squash = (value: string) => value.toLowerCase().replace(/\s+/g, "");
-	if (haystack && squash(haystack).includes(squash(probe))) return true;
-	if (category !== "exit_code") return false;
-	const num = probe.match(/\d+/)?.[0];
-	if (!num) return false;
-	// A code kept as `5 = registry 404` or `130 = interrupted rename` is kept. Checked per statement so
-	// a bare number only counts when that statement is also talking about exit codes.
-	// `\\s` in the source, not `\s`: in a template literal `\s` evaluates to a bare "s", so the
-	// whitespace tolerance this chain appears to have had never existed until the autofix exposed it.
-	return haystack
-		.split("\n")
-		.some((line) => /\b(?:exit|code|rc|status)\b/i.test(line) && new RegExp(`\\b${num}\\s*(?:=|:)?`).test(line));
+const EXITISH = /\b(?:exit|code|rc|status)\b/i;
+
+const squash = (value: string): string => value.toLowerCase().replace(/\s+/g, "");
+
+/** Substring match that refuses to match the inside of a longer number. */
+function squashContains(hay: string, needle: string): boolean {
+	const h = squash(hay);
+	const n = squash(needle);
+	if (!h || !n) return false;
+	for (let at = h.indexOf(n); at >= 0; at = h.indexOf(n, at + 1)) {
+		const before = at > 0 ? h[at - 1] : "";
+		const after = at + n.length < h.length ? h[at + n.length] : "";
+		const cutsNumber = (/\d/.test(n[0]!) && /\d/.test(before)) || (/\d/.test(n[n.length - 1]!) && /\d/.test(after));
+		if (!cutsNumber) return true;
+	}
+	return false;
 }
+
+function carried(category: Category, probe: string, haystack: string): boolean {
+	if (category !== "exit_code") return squashContains(haystack, probe);
+	const num = probe.match(/\d+/)?.[0];
+	if (!num) return squashContains(haystack, probe);
+	// A line carries the code when it is about exit codes and the number stands alone, or when the
+	// number is glossed (`130 = interrupted rename`) — the compressed form the writer actually uses.
+	// The gloss form is the one deliberate looseness left here: `12 = max tokens` would read as exit
+	// code 12. Losing every `N = meaning` retention to avoid that collision is the worse trade.
+	const token = new RegExp(`\\b${num}\\b`);
+	const gloss = new RegExp(`\\b${num}\\b\\s*(?:=|:)\\s*\\S`);
+	return haystack.split("\n").some((line) => (EXITISH.test(line) && token.test(line)) || gloss.test(line));
+}
+
+/**
+ * The instrument before the measurement. Every case here is one of the bugs above getting wrong, and
+ * the negatives matter more than the positives: a coverage instrument that over-counts retention is
+ * the kind of number that survives a decade of reports.
+ */
+function selfTestCarried(): void {
+	const cases: { want: boolean; why: string; category: Category; probe: string; haystack: string }[] = [
+		{
+			want: true,
+			why: "code kept as `130 = …`",
+			category: "exit_code",
+			probe: "exit code 130",
+			haystack: "130 = interrupted rename",
+		},
+		{
+			want: true,
+			why: "code kept with its name",
+			category: "exit_code",
+			probe: "exit code 3",
+			haystack: "exit code 3 means corrupted",
+		},
+		{
+			want: true,
+			why: "rc form of the same fact",
+			category: "exit_code",
+			probe: "exit code 3",
+			haystack: "rc = 3",
+		},
+		{
+			want: false,
+			why: "a longer code is not this code",
+			category: "exit_code",
+			probe: "exit code 3",
+			haystack: "exit code 313 in the log",
+		},
+		{
+			want: false,
+			why: "bare number in a line that is not about exit codes",
+			category: "exit_code",
+			probe: "exit code 3",
+			haystack: "3 attempts failed",
+		},
+		{ want: true, why: "whitespace squashed", category: "limit", probe: "45 s", haystack: "a 45s timeout" },
+		{
+			want: false,
+			why: "limit is not the prefix of a bigger limit",
+			category: "limit",
+			probe: "max 12",
+			haystack: "max 12000 tokens",
+		},
+		{
+			want: false,
+			why: "id is not the prefix of a longer id",
+			category: "identifier",
+			probe: "HY-123",
+			haystack: "HY-1234 shipped",
+		},
+		{
+			want: true,
+			why: "env var kept verbatim",
+			category: "env_var",
+			probe: "TOR_TOOL_SETTINGS",
+			haystack: "read TOR_TOOL_SETTINGS first",
+		},
+		{
+			want: true,
+			why: "known looseness, asserted so it stays a choice: a glossed limit reads as a code",
+			category: "exit_code",
+			probe: "exit code 12",
+			haystack: "12 = max tokens",
+		},
+	];
+	for (const c of cases) {
+		const got = carried(c.category, c.probe, c.haystack);
+		if (got !== c.want) {
+			console.error(
+				`FAIL probe self-test: ${c.why} — carried("${c.probe}", "${c.haystack}") = ${got}, wanted ${c.want}`,
+			);
+			process.exit(1);
+		}
+	}
+}
+
+selfTestCarried();
 
 function extractProbes(text: string, chunk: string): Probe[] {
 	const probes: Probe[] = [];
