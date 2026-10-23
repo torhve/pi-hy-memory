@@ -251,6 +251,18 @@ gate.
       intrusion unless it loses source refs or narrows a fact that stayed true) and the policy class
       (title kept, salary excluded), which is really a question about where a semantic exclusion
       belongs now that `SECRET_PATTERNS` already answers the syntactic half.
+- [x] 7.8 Label audit, findings only (`EXPERIMENTS.md`, 2026-10-23). Same ledger, no new model run,
+      per-op agreement across the two judge seeds: 9 of 23 banked facts survive both. The split is not
+      durable versus transient — every op both seeds kept says something about tctl or the source, every
+      op both seeds rejected says something about what the participants did. Labels, the `empty_chunk: 10`
+      gate and the published 0/10 are unchanged; relabeling three chunks would drop the class to 7 and
+      fail the corpus check, which is the reason the audit is findings and not a re-score.
+- [ ] 7.9 Slice 2 corpus work the audit implies, gated on 7.6: split the nothing-durable class into
+      *nothing durable about the work* (the writer is plainly wrong to store any of it) and *nothing the
+      user decided, but tool output present* (storing the tool fact is a defensible call), as a new corpus
+      with its own gate rather than a relabeling of the ten. The bank-aware draft-gate experiment —
+      extract sees a task-line bank index, measured on draft-gate restraint, extraction recall and
+      precision, attribution and token cost — comes after that, not before.
 ## Notes
 
 - Writer route: primary `remote/hy-memory-30b-a3b`, measured in this session on a 10.9 k-token
