@@ -459,7 +459,7 @@ choosing. Tiers are ordered by what can be measured with artifacts already on di
       **Offline half done (2026-10-24).** Corpus 4 is written and contract-checked — 12 `tool_output`, 4
       constraint chunks, 4 calls past the 240-character window with 2 values hidden past the cut and nowhere
       else in either session, 4 tool-bearing nothing-durable chunks, 1 cross-session pair over 2 authored
-      sessions — and `tools/restraint-corpus-mutation-check.ts` rejects 37 deliberate breakings across the four
+      sessions — and `tools/restraint-corpus-mutation-check.ts` rejects 38 deliberate breakings across the four
       committed corpora. The scorer counts the three labels and `tools/restraint-report-check.ts` pins them,
       including the guard that a chunk printing `45` in plain sight is not evidence that a bank fact carrying
       `45` invented it. **Live half done the same day the writer route came back (2026-10-24):**
@@ -468,12 +468,17 @@ choosing. Tiers are ordered by what can be measured with artifacts already on di
       kept no tool-fact gain on this corpus, 8/12 against 8/12, and its one loose-clause merge dropped
       `night.toml` where the shipped arm's four dropped nothing. Numbers in `EXPERIMENTS.md`.
 - [ ] 8.4 Clipping survival, tier 4. The DESIGN.md row is corrected first, by function name rather
-      than line number: tool call arguments in `textOfParts()` cut at 240 chars with no marker, bodies
-      and tool results through `clip()` at `maxEntryChars` (3000 default) *with* `…` — both in
-      `src/entries.ts`. Then a deterministic fixture with the decision-relevant
-      flag late in long tool arguments, asserting extraction survives, no merge drops it, the value is
-      in the final bank, and a visible omission marker does not push the writer to invent the missing
-      tail. Then the 240-against-600 arm.
+      **Marker shipped 2026-10-24**: tool call arguments in `textOfParts()` are cut at `ARGS_WINDOW` (240)
+      and now carry clip()'s `…`, where they used to be cut with nothing; bodies and tool results still go
+      through `clip()` at `maxEntryChars` (3000 default) *with* `…` — both in `src/entries.ts`, whose row in
+      DESIGN.md is corrected by function name rather than line number. `tools/clip-check.ts` pins the failure
+      mode as shipped (240 characters plus the marker, flag past the window, arguments still not closing as
+      JSON), `dev/clip-report.ts` counts marker presence in the captures (0 of 589, because they were
+      rendered before it), and `tools/restraint-corpus-check.ts` measures the window *and* whether the
+      renderer marks a cut instead of assuming either. **Remaining**: the 240-against-600 arm, which needs a
+      way to set the window from outside `src/entries.ts` and a corpus whose hidden values sit between 240 and
+      600 rather than past both. The fixture with the decision-relevant flag late in long arguments, asserting
+      extraction survives, no merge drops it, and the value is in the final bank, is still unwritten.
 - [ ] 8.5 Their mandate against our empty list, tier 5 — blocked, deliberately. Score fabrication only
       under a written support contract (values present in source text, resolvable `sourceEntryId`
       citations, zero supported claims expected on not-durable chunks). Semantic judging needs the

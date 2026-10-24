@@ -140,8 +140,9 @@ declare a user rule, and 1 restates a subject the other session established. `to
 enforces each label against the shipped renderer — the argument window is measured by rendering the call
 with `renderEntry`, not by trusting the number written in this plan — and
 `tools/restraint-corpus-mutation-check.ts` breaks every rule on purpose across all four committed corpora
-(37 breakings, each rejected by the rule it names). The same check reports, for the corpora that predate
-the distinction, that corpus 2's six `nothing_work` chunks all carry tool output: the class boundary 7.17
+(38 breakings, each rejected by the rule it names — the newest being a cut call shown without the marker).
+The same check reports, for the corpora that predate the distinction, that corpus 2's six `nothing_work`
+chunks all carry tool output: the class boundary 7.17
 says is missing is visible in the older corpora rather than fixed in them.
 
 The scorer carries the labels. A declared rule is counted as kept verbatim in a bank fact, kept only as a
@@ -185,8 +186,10 @@ voice fell from 16 of 48 to 12 of 47. The numbers and their reading are in `EXPE
 **Correction made with this plan** (`7ad9b5c`): the DESIGN.md row said tool results are clipped with
 no omission marker. `clip()` in `src/entries.ts` appends `…` and is what renders tool results,
 assistant, user and summary lines at `maxEntryChars` (default 3000), while **tool call arguments** in
-`textOfParts()` are cut with `JSON.stringify(…).slice(0, 240)` and **no marker at all**. The divergence
-is real; the row described the wrong half of it.
+`textOfParts()` are cut at `ARGS_WINDOW` (240) with **no marker at all** as of that correction. The
+divergence is real; the row described the wrong half of it. **That half shipped a marker on 2026-10-24**: a
+cut argument list now carries `clip()`'s `…`, so the marker variant below is what the code does and the open
+half is the window.
 
 **Fixture (deterministic, no model):** an entry whose tool call carries the decision-relevant flag
 late in long arguments — upstream's own analogue is a late `-Depth 3`, raised from 80 chars to 600
@@ -202,10 +205,12 @@ not calls — so no merge or guard number measured so far ever exercised this pa
 needs tool-call chunks with the decision-relevant part late in the arguments. `tools/clip-check.ts` pins
 the failure mode against the shipped renderer. The run arm below has not been spent.
 
-**Run arm:** the same authored chunks at 240 and at 600 chars, plus a variant where the clip leaves a
-visible marker. Assert four things, not one: extraction survives; no merge drops it; the value is in
-the final bank; and the marker does **not** induce the writer to invent the missing tail — the case a
-silent truncation cannot produce and an honest one can be tested for.
+**Run arm:** the same authored chunks rendered at 240 and at 600 characters, which needs a way to set the
+window from outside `src/entries.ts` — that knob does not exist yet, and a dev-side renderer that replicates
+the slicing would drift from the code being measured. The hidden values in such a corpus must sit **between**
+240 and 600, not past both, or the two arms see the same text. Assert four things, not one: extraction
+survives; no merge drops it; the value is in the final bank; and the marker does **not** induce the writer to
+invent the missing tail — the case a silent truncation cannot produce and an honest one can be tested for.
 
 ## Tier 5 — Their mandate against our empty list, only if "fabrication" is defined first
 
@@ -279,7 +284,7 @@ that trigger.
 | 1 verbatim recoverability | ledgers + corpora on disk | offline, minutes | 7.18's structural option, for or against |
 | 2 guard priced incl. off | same ledgers; optional 8–12 chunk labeled arm | offline, minutes; +minutes if the arm runs | 7.18's tightening option, and the third option |
 | 3 the two missing labels | new corpus chunks | ran: ~1 h authoring + two runs, 340.6 s and 358.1 s of model wall | the actor-frame promotion decision (7.16/7.17), answered against promoting |
-| 4 clipping survival | fixture, then one small run | ~30 min offline + one short run | whether our 240-char silent cut costs values, and a DESIGN.md fix |
+| 4 clipping survival | marker shipped; fixture, then one small run | offline half done; ~30 min for the fixture; the run still unpriced | whether our 240-char cut costs values, and what the window should be |
 | 5 mandated extraction | support contract first | blocked until the contract is written | whether our permissiveness is actually the safer bet |
 | 6a session scope | synthetic bank scenario, plus a classifier over every ledger and a recount of the merge candidates each chunk was offered | ~30 min offline, ran | whether destructive authority needs fencing at all — there is no fence; 5 of 329 refused proposals reached across a session boundary, 28 of 125 cross-session candidates were merge-eligible, and the two places a fence could sit measure opposite ways |
 | 6b memory unit | — | parked | re-entry trigger recorded |

@@ -138,8 +138,10 @@ last part of an assistant message is often the part that carries the deliverable
 by whole user-turns (default 5), never mid-turn. One of their tests asserts that a long
 PowerShell command keeps `-Depth 3` and `-ErrorAction SilentlyContinue` inside the prompt — a
 regression test for the evidence window itself, because the flags that matter are often late in
-the line. We compact tool-call args at 240 chars and clip tool results by characters with no
-omission marker at all (`src/entries.ts`), which is the same failure they wrote a test against.
+the line. We compact tool-call args at 240 chars (`ARGS_WINDOW` in `src/entries.ts`); since 2026-10-24 a
+cut call carries clip()'s `…` rather than arriving as JSON that never closes, and the window itself is
+still the unmeasured half — 240 reached the code in the first commit with no rationale anywhere, so it
+moves only when the 240-vs-600 arm says it should.
 
 **Destructive authority is scoped; reading is not.** A supersede requires candidates from the same
 `agent_id` / `session_id` / `workspace`; a candidate outside that scope is dropped before the
@@ -163,8 +165,8 @@ bet, and it is now a named divergence rather than an unexamined default.
 | the extract prompt offering `{"drafts":[]}` while their coding prompt forbids an empty list | **open**, measured 0/8 withheld; their own history says a mandate here manufactures records |
 | no verbatim payload field, no summary/verbatim split | **open**, and the one that changes what our repeat finding means |
 | actor-frame statements, budget-reallocation wording, evidence-fidelity contract | **measured now**: `dev/prompts-actorframe.ts` as `restraint3-actor`, scored with the shipped scorer |
-| tool call *arguments* clipped at 240 chars with **no** omission marker (`src/entries.ts:35`), while message and tool-result bodies are clipped at `maxEntryChars` (default 3000) **with** a trailing `…` (`src/entries.ts:42-45`, `:60`, `:136`) — an earlier draft of this row had the marker on the wrong half | **open**; the silent half is now measured — 589 of 1,955 rendered tool calls in 51 captured sessions were cut with no marker (`dev/clip-report.ts`), failure mode pinned by `tools/clip-check.ts` |
-| destructive authority scoped to one session | **open**; the only fences here are subject wording and "target was retrieved for this draft" — measured in `dev/session-scope-report.ts` and `tools/session-scope-check.ts` |
+| tool call *arguments* cut at `ARGS_WINDOW` (240) chars, now **with** clip()'s `…` (`src/entries.ts:31-38`, marker added 2026-10-24); message and tool-result bodies are cut at `maxEntryChars` (default 3000) with the same marker (`src/entries.ts:44-47`, `:62`, `:138`) | **half closed**: the marker shipped, the window did not move. 589 of 1,955 rendered calls in 51 captured sessions were cut at 240 (`dev/clip-report.ts`, captured while the cut was silent); failure mode pinned by `tools/clip-check.ts`; the 240-vs-600 arm decides the window |
+| destructive authority scoped to one session | **decided 2026-10-24, no fence shipped**; the only fences here are subject wording and "target was retrieved for this draft" — measured in `dev/session-scope-report.ts` and `tools/session-scope-check.ts`, re-entry trigger recorded |
 | `subject-guard` on, theirs off | **decided**, with a dissent now on the record |
 | `keys` and `refs` | **ours deliberately**: `keys` borrows `search_keys`, `refs` is what the id-echo measurement bought |
 | extract never sees the bank | **decided twice** — once by measurement (7.10), once by reading their code |

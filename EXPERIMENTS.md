@@ -2040,3 +2040,30 @@ the two hidden values were authored to appear nowhere else, and corpus 4 differs
 at once. Whether a wider window would have banked them is a different run — the same chunk rendered at 240 and
 at 600 — which has not been run, and the captures cannot price it because a captured chunk text is already cut
 and the full arguments are not in it. The decision about the window itself is recorded in DESIGN.md.
+
+### The silent half stopped being silent (2026-10-24)
+
+The decision the section above left open has been taken in half. A cut tool call now carries `clip()`'s
+marker: `src/entries.ts` slices the arguments at `ARGS_WINDOW` (240) and appends `…`, so the writer can tell
+a long call from a broken one. The window itself is unchanged, because the marker needs no measurement — a
+call cut with no sign of a cut is a defect at any window size, and adding one costs nothing — while moving
+240 to 600 is the change that has to be priced, and 240 has no recorded rationale: `git log -S 240` shows it
+reaching the code in the first commit and never being discussed.
+
+What the marker touched, and what it did not:
+
+| thing | state |
+| --- | --- |
+| shipped renderer | cut calls end `…`; whole calls and bodies unchanged |
+| corpus 4 | the four cut lines regenerated with the marker; the same 240 characters of arguments before it, so `argsFull` and both hidden values still sit past the window, and the two runs already on disk were rendered before the marker — their ledgers are untouched |
+| `tools/restraint-corpus-check.ts` | measures the window *and* whether the renderer marks a cut, rather than assuming either; a cut call whose visible arguments carry no marker is now rejected |
+| `tools/restraint-corpus-mutation-check.ts` | 38 breakings now, the new one being a cut call shown without the marker |
+| `tools/clip-check.ts` | pins the failure mode as shipped: the 363-character call reaches the writer as 240 characters plus the marker, with `--purge-age=90d` past the window and the arguments still not closing as JSON |
+| `dev/clip-report.ts` | counts marker presence in the captures; every one of the 589 cuts is unmarked, which is a statement about how those captures were rendered, not about what ships today |
+
+**What this does not settle.** The captures say nothing about the marker's effect, because they predate it:
+whether the writer acts on `…` — re-running a call to see the rest, or leaving the value out — is a run with
+real sessions through the renderer as it now is, not something the archived texts can show. The window stays
+240 until an arm renders the same chunk both ways and scores the banks, which needs a way to set the window
+from outside `src/entries.ts`; that knob does not exist yet, and the corpus that would price it needs its
+hidden values between 240 and 600 rather than past both.

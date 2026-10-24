@@ -7,9 +7,10 @@
 // value past that cut. Getting those slices right by hand is exactly the kind of thing an author gets
 // subtly wrong, so the slice is computed here and the corpus check re-derives it afterwards.
 import { writeFileSync } from "node:fs";
+import { ARGS_WINDOW } from "../src/entries.js";
 import { carries } from "./restraint-report.js";
 
-const ARGS_CAP = 240;
+const ARGS_CAP = ARGS_WINDOW;
 // Two authored sessions. Chunk ids reach the ledger unchanged (dev/run.ts uses the corpus id as given),
 // and dev/session-scope-report.ts classifies a chunk by its `hy-<8 hex>-` prefix, so a corpus can carry a
 // session boundary that a recorded run then crosses for real. `hy-4f0a0002-to-11` names the chunk it
@@ -18,9 +19,9 @@ const S1 = "hy-4f0a0001";
 const S2 = "hy-4f0a0002";
 
 /**
- * Render the call line the way the shipped renderer does: stringify, slice at the window, no marker,
- * nothing closed, and the wrapper bracket after the slice because the renderer puts it there. `hide` is
- * a value that must land past the cut, so the command is padded with flags real commands carry until the
+ * Render the call line the way the shipped renderer does: stringify, slice at the window, clip()'s marker
+ * on the end, nothing closed, and the wrapper bracket after the marker because the renderer puts it there.
+ * `hide` is
  * value sits outside the window — a cut that hides nothing is not a cut.
  */
 const FLAGS = [
@@ -43,7 +44,7 @@ function cutCall(name, head, hide, desc, at, time) {
 		const where = hide ? full.lastIndexOf(hide) : full.length;
 		if (full.length > ARGS_CAP && where >= ARGS_CAP)
 			return {
-				line: `${at} [Assistant @ ${time}]: Running it. [called ${name} ${full.slice(0, ARGS_CAP)}]`,
+				line: `${at} [Assistant @ ${time}]: Running it. [called ${name} ${full.slice(0, ARGS_CAP)}…]`,
 				full,
 				pads,
 			};
@@ -482,11 +483,11 @@ for (const c of chunks) {
 		if (at < 0) continue;
 		const args = line.slice(at + "[called ".length);
 		const open = args.slice(args.indexOf("{"), -1); // minus the wrapper bracket the renderer adds
-		if (open.length !== ARGS_CAP) {
-			console.error(`cut line in ${c.chunkId} is ${open.length} characters of arguments, not ${ARGS_CAP}`);
+		if (!open.endsWith("…") || open.slice(0, -1).length !== ARGS_CAP) {
+			console.error(`cut line in ${c.chunkId} is not ${ARGS_CAP} characters of arguments plus a marker`);
 			problems++;
 		}
-		if (c.argsFull && !c.argsFull.startsWith(open)) {
+		if (c.argsFull && !c.argsFull.startsWith(open.slice(0, -1))) {
 			console.error(`${c.chunkId}: the visible arguments are not a prefix of argsFull`);
 			problems++;
 		}

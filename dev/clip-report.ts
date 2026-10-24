@@ -4,10 +4,11 @@
  * dev/clip-report.ts — tier 4's offline half: how often the writer's view is cut, measured on real
  * captured sessions.
  *
- * src/entries.ts clips two different things in two different ways. Message and tool-result bodies go
- * through clip() at maxEntryChars (default 3000) and keep a visible `…`. Tool call arguments go through
- * JSON.stringify(...).slice(0, 240) and keep nothing: the writer is shown a JSON object that never
- * closes, with no sign that anything was removed.
+ * src/entries.ts clips two things. Message and tool-result bodies go through clip() at maxEntryChars
+ * (default 3000) and keep a visible `…`. Tool call arguments are cut at ARGS_WINDOW (240) — and since
+ * 2026-10-24 they carry the same marker, so a cut call reads as a long call rather than as JSON that
+ * never closes. These captures were rendered before that marker shipped, so `cappedMarked` is the count
+ * of cuts that already carried it: the number says how the captures were made, not what ships today.
  *
  * The measurement asks how often that second cut fires in real sessions and where it lands. Captures are
  * the chunk texts the writer was actually given, so a call whose arguments stop being parseable JSON is a
@@ -19,8 +20,9 @@
 
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
+import { ARGS_WINDOW } from "../src/entries.js";
 
-const ARGS_CAP = 240;
+const ARGS_CAP = ARGS_WINDOW;
 const BODY_CAP = 3000;
 
 export interface ClipStats {
@@ -47,6 +49,9 @@ export interface ClipStats {
 	cappedThenResult: number;
 	/** cut calls where a flag the writer could not see in the arguments appears in that result. */
 	cappedFlagInResult: number;
+	/** of the cut ones, how many carried clip()'s marker in the text as captured. Captures predate the
+	 * marker shipping in src/entries.ts, so this reads how they were rendered, not what ships today. */
+	cappedMarked: number;
 }
 
 /** Rendered chunk texts live in capture files as { chunkId, text, refs, ... }. */
@@ -152,6 +157,7 @@ export function measureCaptures(captures: { file: string; text: string }[]): Cli
 		longestLine: 0,
 		cappedThenResult: 0,
 		cappedFlagInResult: 0,
+		cappedMarked: 0,
 	};
 
 	for (const capture of captures) {
@@ -176,6 +182,8 @@ export function measureCaptures(captures: { file: string; text: string }[]): Cli
 				if (whole === null) {
 					stats.capped++;
 					cappedHere++;
+					// The marker would sit at the character right after the window's characters.
+					if (line[brace + ARGS_CAP] === "…") stats.cappedMarked++;
 					// The cut fell inside an open quoted string if the quotes left on this line are odd.
 					if ((line.slice(brace).match(/(?<!\\)"/g) ?? []).length % 2 === 1) stats.cutInsideString++;
 					if (showsResult) {
@@ -214,8 +222,8 @@ function main(): void {
 
 	console.log(`captured chunk texts read: ${s.captures}, rendered lines: ${s.lines}`);
 	console.log(
-		`tool calls the writer was shown: ${s.calls}; whole JSON: ${s.whole}; cut at ${ARGS_CAP} with no marker: ` +
-			`${s.capped} (${pct(s.capped, s.calls)})`,
+		`tool calls the writer was shown: ${s.calls}; whole JSON: ${s.whole}; cut at ${ARGS_CAP}: ` +
+			`${s.capped} (${pct(s.capped, s.calls)}), of them carrying the marker in the text as captured: ${s.cappedMarked}`,
 	);
 	console.log(
 		`  of the cut ones, the cut falls inside a quoted string: ${s.cutInsideString} (${pct(s.cutInsideString, s.capped)})`,
@@ -238,8 +246,10 @@ function main(): void {
 		`  lines carrying clip()'s visible … at ${BODY_CAP}: ${s.bodyClipped}; longest rendered line: ${s.longestLine} chars`,
 	);
 	console.log(
-		"   reading: a cut call reaches the end of its JSON with no closing brace and no marker, so the " +
-			"writer sees malformed JSON and no sign that text was removed.",
+		`   reading: a cut call reaches the end of its JSON with no closing brace. These captures were ` +
+			`rendered while that cut carried no marker at all (${s.cappedMarked} of ${s.capped} marked), which is ` +
+			"what the writer had to notice; src/entries.ts now leaves clip()'s marker on a cut call, so a long " +
+			"call and a broken one are no longer the same text.",
 	);
 	console.log(
 		"   the flag figure bounds the writer's other route, not the loss: a flag readable in a result line " +

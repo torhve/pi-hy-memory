@@ -80,9 +80,11 @@ function assert(cond: boolean, label: string): void {
  *
  * A corpus rule written against a typed-in 240 stops meaning anything the day the window moves — and
  * upstream's own window has already moved once, from 80 to 600, because 80 cut real flags. Measured,
- * the rule moves with the code it is a rule about.
+ * the rule moves with the code it is a rule about, including whether the cut announces itself: a corpus
+ * that shows a cut call without the marker the shipped renderer leaves is a corpus that does not show
+ * what the writer was shown.
  */
-function argumentWindow(): number {
+function argumentRule(): { cap: number; marks: boolean } {
 	const probe = {
 		type: "message",
 		id: "hy-window-probe",
@@ -98,7 +100,8 @@ function argumentWindow(): number {
 	// The rendered call is `[called k <arguments>]`: the wrapper's bracket is not part of the arguments.
 	const visible = shown.slice(at + "[called k ".length, -1);
 	assert(visible.length > 0, "the shipped renderer shows no arguments at all");
-	return visible.length;
+	const marks = visible.endsWith("…");
+	return { cap: marks ? visible.length - 1 : visible.length, marks };
 }
 
 const SESSION_ID = /^hy-([0-9a-f]{8})-/;
@@ -118,7 +121,8 @@ interface CallShown {
 /**
  * Every tool call a chunk shows, and whether the writer was shown the whole argument list. A call the
  * window cut does not parse: it stops mid-value, with the wrapper's bracket on it and no closing brace
- * of its own — which is the whole reason the cut is hard for a model to notice.
+ * of its own. When the renderer marks a cut, the marker is the writer's only sign anything was removed,
+ * so it belongs to `visible` here and the corpus rule below requires it.
  */
 function callsShown(c: CorpusChunk): CallShown[] {
 	const out: CallShown[] = [];
@@ -151,7 +155,7 @@ function checkCorpus(CORPUS: string): string {
 	const wordMatch = carries;
 	// Measured from `renderEntry` on every run, so the window rules mean what the shipped renderer
 	// does rather than what a number written in this file once said.
-	const WINDOW = argumentWindow();
+	const { cap: WINDOW, marks } = argumentRule();
 	const promptText = `${EXTRACT_SYSTEM}\n${reconcileSystem(12)}`;
 
 	const doc = JSON.parse(readFileSync(CORPUS, "utf8")) as {
@@ -370,12 +374,17 @@ function checkCorpus(CORPUS: string): string {
 				`${c.chunkId}: a call is cut mid-argument and the corpus names no argsFull, so nothing says what the writer lost`,
 			);
 			for (const k of cut) {
+				const shown = k.visible.endsWith("…") ? k.visible.slice(0, -1) : k.visible;
 				assert(
-					k.visible.length === WINDOW,
-					`${c.chunkId}: a cut call shows ${k.visible.length} characters of arguments; the shipped window shows ${WINDOW}`,
+					shown.length === WINDOW,
+					`${c.chunkId}: a cut call shows ${shown.length} characters of arguments; the shipped window shows ${WINDOW}`,
 				);
 				assert(
-					c.argsFull!.startsWith(k.visible),
+					!marks || k.visible.endsWith("…"),
+					`${c.chunkId}: a cut call carries no marker, and the shipped renderer marks every cut — the writer would read this as a broken call rather than a long one`,
+				);
+				assert(
+					c.argsFull!.startsWith(shown),
 					`${c.chunkId}: argsFull does not begin with the ${WINDOW} characters the writer was shown`,
 				);
 			}

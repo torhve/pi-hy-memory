@@ -300,9 +300,18 @@ const mutations: Mutation[] = [
 				const at = line.indexOf("[called bash ");
 				const head = line.slice(0, at + "[called bash ".length);
 				const visible = line.slice(at + "[called bash ".length, -1);
-				// 12 characters removed from a 240-character cut: still unparseable, no longer the window.
+				// 12 characters removed from the cut the shipped window leaves: still unparseable, and no
+				// longer the window the corpus rule measures against.
 				return `${head}${visible.slice(0, 228)}]`;
 			});
+		},
+	},
+	{
+		corpus: "dev/corpus-restraint4.json",
+		name: "r4: a cut call shown without the marker the shipped renderer leaves",
+		expect: "a cut call carries no marker",
+		apply: (doc) => {
+			rewriteLine(doc, "hy-4f0a0001-to-02", "[called bash ", (line) => line.replace("…]", "]"));
 		},
 	},
 	{

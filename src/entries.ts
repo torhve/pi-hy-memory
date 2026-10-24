@@ -22,6 +22,12 @@ function clock(timestamp: string | number | undefined): string {
 	return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
 }
 
+/**
+ * Tool call arguments reach the writer as at most this many characters of JSON. A call past it is cut and
+ * carries clip()'s marker, so the writer can tell a long call from a broken one. The window itself is
+ * measured in DESIGN.md and is deliberately still 240 until the 240-vs-600 arm says otherwise.
+ */
+export const ARGS_WINDOW = 240;
 function textOfParts(content: unknown): string {
 	if (typeof content === "string") return content;
 	if (!Array.isArray(content)) return "";
@@ -32,7 +38,10 @@ function textOfParts(content: unknown): string {
 		if (p.type === "text" && typeof p.text === "string") out.push(p.text);
 		else if (p.type === "toolCall") {
 			const name = typeof p.name === "string" ? p.name : "tool";
-			const args = JSON.stringify(p.arguments ?? p.args ?? {}).slice(0, 240);
+			const full = JSON.stringify(p.arguments ?? p.args ?? {});
+			// A cut call carries clip()'s marker, so the writer can tell a long call from a broken one:
+			// silently sliced JSON arrives as malformed JSON and nothing else.
+			const args = full.length > ARGS_WINDOW ? `${full.slice(0, ARGS_WINDOW)}…` : full;
 			out.push(`[called ${name} ${args}]`);
 		} else if (p.type === "image") out.push("[image]");
 	}

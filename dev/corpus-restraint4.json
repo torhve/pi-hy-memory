@@ -41,7 +41,7 @@
         "rerun it later"
       ],
       "argsFull": "{\"command\":\"canvas build --report build/report.txt --cache store/build.cache 2>&1 | tail -n 40 --color never --log-format terse --no-progress --umask 022 --timeout 120 --warn-unused\",\"description\":\"rebuild the cache and print the enforced limits\"}",
-      "text": "[0] [User @ 09:20]: Rebuild the cache and show me the tail of the build log when it is done.\n[1] [Assistant @ 09:21]: Rebuilding now, then I will show the tail.\n[2] [Tool result for bash @ 09:23]: cache: store/build.cache opened\n[3] [Assistant @ 09:24]: Running it. [called bash {\"command\":\"canvas build --report build/report.txt --cache store/build.cache 2>&1 | tail -n 40 --color never --log-format terse --no-progress --umask 022 --timeout 120 --warn-unused\",\"description\":\"rebuild the cache and print the enforced l]\n[4] [Tool result for bash @ 09:26]: build ok: max-pixels 4096 enforced, 58 tiles written\n[5] [User @ 09:27]: Good, I will rerun it later if anything changes."
+      "text": "[0] [User @ 09:20]: Rebuild the cache and show me the tail of the build log when it is done.\n[1] [Assistant @ 09:21]: Rebuilding now, then I will show the tail.\n[2] [Tool result for bash @ 09:23]: cache: store/build.cache opened\n[3] [Assistant @ 09:24]: Running it. [called bash {\"command\":\"canvas build --report build/report.txt --cache store/build.cache 2>&1 | tail -n 40 --color never --log-format terse --no-progress --umask 022 --timeout 120 --warn-unused\",\"description\":\"rebuild the cache and print the enforced l…]\n[4] [Tool result for bash @ 09:26]: build ok: max-pixels 4096 enforced, 58 tiles written\n[5] [User @ 09:27]: Good, I will rerun it later if anything changes."
     },
     {
       "chunkId": "hy-4f0a0001-to-03",
@@ -58,7 +58,7 @@
         "--retention-days 45"
       ],
       "argsFull": "{\"command\":\"canvas cleanup --apply --purge-stale --state store/queue -e CANVAS_OPTS='--skip-empty --keep-first 2' --color never --log-format terse --no-progress --umask 022 --timeout 120 --warn-unused --checksum sha256 --strict --jobs 8 --verbose-level 2 --retention-days 45\",\"description\":\"run the cleanup exactly as configured\"}",
-      "text": "[0] [User @ 09:31]: Run the cleanup the usual way and just show me the summary.\n[1] [Assistant @ 09:32]: Running it with the configured flags, then a glance at the summary.\n[2] [Tool result for bash @ 09:33]: state: store/queue readable\n[3] [Assistant @ 09:34]: Running it. [called bash {\"command\":\"canvas cleanup --apply --purge-stale --state store/queue -e CANVAS_OPTS='--skip-empty --keep-first 2' --color never --log-format terse --no-progress --umask 022 --timeout 120 --warn-unused --checksum sha256 --strict --jobs 8 --v]\n[4] [Tool result for bash @ 09:35]: cleanup skipped 3 stale entries, nothing removed\n[5] [User @ 09:36]: Fine. I was only wondering whether the run was needed at all."
+      "text": "[0] [User @ 09:31]: Run the cleanup the usual way and just show me the summary.\n[1] [Assistant @ 09:32]: Running it with the configured flags, then a glance at the summary.\n[2] [Tool result for bash @ 09:33]: state: store/queue readable\n[3] [Assistant @ 09:34]: Running it. [called bash {\"command\":\"canvas cleanup --apply --purge-stale --state store/queue -e CANVAS_OPTS='--skip-empty --keep-first 2' --color never --log-format terse --no-progress --umask 022 --timeout 120 --warn-unused --checksum sha256 --strict --jobs 8 --v…]\n[4] [Tool result for bash @ 09:35]: cleanup skipped 3 stale entries, nothing removed\n[5] [User @ 09:36]: Fine. I was only wondering whether the run was needed at all."
     },
     {
       "chunkId": "hy-4f0a0001-to-04",
@@ -163,7 +163,7 @@
         "--fail-on-missing"
       ],
       "argsFull": "{\"command\":\"canvas subset --manifest fonts/manifest.json --report fonts/subset-report.txt -e SUBSET_OPTS='--skip-synthetic --unify-metrics' --color never --log-format terse --no-progress --umask 022 --timeout 120 --warn-unused --checksum sha256 --fail-on-missing\",\"description\":\"check the font subset manifest for unresolved entries\"}",
-      "text": "[0] [User @ 11:04]: Check the font subsets and show me the count.\n[1] [Assistant @ 11:05]: Font files have been a mess lately, checking.\n[2] [Tool result for bash @ 11:06]: manifest: fonts/manifest.json\n[3] [Assistant @ 11:07]: Running it. [called bash {\"command\":\"canvas subset --manifest fonts/manifest.json --report fonts/subset-report.txt -e SUBSET_OPTS='--skip-synthetic --unify-metrics' --color never --log-format terse --no-progress --umask 022 --timeout 120 --warn-unused --checksum sh]\n[4] [Tool result for bash @ 11:09]: subset report: 12 subsets, 0 unresolved\n[5] [User @ 11:10]: Twelve then. A digression about font files: they are always half a mystery."
+      "text": "[0] [User @ 11:04]: Check the font subsets and show me the count.\n[1] [Assistant @ 11:05]: Font files have been a mess lately, checking.\n[2] [Tool result for bash @ 11:06]: manifest: fonts/manifest.json\n[3] [Assistant @ 11:07]: Running it. [called bash {\"command\":\"canvas subset --manifest fonts/manifest.json --report fonts/subset-report.txt -e SUBSET_OPTS='--skip-synthetic --unify-metrics' --color never --log-format terse --no-progress --umask 022 --timeout 120 --warn-unused --checksum sh…]\n[4] [Tool result for bash @ 11:09]: subset report: 12 subsets, 0 unresolved\n[5] [User @ 11:10]: Twelve then. A digression about font files: they are always half a mystery."
     },
     {
       "chunkId": "hy-4f0a0002-to-11",
@@ -230,7 +230,7 @@
         "just a recount"
       ],
       "argsFull": "{\"command\":\"canvas index --rebuild --quiet --report store/index-report.txt --check-only --color never --log-format terse --no-progress --umask 022 --timeout 120\",\"description\":\"recount the tile index entries and report what would have changed\"}",
-      "text": "[0] [User @ 12:32]: Recount the tile index, just a recount.\n[1] [Tool result for bash @ 12:33]: index: store/tiles.idx\n[2] [Assistant @ 12:34]: Running it. [called bash {\"command\":\"canvas index --rebuild --quiet --report store/index-report.txt --check-only --color never --log-format terse --no-progress --umask 022 --timeout 120\",\"description\":\"recount the tile index entries and report what would have chang]\n[3] [Tool result for bash @ 12:35]: 7 entries in the tile index, no changes written\n[4] [User @ 12:36]: Fine, nothing to take from it."
+      "text": "[0] [User @ 12:32]: Recount the tile index, just a recount.\n[1] [Tool result for bash @ 12:33]: index: store/tiles.idx\n[2] [Assistant @ 12:34]: Running it. [called bash {\"command\":\"canvas index --rebuild --quiet --report store/index-report.txt --check-only --color never --log-format terse --no-progress --umask 022 --timeout 120\",\"description\":\"recount the tile index entries and report what would have chang…]\n[3] [Tool result for bash @ 12:35]: 7 entries in the tile index, no changes written\n[4] [User @ 12:36]: Fine, nothing to take from it."
     },
     {
       "chunkId": "hy-4f0a0002-r4a-k",
