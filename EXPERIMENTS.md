@@ -1720,3 +1720,52 @@ in a result line says the writer had a way to learn that flag, not that the remo
 the silent cut costs a fact in a real run, whether 600 would be better than 240, and whether a visible
 marker tempts the writer to invent the missing tail are model questions, and they are the run arm this
 tier has not spent yet. Nothing in `src/` changed for this tier.
+
+## Tier 6a: can one session destroy another's fact? (2026-10-23, offline)
+
+Upstream fences writes by ownership. Its store takes `session_id` on every mutation, its scope carries
+`agent_id` / `session_id` / `workspace`, and a candidate outside that scope is dropped before the model
+sees it. Here the fences are different and narrower: `candidatesPerDraft(bank, drafts, limit)` takes a bank
+and drafts and has no session to scope by, and an UPDATE is accepted only if the target was retrieved for
+*that* draft and passes `sameSubject`, which reads `{task, statement}` from each side and nothing else.
+
+**The real-data count** (`dev/session-scope-report.ts`, no model, no network):
+
+| measure | value |
+|---|---|
+| run directories under `out/` | 34, of which 28 have a `ledger.jsonl` |
+| ledgers whose chunk ids carry a session (`hy-<sessionId8>-`) | 19 |
+| ledgers with no session in any chunk id (authored corpora, `hy-r3-to-01` style) | 9 — excluded, not counted as single-session evidence |
+| ledgers demonstrably spanning more than one session | **1** (`baseline-kitx`) |
+| destructive ops read (UPDATE + DELETE) | 383 |
+| of those, crossing a session boundary | **0** |
+
+`baseline-kitx` runs `hy-01a15629-001/002` then `hy-01a1510e-077/016/012`. Its one destructive op
+(`hy-01a15629-002` UPDATE) targets an entry written by `hy-01a15629-001` — its own session. So the tier's
+direct evidence is one observed opportunity, not taken.
+
+The fold is rebuilt before each chunk rather than once per ledger. An entry's `chunkId` is the only session
+marker the bank keeps, and a superseding write replaces it via `entryFromDraft`, so folding the whole ledger
+first would report a cross-session write as a same-session one.
+
+**The synthetic half carries the finding** (`tools/session-scope-check.ts`, deterministic, now in the gate):
+
+- Session B's draft is shown session A's entry: it appears among the 2 candidates `candidatesPerDraft`
+  returned, alongside a same-session entry, so the unscoped candidate set is making a choice and still
+  reaching across sessions.
+- The guard is blind to ownership. The identical pair scored **3/8** whether the target sat in the other
+  session's chunk or in the acting session's own chunk, and in both cases the accepting clause was the loose
+  one — the same clause that owns every declared loss in the merge audit.
+- The cross-session UPDATE applied. Session A's entry went `superseded`; the replacement carries
+  `hy-bbbbbbbb-001`, so after the merge the only session marker left in the bank belongs to the session that
+  destroyed the fact. The values only the destroyed fact carried (`--purge-target`, `var/state/queue`) left
+  the active bank entirely, and no field on any `BankEntry` names a session.
+- A cross-session DELETE needed nothing beyond the id.
+- The contrast holds: a draft sharing no wording was refused. Wording is the fence; ownership is not.
+
+**What this does not say.** Zero recorded cross-session ops is a fact about how runs were captured, not a
+record of safety: a run with one session prefix cannot contain one. In production the bank is one store
+shared by every session that touches the state directory, so cross-session targeting is the ordinary case.
+The synthetic pair is authored by hand and shows what the rule *permits*, not how often the permission is
+used or how much it costs when it is. No `src/` change was made for this tier; fencing destructive authority
+by session remains a decision, not a measurement.

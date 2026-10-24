@@ -164,7 +164,7 @@ bet, and it is now a named divergence rather than an unexamined default.
 | no verbatim payload field, no summary/verbatim split | **open**, and the one that changes what our repeat finding means |
 | actor-frame statements, budget-reallocation wording, evidence-fidelity contract | **measured now**: `dev/prompts-actorframe.ts` as `restraint3-actor`, scored with the shipped scorer |
 | tool call *arguments* clipped at 240 chars with **no** omission marker (`src/entries.ts:35`), while message and tool-result bodies are clipped at `maxEntryChars` (default 3000) **with** a trailing `…` (`src/entries.ts:42-45`, `:60`, `:136`) — an earlier draft of this row had the marker on the wrong half | **open**; the silent half is now measured — 589 of 1,955 rendered tool calls in 51 captured sessions were cut with no marker (`dev/clip-report.ts`), failure mode pinned by `tools/clip-check.ts` |
-| destructive authority scoped to one session | **open**; our candidates are never scoped by session |
+| destructive authority scoped to one session | **open**; the only fences here are subject wording and "target was retrieved for this draft" — measured in `dev/session-scope-report.ts` and `tools/session-scope-check.ts` |
 | `subject-guard` on, theirs off | **decided**, with a dissent now on the record |
 | `keys` and `refs` | **ours deliberately**: `keys` borrows `search_keys`, `refs` is what the id-echo measurement bought |
 | extract never sees the bank | **decided twice** — once by measurement (7.10), once by reading their code |

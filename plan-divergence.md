@@ -196,13 +196,16 @@ session A, session B proposing a `DELETE`/`UPDATE` against it, and a check of wh
 allows. Retrieval is never scoped by session, so the expected finding is that B destroys A's record with
 no friction.
 
-**The count is a maybe, and it is checked before it is promised.** Session identity reaches a ledger
-only through the chunk-id prefix `hy-<sessionId8>-` from `src/chunks.ts`, and only organic captures get
-that prefix; authored corpora use names like `hy-r3-to-01` and carry no session at all. A scan of the
-ledgers on disk found 1 session prefix in almost every run, 2 in `out/baseline-kitx`. So: count
-cross-session destructive ops **only where a ledger demonstrably spans more than one session prefix**,
-report how many such ledgers exist, and if fewer than two do, the synthetic scenario is the whole of
-this tier and the count is recorded as unavailable rather than estimated.
+**Measured offline (2026-10-23).** Session identity reaches a ledger only through the chunk-id prefix
+`hy-<sessionId8>-` from `nextChunkId()` in `src/chunks.ts`, and only organic captures get it. Across
+the 28 ledgers under `out/`: 19 carry such a prefix, 9 are authored corpora that carry no session at
+all, and **1** demonstrably spans two sessions (`baseline-kitx`). Of its destructive ops, **0 of 383**
+read across all 28 ledgers crossed a session boundary, and the spanning ledger's single destructive op
+aimed at an entry its own session wrote. That is one opportunity observed, not a safety record, so the
+synthetic scenario carries the tier: `tools/session-scope-check.ts` shows retrieval is unscoped, the
+guard scores an identical pair the same across sessions as within one (3/8, loose clause), a
+cross-session UPDATE overwrites the bank's only session marker with the destroying session's, and a
+cross-session DELETE needs nothing but the id.
 
 **6b. Atomic claims vs one fact per session plus experiences — parked, on purpose.** Changing the
 unit of memory invalidates every published baseline in this repo, and their compat path suggests they
