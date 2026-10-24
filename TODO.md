@@ -435,14 +435,16 @@ choosing. Tiers are ordered by what can be measured with artifacts already on di
       no-subject merges, accepted merges that dropped a value, active facts covering the same declared
       value after each chunk, and supersede chains of length ≥2 with whether the value survived. A
       small labeled authored corpus (8–12 chunks) runs only if the replay leaves a real tie.
-- [ ] 8.3 The two labels the `tool_output` class is missing, tier 3 — this is 7.17. Decide first
-      whether to extend `dev/corpus-restraint3.json` or freeze it and cut a fourth corpus, then add
+- [ ] 8.3 The two labels the `tool_output` class is missing, tier 3 — this is 7.17. Decided: corpus 3
+      stays frozen so its published numbers stay comparable, and the labels go into a new
+      `dev/corpus-restraint4.json`, measured as a fresh `restraint4-base` / `restraint4-actor` pair. Add
       user-stated constraints that must survive as constraints, chatter with nothing durable under it,
       and a paraphrase-tolerant chatter label. Re-run both restraint3 arms. Promotion gate: the arm
       keeps its wording gain *and* stops costing a declared value.
-- [ ] 8.4 Clipping survival, tier 4. The DESIGN.md row is corrected first (arguments cut at 240 chars
-      with no marker, `src/entries.ts:35`; bodies cut at `maxEntryChars` 3000 *with* `…`,
-      `src/entries.ts:42-45`, `:60`, `:136`). Then a deterministic fixture with the decision-relevant
+- [ ] 8.4 Clipping survival, tier 4. The DESIGN.md row is corrected first, by function name rather
+      than line number: tool call arguments in `textOfParts()` cut at 240 chars with no marker, bodies
+      and tool results through `clip()` at `maxEntryChars` (3000 default) *with* `…` — both in
+      `src/entries.ts`. Then a deterministic fixture with the decision-relevant
       flag late in long tool arguments, asserting extraction survives, no merge drops it, the value is
       in the final bank, and a visible omission marker does not push the writer to invent the missing
       tail. Then the 240-against-600 arm.
@@ -452,7 +454,9 @@ choosing. Tiers are ordered by what can be measured with artifacts already on di
       judge endpoint, which was unreachable across the recent runs.
 - [ ] 8.6 Session-scoped destructive authority, tier 6a. A synthetic bank scenario — entry authored in
       session A, `DELETE`/`UPDATE` proposed from session B — plus a count of how often that already
-      happens across the existing ledgers. Only then decide whether scoping deserves a `src/` change.
+      happens across the existing ledgers — which is only possible where a ledger spans more than one
+      `hy-<sessionId8>-` prefix, and a scan found that in one run on disk. Counted where it exists,
+      recorded as unavailable otherwise. Only then decide whether scoping deserves a `src/` change.
 - [ ] 8.7 Atomic claims vs one fact per session plus experiences, tier 6b — **parked**, recorded as
       parked. Re-entry trigger: any storage redesign, a verbatim payload field adopted, or a move
       toward one-fact-per-session. The 39 same-value cases never merged and the refusals leaving 2+

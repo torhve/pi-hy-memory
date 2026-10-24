@@ -18,6 +18,11 @@ pushed without explicit approval (AGENTS.md).
 Branch: `experiment/hy-flush` (continues from `78a2c6f`, which carries `dev/merge-report.ts` and
 its fixture check). Tiers 1, 2 and 4's fixture are offline work over artifacts already on disk.
 
+Code is cited by **function name**, not line number, because line numbers go stale: `sameSubject()`
+and its `UPDATE`→`ADD` downgrade in `src/pipeline.ts`; `textOfParts()` (tool call arguments) and
+`clip()` with `maxEntryChars` (default 3000) in `src/entries.ts`; the chunk-id prefix
+`hy-<sessionId8>-` in `src/chunks.ts`.
+
 ## The eight, and what this plan does with each
 
 | divergence (as written in DESIGN.md) | this plan |
@@ -41,13 +46,27 @@ had to re-say them. Upstream's answer is a `details` field: text copied from unc
 
 **Method.** For every corpus-declared value that a merge destroyed in the six runs — nine of them,
 as reported by `dev/merge-report.ts` — look for that value in the verbatim source text of the chunk
-that authored it (`text` in `dev/corpus-restraint*.json`; for organic runs, the captured entry
-text). Report, per value: present verbatim / present only after rewording / absent. Cross-check the
-reworded cases against `carries()` so a near-match is not silently counted as a hit.
+that authored it (`text` in `dev/corpus-restraint*.json`; for organic runs, the captured entry text).
 
-**Also measured in the same pass:** how many *surviving* declared values are carried by a model
-restatement rather than by an entry that still quotes the source. That is the current dependency,
-and without it the recoverability rate means nothing on its own.
+**Matching rules, written before the run so they cannot be softened afterwards.** Only three
+normalisations are allowed first: collapse whitespace, unify typographic dashes with ASCII hyphens,
+and strip markdown emphasis. A value counts as **recoverable** only when it appears under
+`carries()`'s own token-boundary rule — the rule `dev/restraint-report.ts` already uses — so
+`4096` inside `14096` is not a hit and `--dry-run` inside `--dry-run-all` is not a hit. A value that
+appears only as a paraphrase, a re-united unit, or a shortened path is **not** recoverable and is
+reported in its own column; the paraphrase column is where a verbatim surface would earn nothing and
+should be read as a cost of the design rather than a success.
+
+**Precision sample.** Every reported recoverable hit is printed with the source chunk text quoted
+around it, and every one is read by hand before the rate is published: the number of false hits found
+by hand is part of the result, not a footnote. `carries()` is a mitigation, not proof.
+
+**Also measured in the same pass, because recoverability alone is not a decision:** (a) how many
+*surviving* declared values are currently carried by a model restatement rather than by an entry that
+still quotes its source — the dependency a verbatim surface would remove; and (b) the token cost of
+the verbatim text that would have to be stored for the nine values and their hosts, using
+`estimateTokens()` on the source chunks, so the structural option is priced in tokens and not only in
+survival.
 
 **What tier 1 decides.** Only whether a verbatim copy would have preserved the values the corpus
 says must survive. **It does not decide** how such a field attaches to drafts or ops, whether it is
@@ -79,10 +98,14 @@ Report for each setting, per run and in aggregate — not just counts of refusal
   end of the run (the `hy-r3-to-01` shape: retired at 4/10, its replacement retired at 3/13, value
   survived anyway through a parallel draft of the same chunk).
 
-**Then, only if the replay leaves a real tie:** a small authored corpus with labels rather than a
-full-size run — same subject and should merge; different subjects and must not; same value from two
-sources and should stay duplicate; a destructive merge that must be blocked. 8–12 chunks, so one arm
-is minutes rather than 15–20.
+**Stop rule for a tie.** The replay only exercises the loss shapes the existing ledgers already
+produced; "off" can create kinds of damage those ledgers never had. So if the three settings do not
+order themselves clearly, **as-shipped is not the default**: the result is recorded as
+under-specified and the labeled corpus runs.
+
+That corpus is small and labeled rather than full-size — same subject and should merge; different
+subjects and must not; same value from two sources and should stay duplicate; a destructive merge that
+must be blocked. 8–12 chunks, so one arm is minutes rather than 15–20.
 
 **What tier 2 decides.** Whether the guard's loose clause, its strict clause, or no guard is the
 cheapest producer of surviving facts on this corpus family. It cannot tell us how the guard behaves
@@ -96,8 +119,11 @@ user-stated constraint surviving as a constraint — filed by the scorer as narr
 declares nothing durable there. And the arm paraphrases declared chatter, which a literal anchor
 misses, so "chatter banked 2 → 0" is part measurement and part artefact.
 
-**Add to `dev/corpus-restraint3.json`** (or a fourth corpus, if keeping the third frozen for the
-published numbers — decide before writing):
+**Decided here, so comparability survives the fix:** `dev/corpus-restraint3.json` is **frozen** — the
+published restraint3 numbers stay comparable — and the new labels go into a fourth corpus,
+`dev/corpus-restraint4.json`, carrying only the classes below plus enough attribution pairs to keep the
+gate meaningful. Both arms are then re-measured as a fresh pair on corpus 4, and the published corpus-3
+comparison is left standing as what it was: a measurement of corpus 3.
 
 - `tool_output` chunks where the **user states a constraint that must survive as a constraint**, with
   no tool value declared; the scorer needs a label that is not `probes` and not `transient`.
@@ -106,8 +132,10 @@ published numbers — decide before writing):
 - a paraphrase-tolerant label for chatter, so "read manual for a few minutes" against the declared
   "reading the manual for a few minutes" is not silently counted as a disappearance.
 
-Then re-measure `restraint3-base` and `restraint3-actor` against it with the existing scorer, and
-`dev/merge-report.ts` on top. Two runs, ~15–20 min each, as background tasks.
+Then re-measure both arms against corpus 4 with the existing scorer, and `dev/merge-report.ts` on top:
+`restraint4-base` and `restraint4-actor`. Estimated ~15–20 min each on the current writer route —
+**provisional**, taken from corpus-3 runs, and to be replaced by the measured wall time once the first
+arm finishes. Run them as background tasks.
 
 **Gate before any promotion decision:** the arm must keep its wording gain (statements opening with
 a person or the agent's own voice, 15/37 → 5/35) **and** stop losing a declared value, on the labeled
@@ -115,11 +143,11 @@ class. If it keeps the wording gain and still costs a value, the arm stays dev-o
 
 ## Tier 4 — Clipping: test survival to the final bank, and fix the doc row first
 
-**Correction to make before testing.** The DESIGN.md row says tool results are "clipped by characters
-with no omission marker". The code says otherwise: `src/entries.ts:42-45` (`clip`) appends `…` and is
-used for tool results (`:60`), assistant, user and summary lines at `maxEntryChars` (default 3000,
-`:136`), while **tool call arguments** are cut with `JSON.stringify(…).slice(0, 240)` at `:35` with
-**no marker at all**. The divergence is real; the row describes the wrong half of it.
+**Correction made with this plan** (`7ad9b5c`): the DESIGN.md row said tool results are clipped with
+no omission marker. `clip()` in `src/entries.ts` appends `…` and is what renders tool results,
+assistant, user and summary lines at `maxEntryChars` (default 3000), while **tool call arguments** in
+`textOfParts()` are cut with `JSON.stringify(…).slice(0, 240)` and **no marker at all**. The divergence
+is real; the row described the wrong half of it.
 
 **Fixture (deterministic, no model):** an entry whose tool call carries the decision-relevant flag
 late in long arguments — upstream's own analogue is a late `-Depth 3`, raised from 80 chars to 600
@@ -153,13 +181,19 @@ and `tools/extract-prompt-check.ts`.
 
 ## Tier 6 — Session scope, and the largest divergence
 
-**6a. Session-scoped destructive authority (synthetic, offline).** Authored conversations cannot show
-cross-session damage, so the test is not a corpus: build a bank state where an entry was authored in
-session A and session B proposes a `DELETE`/`UPDATE` against it, and check what our candidate
-retrieval allows. Retrieval here is never scoped by session, so the expected finding is that B can
-destroy A's record with no friction — and the useful number is how often that happens in the existing
-ledgers, counted by session id (`newId`/chunk ids carry it) rather than assumed. Only then decide
-whether scoping is worth a `src/` change.
+**6a. Session-scoped destructive authority (synthetic first, offline).** Authored conversations cannot
+show cross-session damage, so the primary test is a bank state built by hand: an entry authored in
+session A, session B proposing a `DELETE`/`UPDATE` against it, and a check of what candidate retrieval
+allows. Retrieval is never scoped by session, so the expected finding is that B destroys A's record with
+no friction.
+
+**The count is a maybe, and it is checked before it is promised.** Session identity reaches a ledger
+only through the chunk-id prefix `hy-<sessionId8>-` from `src/chunks.ts`, and only organic captures get
+that prefix; authored corpora use names like `hy-r3-to-01` and carry no session at all. A scan of the
+ledgers on disk found 1 session prefix in almost every run, 2 in `out/baseline-kitx`. So: count
+cross-session destructive ops **only where a ledger demonstrably spans more than one session prefix**,
+report how many such ledgers exist, and if fewer than two do, the synthetic scenario is the whole of
+this tier and the count is recorded as unavailable rather than estimated.
 
 **6b. Atomic claims vs one fact per session plus experiences — parked, on purpose.** Changing the
 unit of memory invalidates every published baseline in this repo, and their compat path suggests they
@@ -176,7 +210,7 @@ that trigger.
 
 ## Order, cost, and what each unlocks
 
-| tier | artifact needed | cost | unlocks |
+| tier | artifact needed | cost (provisional until measured) | unlocks |
 |---|---|---|---|
 | 1 verbatim recoverability | ledgers + corpora on disk | offline, minutes | 7.18's structural option, for or against |
 | 2 guard priced incl. off | same ledgers; optional 8–12 chunk labeled arm | offline, minutes; +minutes if the arm runs | 7.18's tightening option, and the third option |
@@ -187,8 +221,9 @@ that trigger.
 | 6b memory unit | — | parked | re-entry trigger recorded |
 
 Tiers 1, 2, 4's fixture and 6a touch no `src/`. Tier 3 and tier 4's run cost model calls on the
-existing writer route (extract ≈ 232 s on a 10.9 k-token chunk; these corpora are small-chunk, so
-15–20 min per arm) and should run as background tasks. No corpus contains hostnames, absolute
+existing writer route (extract ≈ 232 s was measured on a 10.9 k-token chunk; these corpora are
+small-chunk, so the 15–20 min figure per arm is an estimate carried over from corpus 3, to be replaced
+by the first measured wall time) and should run as background tasks. No corpus contains hostnames, absolute
 home-directory paths, or credential-shaped strings; `out/` and `captures-dev/` stay gitignored.
 
 ## Validation and stop rules
