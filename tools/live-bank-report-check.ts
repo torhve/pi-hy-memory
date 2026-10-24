@@ -28,7 +28,7 @@
  *   7. a missing stats file is reported as unknown rather than as zero
  */
 
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { appendFileSync, copyFileSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { reachableThroughQuery, reportSession } from "../dev/live-bank-report.js";
@@ -208,6 +208,27 @@ if (report) {
 	ok(
 		tight !== null && tight.gateFitsPool <= tight.gateActive,
 		`gate-on fit ${tight?.gateFitsPool} exceeded its own bank of ${tight?.gateActive} facts`,
+	);
+
+	// 4c. the replay is the shipped fold, not a story about it: with the gate off it agrees
+	// entry for entry with foldLedger, and the digest ties the reading to one ledger file.
+	ok(report.replayMatchesFold, "the gate-off replay disagrees with foldLedger on this ledger");
+	ok(/^[0-9a-f]{12}$/.test(report.snapshotDigest), `digest is not a 12-character hex: ${report.snapshotDigest}`);
+	const again = reportSession(dir, SESSION, 60000);
+	ok(again?.snapshotDigest === report.snapshotDigest, "the same files read twice gave different digests");
+	const copy = mkdtempSync(join(tmpdir(), "live-bank-copy-"));
+	for (const suffix of [".ledger.jsonl", ".bank.json", ".stats.json"]) {
+		copyFileSync(join(dir, `${SESSION}${suffix}`), join(copy, `${SESSION}${suffix}`));
+	}
+	const frozen = reportSession(copy, SESSION, 60000);
+	ok(
+		frozen?.snapshotDigest === report.snapshotDigest && frozen?.liveActive === report.liveActive,
+		"reading a copy of the store gave different numbers than reading the store",
+	);
+	appendFileSync(join(dir, `${SESSION}.ledger.jsonl`), `${JSON.stringify(records[records.length - 1])}\n`);
+	ok(
+		reportSession(dir, SESSION, 60000)?.snapshotDigest !== report.snapshotDigest,
+		"appending to the ledger left the digest untouched",
 	);
 
 	// 5. the ceiling retired a value nobody else carries — and the query still answers for it.

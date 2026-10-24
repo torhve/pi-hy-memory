@@ -27,7 +27,8 @@
  * Nothing here writes, and nothing prints fact text beyond the short labels it quotes.
  */
 
-import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { enforceBudget, foldLedger, newId } from "../src/bank.js";
 import { guardUpdateOps } from "../src/protocol.js";
@@ -46,6 +47,9 @@ export type SessionReport = {
 	pool: number;
 	fitsPool: number;
 	trimmedSameAsStore: boolean;
+	snapshotAt: string;
+	snapshotDigest: string;
+	replayMatchesFold: boolean;
 	liveActive: number;
 	liveTokens: number;
 	retiredByBudget: number;
@@ -67,7 +71,20 @@ export type SessionReport = {
 const surface = (row: { task: string; statement: string; keys: string[] }) =>
 	`${row.task} ${row.statement} ${row.keys.join(" ")}`.toLowerCase();
 
-function readJsonl(path: string): LedgerRecord[] {
+function parseJsonl(text: string): LedgerRecord[] {
+	const out: LedgerRecord[] = [];
+	for (const line of text.split("\n")) {
+		if (!line.trim()) continue;
+		try {
+			out.push(JSON.parse(line) as LedgerRecord);
+		} catch {
+			// a torn last line is how a session that died mid-write looks
+		}
+	}
+	return out;
+}
+
+function _readJsonl(path: string): LedgerRecord[] {
 	if (!existsSync(path)) return [];
 	return readFileSync(path, "utf8")
 		.split("\n")
@@ -143,6 +160,11 @@ function replay(records: LedgerRecord[], valueGate: boolean) {
 
 /** How many facts survive the ceiling a reload re-applies. `enforceBudget` mutates what it is
  * given, so this counts on copies. */
+/** Ties the printed numbers to one file: the same ledger text gives the same digest. */
+function digest(text: string): string {
+	return createHash("sha256").update(text).digest("hex").slice(0, 12);
+}
+
 /** Whether trimming the fold by the pool leaves exactly the ids the store marked current. */
 function sameIds(trimmed: BankEntry[], store: BankEntry[]): boolean {
 	const a = new Set(trimmed.map((entry) => entry.id));
@@ -188,7 +210,10 @@ function kind(reason: string): string {
 }
 
 export function reportSession(dir: string, sessionId: string, pool: number): SessionReport | null {
-	const records = readJsonl(join(dir, `${sessionId}.ledger.jsonl`));
+	const ledgerPath = join(dir, `${sessionId}.ledger.jsonl`);
+	if (!existsSync(ledgerPath)) return null;
+	const ledgerText = readFileSync(ledgerPath, "utf8");
+	const records = parseJsonl(ledgerText);
 	if (records.length === 0) return null;
 	let live: BankEntry[] = [];
 	let statsWrites: number | null = null;
@@ -234,6 +259,9 @@ export function reportSession(dir: string, sessionId: string, pool: number): Ses
 		pool,
 		fitsPool,
 		trimmedSameAsStore: sameIds(trimmedToPool(folded, pool), liveActive),
+		replayMatchesFold: sameIds(shipped.bank, folded),
+		snapshotAt: String(records[records.length - 1]?.createdAt ?? ""),
+		snapshotDigest: digest(ledgerText),
 		liveActive: liveActive.length,
 		liveTokens: liveActive.reduce((n, e) => n + e.tokenCount, 0),
 		retiredByBudget: retired.filter((e) => e.supersedeReason === "bank budget").length,
@@ -280,6 +308,12 @@ function print(report: SessionReport, pool: number): void {
 	);
 	console.log(`refusals the bank recorded: ${JSON.stringify(report.refusalsByKind)}`);
 	console.log(`user-grounded facts: ${report.userGrounded} of ${report.liveActive} current`);
+	console.log(
+		`snapshot: last record ${report.snapshotAt || "unknown"}, ledger digest ${report.snapshotDigest} — re-run with --dir on a copy of these files to read the same numbers`,
+	);
+	console.log(
+		`the re-decided fold agrees with src/bank.ts foldLedger on this ledger: ${report.replayMatchesFold ? "yes" : "no"} — where it is no, the gate numbers below are an estimate, not shipped behaviour`,
+	);
 }
 
 function main(): void {
@@ -288,9 +322,21 @@ function main(): void {
 		const at = args.indexOf(`--${name}`);
 		return at >= 0 ? args[at + 1] : undefined;
 	};
-	const dir = arg("dir") ?? join(process.env.HOME ?? "", ".pi/agent/pi-hy-memory/state/sessions");
-	const pool = Number(arg("pool") ?? 60000);
+	const source = arg("dir") ?? join(process.env.HOME ?? "", ".pi/agent/pi-hy-memory/state/sessions");
 	const wanted = arg("session");
+	// --snapshot freezes the three files into a directory and reads from the copy, so the
+	// numbers printed here stay reproducible while the session is still writing.
+	const snapshot = arg("snapshot");
+	let dir = source;
+	if (snapshot && wanted) {
+		mkdirSync(snapshot, { recursive: true });
+		for (const suffix of [".ledger.jsonl", ".bank.json", ".stats.json"]) {
+			const from = join(source, `${wanted}${suffix}`);
+			if (existsSync(from)) copyFileSync(from, join(snapshot, `${wanted}${suffix}`));
+		}
+		dir = snapshot;
+	}
+	const pool = Number(arg("pool") ?? 60000);
 	const ids = (
 		wanted
 			? [wanted]

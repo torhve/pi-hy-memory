@@ -2348,30 +2348,33 @@ holds values, and one inert run says nothing either way.
 
 The corpora are authored, so a gate that never fires on them proves nothing. The author's own
 long session is the one organic bank here: 455 ledger records, 155 writes, and it reached
-`bankMaxTokens` (see TODO 6.18). It was still writing while it was read, so these counts are a
-snapshot; `dev/live-bank-report.ts --session <id>` re-reads them. Replaying its ledger through
+`bankMaxTokens` (see TODO 6.18). It is read from a frozen copy (`--snapshot`, ledger digest
+`a44ac4ebb1c3`), so these counts re-read the same way. Replaying its ledger through
 `guardUpdateOps` with the drafts held fixed — the same caveat every re-fold carries — prices the
-gate on it:
+gate on it. The instrument checks that replay against `foldLedger` on the same ledger and prints
+the verdict; here it agrees entry for entry, so the gate-off column is the shipped fold rather
+than a model of it. Where a ledger prints `no`, that column is an estimate and says so.
 
 | | gate off, as it ran | gate on |
 |---|---|---|
-| UPDATEs applied | 299 | 86 |
-| refused by the value gate | 0 | 213 |
-| applied merges that dropped a value the target carried | 253 | 0 |
-| values no current fact carries | 270 | 0 |
-| facts / tokens in the whole fold | 1 442 / 104 056 | 1 705 / 124 426 |
-| facts current inside the 60 000 ceiling | 821 | 813 |
+| UPDATEs applied | 301 | 87 |
+| refused by the value gate | 0 | 214 |
+| applied merges that dropped a value the target carried | 254 | 0 |
+| values no current fact carries | 269 | 0 |
+| facts / tokens in the whole fold | 1 451 / 104 736 | 1 715 / 125 211 |
+| facts current inside the 60 000 ceiling | 821 | 814 |
 
 Two things this says that the corpora could not. **The gate is not rare in organic use:** it
-refuses 71 % of the merges the writer actually proposed, where corpus 4 gave it nothing to do and
+refuses 71 % of the merges the writer actually proposed (301 applied → 87, 214 refused), where
+corpus 4 gave it nothing to do and
 the ten-run fold gave it 41 %. Much of that is the value matcher being eager — the dropped tokens
 include fragments like `buffer_`, `s2a/s2b` and a line range `1296-1301` alongside real losses such
 as four embed domains and a `components/shared/` path — so a default-on gate would push most
 merges into ADDs.
 
 **And its cost is not the +20 % of tokens.** This session is at the ceiling, where extra facts do
-not add memory: they displace older ones. Inside 60 000 tokens the gate-on bank holds 813 facts
-against 821, so the price of holding those 270 values is eight facts the ceiling dropped instead
+not add memory: they displace older ones. Inside 60 000 tokens the gate-on bank holds 814 facts
+against 821, so the price of holding those 269 values is seven facts the ceiling dropped instead
 — and a ceiling drop is now readable rather than lost.
 
 The severity of what it prevents also moved, because of the same day's reader fix. A value that

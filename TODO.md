@@ -189,9 +189,9 @@ gate.
       so the threshold is what guarantees coverage (`RESULTS.md`).
 - [x] 6.18 Can a fact the pool dropped still be read? No — fixed 2026-10-24. The `hy_recall`
       query scored only `status === "active"`, so on a real session that reached `bankMaxTokens`
-      (157 writes; read 2026-10-24 while it was still writing: 615 facts retired by the ceiling,
-      1 405 specific values carried only by retired facts, oldest fact still current from write
-      116) the ceiling removed most of the session from the only read path, while `src/bank.ts`
+      (159 writes; 631 facts retired by the ceiling, 1 405 specific values carried only by
+      retired facts, oldest fact still current from write 116) the ceiling removed most of the
+      session from the only read path, while `src/bank.ts`
       and DESIGN.md both claimed a superseded fact "stays recallable". The query now scores the
       whole bank (`recallHits`, `renderRecallHit` in `src/render.ts`): live facts fill the result
       first, a retired fact is added only when it matches better than the weakest live one and
@@ -200,30 +200,33 @@ gate.
       in `tools/recall-check.ts`, including that the tool cannot grow an active-only slice again.
       Not measured: whether a retired row being quoted as current misleads a reader
       — that is 6.11's question with a new class of row in it. Read again with
-      `dev/live-bank-report.ts --session <id>` (pinned by `tools/live-bank-report-check.ts`): the
-      numbers below were taken 2026-10-24 while that session was still writing, so they move.
-- [x] 6.19 What a fold cannot reproduce — measured, and smaller than it looked: retirement is
-      never written to the ledger, so folding that same session yields 1 442 active facts /
-      104 056 tokens where the session had 821 / 60 000. But `src/index.ts` re-applies
-      `enforceBudget` on reload, and re-applying it to the fold returns *exactly* the ids the
-      store marked current — `dev/live-bank-report.ts` prints that equality, and
-      `tools/live-bank-report-check.ts` pins that trimming never adds facts back. So a folding
-      instrument reproduces the recorded bank when it applies the pool, and reports a bank larger
-      than the writer saw when it does not. Still open: retirement is invisible in the ledger, so
-      an audit cannot say which fact the ceiling dropped and when. `hy.evict` stays proposed in
-      DESIGN for that, not for reproducibility.
-- [ ] 6.20 `fromUser` on a real session: 3 of 822 active facts are user-grounded. The summary
+      `dev/live-bank-report.ts --snapshot out/live-snapshot --session <id>` (pinned by
+      `tools/live-bank-report-check.ts`): the numbers below were read 2026-10-24 from a frozen
+      copy of a session that was still writing, ledger digest `a44ac4ebb1c3`.
+- [x] 6.19 What a fold cannot reproduce — measured, and smaller than it looked, on a frozen copy
+      of the session (`--snapshot`, ledger digest `a44ac4ebb1c3`): retirement is never written to
+      the ledger, so folding that session yields 1 451 active facts / 104 736 tokens where the
+      store held 820 / 59 980. Re-applying the ceiling — which `src/index.ts` does on reload —
+      lands on 821 facts, one more than the session had and not the same ids: reproducible to
+      within the write that landed between the last budget pass and the copy. A folding
+      instrument therefore reports a bank 631 facts larger than the writer saw when it never
+      applies the pool, and reproduces it to within one fact when it does
+      (`tools/live-bank-report-check.ts` pins that trimming never adds facts back). What is still
+      missing is record, not reproducibility: an audit cannot say which fact the ceiling dropped
+      and when, and `hy.evict` stays proposed in DESIGN for that.
+- [ ] 6.20 `fromUser` on a real session: 3 of 820 current facts are user-grounded. The summary
       reserves `summaryConstraintShare` (0.1) for facts the user stated and refills the slice
       with whatever fits, so in organic use that slice is close to vacuous. Establish whether
       chunks rarely contain a user turn or whether `draft.refs` → `chunk.roles`
       (`src/pipeline.ts:240`) misses them, before changing the share or the claim in DESIGN's
       selection section.
-- [ ] 6.21 Retrieval refusals scale with the bank: 365 downgrades in that session — 167 "target
-      not retrieved for this draft", 152 "does not restate its subject", 46 "already superseded
-      in this batch". The writer names merge targets a `candidateLimit: 24` view never showed it.
-      This is 6.6's precision question arriving from the writer side, and it grows with the bank.
-- [ ] 6.22 `stats.json` counts the process, not the session: that session's ledger holds 155
-      write records and its stats say `writes: 10`, because the counters reset at `session_start`.
+- [ ] 6.21 Retrieval refusals scale with the bank: 378 downgrades in the snapshotted session —
+      170 "target not retrieved for this draft", 160 "does not restate its subject", 48
+      "already superseded in this batch" (`dev/live-bank-report.ts` prints the mix). The writer
+      names merge targets a `candidateLimit: 24` view never showed it. This is 6.6's precision
+      question arriving from the writer side, and it grows with the bank.
+- [ ] 6.22 `stats.json` counts the process, not the session: that session's ledger holds 159
+      write records and its stats say `writes: 14`, because the counters reset at `session_start`.
       The status line reads as a session total. Either restore counters or say what they count.
 ### 7. Restraint: the axis no corpus here measures (plan: `plan-restraint.md`)
 
@@ -480,7 +483,8 @@ gate.
       refused a recap-only chunk merging into the fact that `tctl flush --wait` exited `130`, which the
       wording rule passes, at +2 facts / +32 tokens (+4 %) and +3 repeat facts — and changed no value
       outcome, because that corpus banks every declared value twice and both refused merges left values
-      still carried by another chunk's fact. Replaying the author's own 155-write session through the same
+      still carried by another chunk's fact. Replaying the author's own session (159 writes, read from
+      a frozen snapshot) through the same
       guard refuses 211 of 290 merges and holds 268 values nothing current carries, for about six facts
       displaced at the `bankMaxTokens` ceiling. Numbers in `EXPERIMENTS.md`.
       **What would settle it:** a corpus where a declared value has exactly one carrier, so refusing a

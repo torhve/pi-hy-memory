@@ -102,7 +102,7 @@ export function applyOps(
  * keep the newest facts that fit; supersede the rest.
  * Superseded entries stay in the ledger and stay recallable: `hy_recall` scores the whole
  * bank, so dropping a fact for capacity never removes it from the read path — it only
- * stops it being offered current. Measured on a 158-write session, 621 facts were dropped this
+ * stops it being offered current. Measured on a 159-write session, 631 facts were dropped this
  * way and the oldest fact still marked current was from write 116.
  */
 export function enforceBudget(bank: BankEntry[], maxTokens: number): { dropped: BankEntry[] } {

@@ -509,10 +509,13 @@ ledger, `hy_recall` still answers a query for what it holds (the query scores th
 and marks such a row `retired: bank budget`), and `hy_recall <id>` returns it with its source
 evidence. It is absent from `renderMemory()` (so not in the compaction summary) and it is not
 a candidate for a later UPDATE (only `active` entries are), so retirement changes what is
-offered as current, not what can be read. Measured on a 155-write session that reached the
-ceiling: 599 facts retired, 1 543 specific values carried by nothing current — with a
-query that read only `active` entries, that was unreachable, which is why the query reads
-the whole bank. It comes back as current only if a newer chunk re-states it, which creates a
+offered as current, not what can be read. A query scores the whole bank: live facts fill the
+result first, and a retired fact is added only when it matches better than the weakest live
+fact shown, never more than three of them — a ceiling retired 631 facts in one session, and a
+query that returned them in score order would read as a list of stale facts
+(`tools/recall-reach-check.ts`). Measured before that fix, on that session's frozen snapshot
+(159 writes): 1 405 specific values carried only by retired facts, none of them answerable.
+It comes back as current only if a newer chunk re-states it, which creates a
 new entry rather than reviving the old one. Each write reports `budgetDropped` (count and the
 first five ids) so eviction is visible in the audit instead of silent.
 
@@ -690,12 +693,12 @@ writes fill it; a re-folded old bank keeps working with the other two slices.
 ### When the store itself is full
 
 `bankMaxTokens` is a ceiling, not a target. It was treated as rare — at ~900 tokens of facts
-per chunk, a 200-chunk session — until one of the author's own sessions reached it: 158 writes,
-the ledger folding to 1 442 facts / 104 056 tokens against a store that held 821 current /
-60 000, 621 facts retired by the ceiling, the oldest fact still current from write 116. Read
-while that session was still writing; `dev/live-bank-report.ts` re-reads it. The retirement is
-not in the ledger, but reload re-applies the ceiling and lands on exactly the ids the store
-marked current, so nothing is unrecoverable — what the ledger cannot say is *which* fact the
+per chunk, a 200-chunk session — until one of the author's own sessions reached it: 159 writes,
+the ledger folding to 1 451 facts / 104 736 tokens against a store that held 820 current /
+59 980, 631 facts retired by the ceiling, the oldest fact still current from write 116. Read
+through `dev/live-bank-report.ts --snapshot` (ledger digest `a44ac4ebb1c3`), a frozen copy, so
+the numbers re-read the same way. Reload re-applies the ceiling and lands within one fact of
+what the store held, so nothing is unrecoverable — what the ledger cannot say is *which* fact the
 ceiling dropped and when. In order of preference:
 
 1. **Demote.** A fact past the summary budget stays active and retrievable; it is simply not
