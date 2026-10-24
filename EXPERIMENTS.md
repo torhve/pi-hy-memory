@@ -1670,3 +1670,53 @@ direction that flattered the guard.
 under a tightened guard would have been shown a different bank and would have drafted differently, so
 these are bounds on the rule, not simulations of runs under it. The ledgers were read, not rewritten.
 Nothing in `src/` changed for either tier, and both tiers are reported rather than gated.
+
+## Tier 4, offline half: how often the writer's view is cut, and by which rule (2026-10-23)
+
+Two clip rules live in `src/entries.ts` and they are not the same rule. Message and tool-result bodies
+go through `clip(text, maxEntryChars)` at 3000 and keep a trailing `…`. Tool call arguments go through
+`JSON.stringify(…).slice(0, 240)` and keep nothing. Upstream raised its own argument window from 80 to
+600 because 80 was cutting real flags, and keeps a regression test for that case; ours is 240 and silent.
+
+`dev/clip-report.ts` measures how often the silent one fires, on the chunk texts real sessions were
+actually shown (51 captures, 3,715 rendered lines). A call whose arguments stop being parseable JSON is a
+call the window cut, so the instrument uses a bracket scanner with matched closers rather than a parser —
+a parser throws on the first truncated call and cannot count truncated calls at all.
+
+| measure | value |
+|---|---|
+| tool calls the writer was shown | 1,955 |
+| arguments cut at 240 with no marker | **589 (30.1%)** |
+| of those, the cut falls inside a quoted string | 555 (94.2%) |
+| captures holding at least one cut call | 50 of 51 (98%) |
+| cut calls whose own result the writer saw on the next line | 584 |
+| …of those, a result carrying a flag the visible arguments did not | 20 |
+| longest arguments the writer saw whole | 240 chars |
+| whole calls within 40 chars of the window | 152 |
+| lines carrying `clip()`'s visible `…` at 3,000 | 168 |
+
+The instrument guards its own method: a whole call measured longer than the window is printed as a FAIL,
+because it means the scan ran past a cut call. It fired twice while this instrument was being built — once
+as 500 characters of "whole" arguments (the scan had walked into the next call's JSON) and once as 241 (a
+depth-only counter closed the object on the `]` that closes `[called …]` rather than the arguments). Both
+were instrument bugs, not properties of the sessions, and the guard is what caught them.
+
+**The corpora never exercised this at all.** `dev/corpus-restraint.json`, `corpus-restraint2.json` and
+`corpus-restraint3.json` contain zero `[called …]` lines between them: the `tool_output` class models tool
+*results*, not tool *calls*. Every merge and guard number in this file was measured on text where the 240
+window cannot fire. That is a hole in the corpus design, not in the measurement, and it is the reason the
+fourth corpus needs tool-call chunks with the decision-relevant part late in the arguments.
+
+**The fixture pins the failure mode** (`tools/clip-check.ts`, no model). A 363-character argument list
+whose `--purge-age=90d` sits at offset 265 reaches the writer as exactly 240 characters, ending mid-token
+at `"purge`, with the flag absent and no marker anywhere in the line. The same call rendered with a
+600-character window keeps the flag, which locates the loss in the window rather than in the content. A
+tool-result body over `maxEntryChars` is cut at 3,000 and the `…` is the last thing the writer reads, and
+a body inside the window carries no marker. The two clip paths differ exactly as DESIGN.md now says they
+do.
+
+**What is not claimed.** The 20-flag figure bounds the writer's other route, not the loss: a flag readable
+in a result line says the writer had a way to learn that flag, not that the removed tail held it. Whether
+the silent cut costs a fact in a real run, whether 600 would be better than 240, and whether a visible
+marker tempts the writer to invent the missing tail are model questions, and they are the run arm this
+tier has not spent yet. Nothing in `src/` changed for this tier.

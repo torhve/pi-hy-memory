@@ -154,6 +154,15 @@ late in long arguments — upstream's own analogue is a late `-Depth 3`, raised 
 because 80 cut real flags, and they keep a regression test for it — asserted to reach a draft **and**
 to still be in the final bank.
 
+**Measured offline (2026-10-23).** `dev/clip-report.ts` over 51 captured chunk texts: 589 of 1,955
+rendered tool calls were cut at 240 with no marker (30.1%), 94.2% of those cuts land inside a quoted
+string, 50 of 51 captures hold at least one. It counts with a matched-closer bracket scanner because a
+JSON parser throws on the first truncated call and so cannot count truncated calls at all. The three
+restraint corpora contain no `[called …]` lines between them — the `tool_output` class models results,
+not calls — so no merge or guard number measured so far ever exercised this path, and the fourth corpus
+needs tool-call chunks with the decision-relevant part late in the arguments. `tools/clip-check.ts` pins
+the failure mode against the shipped renderer. The run arm below has not been spent.
+
 **Run arm:** the same authored chunks at 240 and at 600 chars, plus a variant where the clip leaves a
 visible marker. Assert four things, not one: extraction survives; no merge drops it; the value is in
 the final bank; and the marker does **not** induce the writer to invent the missing tail — the case a
