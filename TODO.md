@@ -396,6 +396,7 @@ gate.
       7.14's open mechanism question was answered the same day by `dev/merge-report.ts`: same-value drafts
       are never merged (39 cases, 0 merges), so the repeats are a code-side dedup question rather than a
       merge question, and the arm's two SKIPs were the bank gate dropping a draft, not deduplicating one.
+      The labels this needs are written out as `plan-divergence.md` tier 3, carried here as 8.3.
 - [ ] 7.18 The decision 7.14 produced, which is a choice and not another measurement. Two priced ways to
       stop merges from retiring facts the corpus says must survive, and on these numbers the structural one
       is cheaper. **Tighten the loose clause** in `sameSubject` — 4 shared tokens and a quarter of the
@@ -409,6 +410,56 @@ gate.
       a fresh corpus pair against the six ledgers already on disk. The repeat-facts cleanup stays behind
       both: on these numbers the duplicates absorbed five of the arm run's six declared-value losses, so
       removing them before the merge question is settled removes protection.
+      Both options now have a measurement path that needs no model call and no new corpus:
+      `plan-divergence.md` tier 1 (TODO 8.1) prices the verbatim surface against the nine values the
+      merges already destroyed, and tier 2 (TODO 8.2) prices the guard at three settings including off.
+      The choice is made after those two numbers, not before them.
+### 8. Divergence from the upstream harness: measure it or park it on the record (plan: `plan-divergence.md`)
+
+Written 2026-10-23, after the merge audit (`78a2c6f`) made two things visible at once: the guard's
+relaxed clause owns every corpus-declared value this repo has measured being lost, and the upstream
+divergence table in DESIGN.md contains a row that describes the wrong half of its own claim. Neither
+is a reason to adopt upstream's design; both are reasons to put a number on each difference before
+choosing. Tiers are ordered by what can be measured with artifacts already on disk.
+
+- [ ] 8.1 Verbatim recoverability, tier 1. For each of the nine corpus-declared values a merge
+      destroyed, check whether a verbatim copy of the chunk that authored it contains it — the claim
+      7.18's structural option rests on, measured before any storage change. Also report how many
+      *surviving* declared values currently depend on the model having re-said them. Offline, no
+      model call. Decides recoverability only: attachment, searchability, read-side injection and token
+      cost stay open in 7.18. Stop rule: under two thirds recoverable and the structural option loses
+      its main argument.
+- [ ] 8.2 The subject guard priced including "off", tier 2. The guard is a code-side verdict
+      (`src/pipeline.ts:332`) and every downgrade is recorded in `hy.ops`, so three settings —
+      as-shipped, tightened, and guard off — are one re-fold over the six ledgers. Report accepted
+      no-subject merges, accepted merges that dropped a value, active facts covering the same declared
+      value after each chunk, and supersede chains of length ≥2 with whether the value survived. A
+      small labeled authored corpus (8–12 chunks) runs only if the replay leaves a real tie.
+- [ ] 8.3 The two labels the `tool_output` class is missing, tier 3 — this is 7.17. Decide first
+      whether to extend `dev/corpus-restraint3.json` or freeze it and cut a fourth corpus, then add
+      user-stated constraints that must survive as constraints, chatter with nothing durable under it,
+      and a paraphrase-tolerant chatter label. Re-run both restraint3 arms. Promotion gate: the arm
+      keeps its wording gain *and* stops costing a declared value.
+- [ ] 8.4 Clipping survival, tier 4. The DESIGN.md row is corrected first (arguments cut at 240 chars
+      with no marker, `src/entries.ts:35`; bodies cut at `maxEntryChars` 3000 *with* `…`,
+      `src/entries.ts:42-45`, `:60`, `:136`). Then a deterministic fixture with the decision-relevant
+      flag late in long tool arguments, asserting extraction survives, no merge drops it, the value is
+      in the final bank, and a visible omission marker does not push the writer to invent the missing
+      tail. Then the 240-against-600 arm.
+- [ ] 8.5 Their mandate against our empty list, tier 5 — blocked, deliberately. Score fabrication only
+      under a written support contract (values present in source text, resolvable `sourceEntryId`
+      citations, zero supported claims expected on not-durable chunks). Semantic judging needs the
+      judge endpoint, which was unreachable across the recent runs.
+- [ ] 8.6 Session-scoped destructive authority, tier 6a. A synthetic bank scenario — entry authored in
+      session A, `DELETE`/`UPDATE` proposed from session B — plus a count of how often that already
+      happens across the existing ledgers. Only then decide whether scoping deserves a `src/` change.
+- [ ] 8.7 Atomic claims vs one fact per session plus experiences, tier 6b — **parked**, recorded as
+      parked. Re-entry trigger: any storage redesign, a verbatim payload field adopted, or a move
+      toward one-fact-per-session. The 39 same-value cases never merged and the refusals leaving 2+
+      facts per value show the units behave differently; they do not show which is better.
+- [x] 8.8 No test proposed, on the record: `keys`/`refs` (deliberate) and extract-never-sees-the-bank
+      (decided by measurement, then confirmed in upstream's code). A plan that tested these would be
+      spending budget on a difference neither side considers open.
 ## Notes
 
 - Writer route: primary `remote/hy-memory-30b-a3b`, measured in this session on a 10.9 k-token
