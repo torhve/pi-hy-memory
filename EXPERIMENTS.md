@@ -1483,3 +1483,77 @@ bank, three banked facts carrying neither declared half, and an extract call tha
 The gate for promotion is not "the wording looks better": it is a corpus that labels the two things this
 run showed we cannot yet tell apart — a user-stated constraint worth keeping, and chatter with nothing
 under it — measured on the same scorer.
+
+## What the subject guard lets through, measured on every UPDATE in six runs (2026-10-23)
+
+**Question.** Every published restraint run reports the subject guard's *refusals* — 29 attempted
+UPDATEs recorded as ADD across the six runs. What has never been audited is the other side: of the
+merges the guard *allowed*, how many narrowed what their target said? `hy-r3-to-01` raised this by
+hand — the actor arm's best fact in the corpus (flag, behaviour, line coordinate) was merged away
+one chunk later on a verdict of "4 of 10 subject tokens shared", and the four tokens it matched were
+not the ones that made the entry about the flag.
+
+**Measurement.** `dev/merge-report.ts` reads every UPDATE out of every ledger under `out/` and
+rebuilds the bank as it stood at each chunk. No model call, no corpus assumption: for each merge it
+names the tokens that hold a value rather than wording (numbers, flags, dotted file names, paths,
+underscored identifiers) and lists which left; where the corpus declares which values a chunk's tool
+output must keep (`dev/corpus-restraint2.json`, `dev/corpus-restraint3.json`), the same question is
+asked against the corpus's own label; and each merge is credited to the clause in `sameSubject` that
+actually let it through — the strict one (the draft restates half the target's vocabulary) or the
+relaxation (≥3 shared tokens and a sixth of the wording). `tools/merge-report-check.ts` pins the
+instrument on a five-chunk fixture with known answers, including the case this report exists for: a
+merge `sameSubject` approves that drops a declared value.
+
+**Result 1 — a quarter of the accepted merges narrowed something.** Across 107 executed UPDATEs, 30
+(28%) dropped at least one value their target carried — 54 value tokens, 9 of them values the corpus
+declares must survive. In the newest corpus the rate is worse, because a small bank means merges
+concentrate on tool facts: `restraint3-actor` 4 of 9 (44%), `restraint3-base` 3 of 7 (43%).
+
+**Result 2 — every declared loss came through the relaxation, none through the strict clause.**
+
+| which clause let the merge through | merges | dropped a value | corpus-declared values lost |
+| --- | --- | --- | --- |
+| restated half the target's wording | 84 | 16 (19%) | **0** |
+| shared 3+ tokens, under half the wording | 23 | 14 (61%) | **9** |
+
+A merge that restates half the target's vocabulary can still reword a value away (`cache/index.bin`
+becoming `index.bin`) but never loses one the corpus says must survive. A merge admitted on three
+shared tokens loses one 61% of the time, and all nine declared losses in this body of runs are in
+that column. The guard is good at what it was built for — unrelated rewrites — and blind to the
+related-but-narrowing ones, which is the class the corpus actually contains.
+
+**Result 3 — tightening is not free.** Recomputed on the same ledgers, a stricter relaxation (4
+shared tokens *and* a quarter of the target's wording) would have refused 14 of the 107: 9 of them
+merges that would have dropped a value, 5 that dropped nothing. Nine destroyed facts saved for five
+duplicate facts kept, where over-storage is the failure upstream names and this project already
+measures. The refusals are not free either: 6 refused a target carrying a declared value and 4 of
+those left two or more active facts covering it — the guard's safe default is itself a producer of
+duplicates.
+
+**Result 4 — 7.14's mechanism, answered, and it is not a merge problem.** In 39 places several drafts
+in one chunk carried the same declared value. Reconcile merged them down to a single fact **0 times**:
+36 pairs of ADDs and 3 ADD-plus-UPDATE chains, every one ending with two or three active facts
+covering the same value. The duplicate is created at the draft gate and passes the bank gate untouched,
+so dedup is code's job and no prompt instruction will produce it.
+
+**Result 5 — the duplicates are what absorbed the damage.** In the actor arm three merges dropped six
+declared values, yet only one value is gone from the final bank: the others were carried by copies
+another draft of the same chunk had left behind. The chain that reads worst in the ledger is not the
+one that ends worst. `hy-r3-to-01`'s flag entry was superseded at 4/10 shared, the entry that
+replaced it was superseded again at 3/13, and the flag name survived anyway because a second draft of
+that chunk had banked it. So cleaning up repeats cannot be decided before the guard question is
+settled: on these numbers the repeats are the redundancy that survives destructive merges.
+
+**Instrument limits.** "Dropped a value" is measured by token shape and by the corpus's own labels.
+The corpus says which values a tool output states; it does not say which values a later chunk may
+legitimately retire, and a reworded value that a reader would call preserved (a path shortened, a
+number re-united with its unit) is counted as dropped. These are reported columns, not gates, and the
+fixture check pins the classifications rather than asserting they are the right ones.
+
+**Decision: two candidate moves, both now priced.** Tightening the relaxation buys 9 preserved facts
+for 5 duplicates. Carrying values in a verbatim surface — upstream's `details`, copied from
+uncompressed messages by code and never re-spoken by the model — removes the threshold from the
+problem entirely: a merge would no longer have to restate a value for the value to survive. The
+second is upstream's existing structure, and on these numbers it is the cheaper of the two, because
+it does not trade destruction against duplication. Neither is applied. Nothing in `src/` changed for
+this measurement.

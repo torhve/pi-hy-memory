@@ -309,14 +309,36 @@ gate.
       to 1, and chunks with exactly one clean authored fact go from 1/6 to 0/6. Sample size: one run,
       temperature 0, no repeat runs, no judge verdicts, so 12/12 and 8/12 describe what this corpus did, not
       a general rate.
-- [ ] 7.14 Named by 7.13 rather than planned. The failure this class actually shows is a declared value
+- [x] 7.14 **Named by 7.13, measured on every UPDATE in six runs** (done 2026-10-23). The failure this class actually shows is a declared value
       banked twice, which reconcile is supposed to SKIP. Measure whether reconcile merges two drafts that
       carry the same declared value before writing any narration rule — the suppression guard the previous
       slice planned would not have touched it. Second gap 7.13 named: every `tool_output` chunk in all three
       corpora declares a durable value, so none of them test the case the v1 label hid — chatter with nothing
-      worth keeping. That control chunk class has to exist before the narration claim can be settled. The
-      soft axis for `restraint3-base` is unmeasured (the judge endpoint was unreachable); no claim rests on
-      it.
+      worth keeping — that gap is now 7.17. Both mechanisms were then measured offline over the six runs'
+      ledgers by `dev/merge-report.ts` (107 executed UPDATEs, 29 refusals, no model call), pinned by
+      `tools/merge-report-check.ts` against a fixture whose answers are known by construction.
+
+      **Does reconcile merge two drafts carrying the same declared value?** No, and that is the surprise.
+      39 such cases across the six runs, merged down to a single active fact 0 times: 36 ADD/ADD pairs and
+      3 ADD/UPDATE chains, every one leaving two or three active facts covering the same value. The
+      duplicate is created at the draft gate and passes the bank gate untouched, so dedup is code's job and
+      no prompt instruction produces it.
+
+      **What does a refusal cost, and is accepting more better?** Neither side is free, and the item's
+      assumption — that refusing merges is the safe side — does not survive the measurement. 6 refusals
+      refused a target carrying a declared value and 4 of those left two or more active facts covering it,
+      so the guard's cautious default manufactures the very duplicates this item is about. Meanwhile 30 of
+      the 107 accepted merges (28%) dropped a value their target carried, and all 9 corpus-declared losses
+      came through one clause: the one admitting a merge on 3 shared tokens and under half the wording
+      drops a value 61% of the time, against 19% for the clause that requires a real restatement and 0
+      declared losses. Tightening it to 4 shared tokens and a quarter of the wording would refuse 14 of the
+      107 — 9 destructive merges prevented for 5 harmless ones refused. `hy-r3-to-01`'s chain, which was
+      read by hand in 7.16, is what this instrument was written to read without a human: the merge that
+      retired it passed at 4/10 shared, its replacement was retired again at 3/13, and the flag name
+      survived only because a second draft of the same chunk had banked it.
+
+      The soft axis for `restraint3-base` is still unmeasured (the judge endpoint was unreachable); no claim
+      rests on it.
 - [x] 7.15 **Read the harness instead of inferring it from the paper** (done 2026-10-23). The
       coding module of the upstream repo was read at file level at `main`
       `6b0bd866798049940c752c402512bb0e16c98a2b` — `extractor.py`, `preproc.py`, `writer_coding.py`,
@@ -370,9 +392,23 @@ gate.
       which a literal anchor misses, so "chatter banked 2 → 0" is part measurement and part artefact. Both
       need to exist in the corpus before either arm can be promoted: tool chunks where the user states a
       constraint that should survive as a constraint, and tool chunks with declared chatter and no durable
-      content at all — the control 7.13 says the class lacks. Then re-measure both arms against it. Still
-      open from 7.14: whether reconcile merges two drafts carrying the same declared value, which the arm's
-      two SKIPs hint at without answering.
+      content at all — the control 7.13 says the class lacks. Then re-measure both arms against it.
+      7.14's open mechanism question was answered the same day by `dev/merge-report.ts`: same-value drafts
+      are never merged (39 cases, 0 merges), so the repeats are a code-side dedup question rather than a
+      merge question, and the arm's two SKIPs were the bank gate dropping a draft, not deduplicating one.
+- [ ] 7.18 The decision 7.14 produced, which is a choice and not another measurement. Two priced ways to
+      stop merges from retiring facts the corpus says must survive, and on these numbers the structural one
+      is cheaper. **Tighten the loose clause** in `sameSubject` — 4 shared tokens and a quarter of the
+      target's wording — and 14 of 107 merges get refused instead: 9 that would have dropped a value, 5
+      that would not, at the price of 5 duplicate facts kept, on top of the 4 refusals that already left
+      two active facts covering one value. **Or take the values out of the model's restatement burden**,
+      which is upstream's structure rather than a threshold: a verbatim surface copied from uncompressed
+      messages by code and never re-spoken by the model, deliberately not embedded and not injected on
+      read, so an UPDATE never has to repeat a value for that value to survive. The second is a storage and
+      read-path change and the first is a one-line change; pick one, and re-run `dev/merge-report.ts` over
+      a fresh corpus pair against the six ledgers already on disk. The repeat-facts cleanup stays behind
+      both: on these numbers the duplicates absorbed five of the arm run's six declared-value losses, so
+      removing them before the merge question is settled removes protection.
 ## Notes
 
 - Writer route: primary `remote/hy-memory-30b-a3b`, measured in this session on a 10.9 k-token
