@@ -69,6 +69,8 @@ export interface RunScope {
 	crossSession: CrossSessionOp[];
 	/** destructive ops whose target's creating chunk carries no session id */
 	targetUnscoped: number;
+	/** destructive ops whose target was not an active entry when the op ran */
+	targetInactive: number;
 }
 
 function chunkRecords(records: LedgerRecord[]): Extract<LedgerRecord, { type: "hy.ops" }>[] {
@@ -88,11 +90,19 @@ export function analyseLedger(run: string, records: LedgerRecord[]): RunScope {
 		sameSession: 0,
 		crossSession: [],
 		targetUnscoped: 0,
+		targetInactive: 0,
 	};
 
-	ops.forEach((record) => {
+	// Paired with each ops record's position in the ledger so the prefix is taken by index. indexOf on the
+	// record object would work today — loadLedger parses every line into its own object — but it is the kind
+	// of identity assumption that breaks quietly if a loader ever reuses or interns a record.
+	const positions = ops.map((record) => ({ record, index: records.indexOf(record) }));
+	for (const { record, index } of positions) {
+		if (index < 0) throw new Error(`${run}: ops record ${record.chunkId} is missing from the ledger it came from`);
 		// The bank as it stood before this chunk ran: everything earlier in the ledger, nothing later.
-		const before = foldLedger(records.slice(0, records.indexOf(record)));
+		// foldLedger builds a fresh bank out of fresh entries and only reads the records it is given, so
+		// re-folding a prefix cannot inherit another fold's mutations.
+		const before = foldLedger(records.slice(0, index));
 		const byId = new Map(before.map((e) => [e.id, e]));
 		const opSession = sessionOf(record.chunkId);
 
@@ -100,7 +110,12 @@ export function analyseLedger(run: string, records: LedgerRecord[]): RunScope {
 			if (op.action !== "UPDATE" && op.action !== "DELETE") continue;
 			scope.destructiveOps++;
 			const target = byId.get(op.target);
-			if (!target) continue;
+			if (!target || target.status !== "active") {
+				// foldLedger and applyOps both act only on an active target: an op aimed at something already
+				// superseded destroyed nothing, and is evidence in neither direction.
+				scope.targetInactive++;
+				continue;
+			}
 			const targetSession = sessionOf(target.chunkId);
 			if (targetSession === null || opSession === null) {
 				scope.targetUnscoped++;
@@ -122,7 +137,12 @@ export function analyseLedger(run: string, records: LedgerRecord[]): RunScope {
 				reason: op.reason ?? "",
 			});
 		}
-	});
+	}
+
+	// Every destructive op has to land in exactly one class, or the count is not auditable.
+	const classified = scope.sameSession + scope.crossSession.length + scope.targetUnscoped + scope.targetInactive;
+	if (classified !== scope.destructiveOps)
+		throw new Error(`${run}: ${scope.destructiveOps} destructive ops but ${classified} classified`);
 
 	return scope;
 }
@@ -154,10 +174,19 @@ function main(): void {
 			`with no session id at all (authored corpora): ${scopes.length - scoped.length}`,
 	);
 	console.log(
-		`ledgers demonstrably spanning more than one session: ${spanning.length}` +
+		`ledgers demonstrably spanning more than one session (part of the scoped group above, not a fourth ` +
+			`category): ${spanning.length}` +
 			(spanning.length > 0 ? ` — ${spanning.map((s) => s.run).join(", ")}` : ""),
 	);
+	const totalSame = scopes.reduce((sum, s) => sum + s.sameSession, 0);
+	const totalUnscoped = scopes.reduce((sum, s) => sum + s.targetUnscoped, 0);
+	const totalInactive = scopes.reduce((sum, s) => sum + s.targetInactive, 0);
 	console.log(`destructive ops read (UPDATE + DELETE): ${totalOps}; crossing a session boundary: ${totalCross}`);
+	console.log(
+		`  ${totalOps} = ${totalSame} aimed at an entry of the acting session + ${totalCross} crossing a ` +
+			`boundary + ${totalUnscoped} in ledgers with no session id + ${totalInactive} aimed at an entry ` +
+			"that was no longer active",
+	);
 
 	for (const scope of spanning) {
 		console.log(`\n${scope.run}: ${scope.sessions.length} sessions, ${scope.chunks} chunks`);

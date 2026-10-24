@@ -1736,19 +1736,27 @@ and drafts and has no session to scope by, and an UPDATE is accepted only if the
 | run directories under `out/` | 34, of which 28 have a `ledger.jsonl` |
 | ledgers whose chunk ids carry a session (`hy-<sessionId8>-`) | 19 |
 | ledgers with no session in any chunk id (authored corpora, `hy-r3-to-01` style) | 9 — excluded, not counted as single-session evidence |
-| ledgers demonstrably spanning more than one session | **1** (`baseline-kitx`) |
+| ledgers demonstrably spanning more than one session | **1** (`baseline-kitx`), one of the 19 above rather than a fourth category |
 | destructive ops read (UPDATE + DELETE) | 383 |
 | of those, crossing a session boundary | **0** |
+| how the 383 split | 217 aimed at an entry of the acting session, 0 crossing a boundary, 166 in ledgers with no session id, 0 aimed at an entry that was no longer active |
 
 `baseline-kitx` runs `hy-01a15629-001/002` then `hy-01a1510e-077/016/012`. Its one destructive op
 (`hy-01a15629-002` UPDATE) targets an entry written by `hy-01a15629-001` — its own session. So the tier's
 direct evidence is one observed opportunity, not taken.
 
-The fold is rebuilt before each chunk rather than once per ledger. An entry's `chunkId` is the only session
+These counts describe this working tree's `out/` as of this commit, not a permanent property of the repo:
+a run directory only counts if it has a `ledger.jsonl`, and 6 of the 34 directories do not.
+
+The fold is rebuilt before each chunk rather than once per ledger, and `analyseLedger` throws if a run's
+destructive ops do not split cleanly across the four classes. `foldLedger` builds a fresh bank out of
+fresh entries and only reads the records it is given, so re-folding a prefix cannot inherit another
+fold's mutations; each prefix is taken by record index rather than by object identity. An entry's `chunkId` is the only session
 marker the bank keeps, and a superseding write replaces it via `entryFromDraft`, so folding the whole ledger
 first would report a cross-session write as a same-session one.
 
-**The synthetic half carries the finding** (`tools/session-scope-check.ts`, deterministic, now in the gate):
+**The synthetic half carries the finding** (`tools/session-scope-check.ts`, deterministic, now in the gate).
+It shows what the rule *permits*; it is not evidence about how often the permission is used:
 
 - Session B's draft is shown session A's entry: it appears among the 2 candidates `candidatesPerDraft`
   returned, alongside a same-session entry, so the unscoped candidate set is making a choice and still

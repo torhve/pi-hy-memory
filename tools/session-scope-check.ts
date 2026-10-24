@@ -176,8 +176,21 @@ const unrelated = sameSubject(unrelatedDraft, constraint);
 assert(!unrelated.ok, `a draft that restates nothing was accepted anyway: ${JSON.stringify(unrelated)}`);
 
 if (failures === 0) {
+	console.log("  the permission structure, all three cases this fixture runs:");
 	console.log(
-		`ok: session scope fixture — session B was shown session A's fact among ${shownToB.length} candidates; ` +
+		`    draft from session B, target written by session A     accepted  ${cross.shared}/${cross.targetSize}` +
+			`  ${passClause(cross.shared, cross.targetSize)}`,
+	);
+	console.log(
+		`    draft from session B, same fact written by session B   accepted  ${local.shared}/${local.targetSize}` +
+			`  ${passClause(local.shared, local.targetSize)}`,
+	);
+	console.log(
+		`    unrelated draft, target written by session A           refused   ${unrelated.shared}/${unrelated.targetSize}` +
+			`  ${passClause(unrelated.shared, unrelated.targetSize)}`,
+	);
+	console.log(
+		`ok: session scope fixture — the shipped rule permits this case: session B was shown session A's fact among ${shownToB.length} candidates; ` +
 			`the guard scored the pair ${cross.shared}/${cross.targetSize} identically across sessions and within ` +
 			`one; after the merge the only session marker left in the bank belongs to the session that destroyed ` +
 			`the fact, and ${cross.targetSize - cross.shared} of the target's subject tokens went unrestated ` +
