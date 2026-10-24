@@ -33,6 +33,12 @@
  *      -> a refusal leaves one value carried twice and another carried once; the shipped setting ends
  *        with the dropped number restored by a later draft and the config file named by nothing; guard
  *        off loses its value with nothing left to restore it
+ *   8. the value arms, priced against the same rule boundaries
+ *      -> the merge shipped accepts on 3/11 is refused by both value arms, naming 2048 and queue.toml
+ *        as what the draft never restated; a draft restating both is accepted by both; a draft that
+ *        carries every value on 2/11 shared passes value-only and fails value-carry, so the two arms
+ *        are not aliases; and a target carrying no specific value at all passes value-only on 2/7
+ *        shared, which is the hole value-carry exists to close
  */
 
 import { downgradeKind, foldWithGuard, guardVerdict, proposalStream } from "../dev/guard-fold-report.js";
@@ -101,6 +107,41 @@ const shippedRefuses = guardVerdict("shipped", draftRefused, targetRefused);
 assert(!bothRefuse.ok && !shippedRefuses.ok, "1 shared of 5 fails under both settings");
 assert(guardVerdict("off", draftRefused, targetRefused).ok, "and would have run under no guard");
 
+// The value arms, which is the option a merge gate could ship without asking the model to phrase
+// anything: the target's own specific tokens have to be restated by the draft.
+const draftValuesOnly = { task: "queue.toml", statement: "2048 max in queue.toml" };
+const plainTarget = { task: "queue status", statement: "Queue status looked fine today, nothing to change" };
+const plainDraft = { task: "queue look", statement: "Looked at the queue once" };
+
+const carryLoose = guardVerdict("value-carry", draft3of11, target11);
+const onlyLoose = guardVerdict("value-only", draft3of11, target11);
+assert(loose.ok, "as shipped this merge runs — it is the one the value arms exist to stop");
+assert(
+	!carryLoose.ok && JSON.stringify(carryLoose.missingValues) === JSON.stringify(["2048", "queue.toml"]),
+	`value-carry refuses it and names what the draft never restated, saw ${JSON.stringify(carryLoose.missingValues)}`,
+);
+assert(!onlyLoose.ok, "value-only refuses it too, on the value test alone");
+assert(
+	guardVerdict("value-carry", draftStrict, target11).ok && guardVerdict("value-only", draftStrict, target11).ok,
+	"a draft that restates 2048 and queue.toml is allowed by both value arms",
+);
+// The two arms are not aliases: this draft carries every value but shares 2 of 11 tokens.
+const carryWeak = guardVerdict("value-carry", draftValuesOnly, target11);
+const onlyWeak = guardVerdict("value-only", draftValuesOnly, target11);
+assert(!carryWeak.ok, "value-carry still needs the wording rule: 2/11 is not a restatement");
+assert(
+	onlyWeak.ok && onlyWeak.clause === "every value the target carried is restated",
+	"value-only accepts it on values alone",
+);
+// And the hole that makes the two arms different decisions rather than two spellings of one:
+// a target carrying no specific value at all passes value-only on any subject overlap.
+const carryPlain = guardVerdict("value-carry", plainDraft, plainTarget);
+const onlyPlain = guardVerdict("value-only", plainDraft, plainTarget);
+assert(
+	onlyPlain.ok && onlyPlain.clause === "target carried no specific value",
+	"value-only merges a valueless target it has no subject test for",
+);
+assert(!carryPlain.ok, "value-carry refuses that same merge on wording");
 assert(
 	downgradeKind("target does not restate its subject (2/9 shared); recorded as ADD") === "subject",
 	"the subject test is recognised",

@@ -1611,6 +1611,9 @@ restating it, and the narrow surface priced below the whole-surface one.
 
 ## Tier 2: the same bank re-folded under three subject guards (offline, 2026-10-23)
 
+> Re-measured 2026-10-24 over 10 runs with two extra arms (a code-side value gate); the numbers in this
+> section are the six-run reading as it was measured, and the wider one is in "TODO 7.18: a third way to
+> hold a value" below.
 `dev/guard-fold-report.ts` re-runs the fold on the same ledgers under three settings, changing only
 `sameSubject`'s relaxation: **as shipped**, **tightened** (the loose clause needs ≥ 4 shared tokens *and*
 ≥ 25% of the target's wording; the "restated half" clause untouched), and **off** (every UPDATE the
@@ -2253,3 +2256,62 @@ named exactly this as the trigger to re-open the question. Refused proposals aim
 necessity") and `dev/merge-report.ts` records 0 declared values dropped by either arm's UPDATEs, so nothing
 must-survive was lost. But the fence question now has a real ledger behind it rather than a fixture, and it was
 re-confirmed the same day — no fence, with a bar named below and printed by the report itself.
+
+## TODO 7.18: a third way to hold a value, priced on the same fold (2026-10-24)
+
+7.18 was written as a choice between two answers to "merges retire facts the corpus says must survive":
+tighten `sameSubject`'s loose clause, or give the bank a verbatim surface the model never has to re-speak.
+Both were priced. Neither was satisfactory: tightening refuses merges on a wording test that has nothing to
+do with the value being lost, and the verbatim surface costs 22 995 tokens against an 11 024-token bank to
+protect nine values.
+
+The third answer came from reading the guard's own refusal text: the pipeline already knows what a merge
+would drop, because `dev/merge-report.ts` computes the target's specific tokens and asks whether the draft
+carries them. That test is code-side, needs no corpus label at run time, and asks nothing of how the model
+phrases its fact — so `dev/guard-fold-report.ts` got two more arms and the same re-fold over the same ledgers.
+
+- **`value-carry`** — the shipped wording rule *and* every specific token the target carries (numbers, flags,
+  file names, paths, identifiers, matched with the scorer's boundary rule) restated by the draft.
+- **`value-only`** — that value test with the wording rule dropped.
+
+The fold now reads 10 runs rather than the six tier 2 published against, because the corpus-4 arms are on
+disk and `resolveCorpus` matches a ledger to whichever corpus covers its chunk ids instead of a branch per
+run name. Its self-check still holds: the as-shipped arm reproduces the recorded bank entry for entry in
+10 of 10.
+
+| setting | proposed | accepted | refused | target gone | merges dropping a value | declared lost at merges | gone by the end | active facts | bank tokens | dup values |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| shipped | 172 | 127 | 45 | 0 | 60 | 9 | 1 | 435 | 11024 | 63 |
+| tightened | 172 | 109 | 60 | 3 | 40 | 4 | 1 | 450 | 11390 | 68 |
+| guard off | 172 | 161 | 0 | 11 | 234 | 20 | 8 | 390 | 9778 | 59 |
+| value-carry | 172 | 90 | 70 | 12 | 0 | 0 | 0 | 460 | 11765 | 70 |
+| value-only | 172 | 98 | 61 | 13 | 0 | 0 | 0 | 451 | 11589 | 70 |
+
+What the value arms do is refuse exactly the merge that drops something: neither leaves a single
+corpus-declared value lost at a judged merge, and neither leaves a value gone from the bank by the end,
+where shipped loses 9 at merges and 1 outright and tightening still leaves 4 and 1. The price is 25 and 16
+more refusals than shipped, 25 and 16 more facts, 741 and 565 more bank tokens, and 7 more values carried
+by two facts at once. Tightening now looks weak on its own numbers: it buys 5 of the 9 saved values and
+still costs 366 tokens and 5 duplicates, and it decides on a token count rather than on the value.
+
+Three things this does not prove.
+
+**The zero is on a smaller denominator.** Refusing a merge leaves its target active, which changes what a
+later merge can target: 12 and 13 proposals ended up with no active target to judge at all, against 0 for
+shipped. The report prints that beside the zero rather than under it.
+
+**The fold holds the model's drafts fixed.** A live run under a value gate would be shown a different bank
+and would draft differently, so these are bounds on the rule, not a simulation of a run. Validating the gate
+means running one, not re-folding another ledger.
+
+**The value extractor is a matcher.** `specificTokens` recognises numbers, flags, file names, paths and
+identifiers; `carries` requires a token-boundary match. A value reworded into prose ("forty-five days" for
+`--retention-days 45`) is a miss the gate reads as a loss, and a phrase the corpus declares but that carries
+no specific token — `line 63`, "reads settings.toml once" — is invisible to it. The fixture pins both edges
+of that: `value-carry` naming `2048` and `queue.toml` as unrestated, and a target carrying no specific value
+at all passing `value-only` on 2/7 shared tokens, which is the hole that makes `value-carry` a different
+decision rather than a second spelling of the same one.
+
+An earlier cut of this section had `value-carry` implemented as `value-only` by accident, and the two arms
+producing identical numbers was reported as "the wording rule adds nothing". It was an alias. The fixture
+now pins that they differ.

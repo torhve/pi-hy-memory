@@ -153,21 +153,33 @@ export function loadLedger(runId: string): LedgerRecord[] {
 }
 
 export function resolveCorpus(runId: string, explicit: string | undefined): { path: string; chunks: CorpusChunk[] } {
-	const candidates = explicit
-		? [explicit]
-		: runId.startsWith("restraint3")
-			? ["dev/corpus-restraint3.json", "dev/corpus-restraint2.json", "dev/corpus-restraint.json"]
-			: runId.startsWith("restraint2")
-				? ["dev/corpus-restraint2.json", "dev/corpus-restraint.json"]
-				: ["dev/corpus-restraint.json", "dev/corpus-restraint2.json"];
 	const ledgerIds = loadLedger(runId)
 		.filter((r) => r.type === "hy.extract")
 		.map((r) => (r as { chunkId: string }).chunkId);
-	for (const path of candidates) {
-		if (!existsSync(path)) continue;
-		const chunks = (JSON.parse(readFileSync(path, "utf8")).chunks ?? []) as CorpusChunk[];
-		const ids = new Set(chunks.map((c) => c.chunkId));
-		if (ledgerIds.length > 0 && ledgerIds.every((id) => ids.has(id))) return { path, chunks };
+	const chunksOf = (path: string): CorpusChunk[] =>
+		(JSON.parse(readFileSync(path, "utf8")).chunks ?? []) as CorpusChunk[];
+	const covers = (path: string): boolean => {
+		if (!existsSync(path)) return false;
+		const ids = new Set(chunksOf(path).map((c) => c.chunkId));
+		return ledgerIds.length > 0 && ledgerIds.every((id) => ids.has(id));
+	};
+	// Named run families keep their recorded pairing; anything else is matched by which
+	// corpus actually covers its chunk ids, so a newly authored corpus needs no new branch.
+	const preferred = explicit
+		? [explicit]
+		: runId.startsWith("restraint4")
+			? ["dev/corpus-restraint4.json"]
+			: runId.startsWith("restraint3")
+				? ["dev/corpus-restraint3.json", "dev/corpus-restraint2.json", "dev/corpus-restraint.json"]
+				: runId.startsWith("restraint2")
+					? ["dev/corpus-restraint2.json", "dev/corpus-restraint.json"]
+					: ["dev/corpus-restraint.json", "dev/corpus-restraint2.json"];
+	for (const path of preferred) {
+		if (covers(path)) return { path, chunks: chunksOf(path) };
+	}
+	for (const file of readdirSync("dev").filter((f) => f.startsWith("corpus-") && f.endsWith(".json"))) {
+		const path = `dev/${file}`;
+		if (covers(path)) return { path, chunks: chunksOf(path) };
 	}
 	throw new Error(`${runId}: no corpus under dev/ covers its ledger — pass --corpus`);
 }

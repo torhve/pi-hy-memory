@@ -2,16 +2,21 @@
 /**
  * dev/guard-fold-report.ts — tier 2 of plan-divergence.md, offline.
  *
- * The subject guard is ours and the reconciler's merge authority is upstream's. TODO 7.18 offers two
- * answers: tighten the guard's loose clause, or take values out of the model's restatement burden
- * entirely. This instrument prices the first one by re-folding already-recorded ledgers under three
- * settings and comparing what each bank ends up holding. No model call, no corpus edit, no src/ change.
+ * TODO 7.18 offers two answers: tighten the guard's loose clause, or take values out of the model's
+ * restatement burden entirely. This instrument prices them by re-folding already-recorded ledgers
+ * under five settings and comparing what each bank ends up holding. No model call, no corpus edit,
+ * no src/ change.
  *
  *   shipped     the clause as it runs today: half the target's vocabulary, or 3+ shared tokens and a
  *               sixth of the target's wording;
  *   tightened   the tightening TODO 7.18 proposed: half the wording, or 4+ shared tokens and a quarter
  *               of the target's wording;
  *   off         upstream's shape: every UPDATE the reconciler proposed is applied.
+ *   value-carry  the shipped wording rule and a value test on top of it: an UPDATE is accepted only
+ *               when every specific token the target carries — numbers, flags, file names, paths,
+ *               identifiers — is restated by the draft;
+ *   value-only  that value test with the wording rule dropped, which is what it looks like to gate a
+ *               merge on values alone rather than on how the draft is phrased.
  *
  * The fold does not read the recorded ops as the model's proposals: the ledger stores them after our
  * guards already interfered. src/pipeline.ts replaces a refused UPDATE with an ADD and writes the
@@ -61,25 +66,65 @@ import { type CorpusChunk, carries } from "./restraint-report.js";
 
 const RUNS_ROOT = "out";
 
-export type GuardSetting = "shipped" | "tightened" | "off";
+export type GuardSetting = "shipped" | "tightened" | "off" | "value-carry" | "value-only";
 
-export const SETTINGS: GuardSetting[] = ["shipped", "tightened", "off"];
+export const SETTINGS: GuardSetting[] = ["shipped", "tightened", "off", "value-carry", "value-only"];
 
 export interface GuardVerdict {
 	ok: boolean;
 	shared: number;
 	targetSize: number;
 	/** which clause decided, so a refusal can be attributed to the clause that changed. */
-	clause: "target had no vocabulary to compare" | "restated half the target's wording" | "loose clause" | "refused";
+	clause:
+		| "target had no vocabulary to compare"
+		| "restated half the target's wording"
+		| "loose clause"
+		| "target carried no specific value"
+		| "every value the target carried is restated"
+		| "refused";
+	/** for the value arms: the target's values the draft does not restate. */
+	missingValues?: string[];
 }
 
-/** The three settings as one function, so no arm can drift from another by accident. */
+/**
+ * The settings as one function, so no arm can drift from another by accident.
+ *
+ * `value-carry` keeps the shipped wording rule and adds a value test on top of it: an UPDATE is
+ * accepted only when every specific token the target carries — numbers, flags, file names, paths,
+ * identifiers, read with the same boundary rule the scorer uses — is restated by the draft.
+ * `value-only` drops the wording rule and keeps that value test alone, which is the version a
+ * merge gate could ship without asking the model to phrase anything. Both read only what an entry
+ * already holds, so neither needs a corpus label at run time.
+ */
 export function guardVerdict(
 	setting: GuardSetting,
-	draft: { task: string; statement: string },
-	target: { task: string; statement: string },
+	draft: { task: string; statement: string; keys?: string[] },
+	target: { task: string; statement: string; keys?: string[] },
 ): GuardVerdict {
 	const { shared, targetSize } = sameSubject(draft, target);
+	if (setting === "value-carry" || setting === "value-only") {
+		const text = (row: { task: string; statement: string; keys?: string[] }) =>
+			`${row.task} ${row.statement} ${(row.keys ?? []).join(" ")}`;
+		const values = [...specificTokens(text(target))];
+		const missing = values.filter((v) => !carries(v, text(draft)));
+		const ratio = targetSize === 0 ? 1 : shared / targetSize;
+		// The shipped wording rule, unchanged, so `value-carry` is that rule plus the value test
+		// and `value-only` is the value test on its own.
+		const wordingOk = targetSize === 0 || ratio >= 0.5 || (shared >= 3 && ratio >= 0.15);
+		const ok = setting === "value-only" ? missing.length === 0 : wordingOk && missing.length === 0;
+		if (ok) {
+			return {
+				ok: true,
+				shared,
+				targetSize,
+				clause:
+					values.length === 0
+						? "target carried no specific value"
+						: "every value the target carried is restated",
+			};
+		}
+		return { ok: false, shared, targetSize, clause: "refused", missingValues: missing };
+	}
 	if (setting === "off") {
 		return { ok: true, shared, targetSize, clause: "target had no vocabulary to compare" };
 	}
@@ -645,6 +690,19 @@ function main(): void {
 		`   the runs recorded ${totals.shipped.reduce((n, r) => n + r.recordedRefusals, 0)} subject refusals and` +
 			` ${totals.shipped.reduce((n, r) => n + r.otherRefusals, 0)} refusals from the retrieval and batch checks;` +
 			" the arms differ only in the first kind",
+	);
+	const valueCarry = totals["value-carry"];
+	const valueOnly = totals["value-only"];
+	const accept = (list: FoldResult[]) => list.reduce((n, r) => n + r.accepted, 0);
+	const refuse = (list: FoldResult[]) => list.reduce((n, r) => n + r.refused, 0);
+	const gone = (list: FoldResult[]) => list.reduce((n, r) => n + r.targetGone, 0);
+	console.log(
+		`   the value arms refuse merges whose target carries a value the draft does not restate:` +
+			` value-carry accepts ${accept(valueCarry)} and refuses ${refuse(valueCarry)}, value-only accepts` +
+			` ${accept(valueOnly)} and refuses ${refuse(valueOnly)} — and neither leaves a declared value lost` +
+			` at a judged merge, because that is exactly the merge they stop. Read that against their cascade:` +
+			` refusing earlier merges leaves ${gone(valueCarry)} and ${gone(valueOnly)} later proposals without` +
+			` an active target to judge, so their zero is measured on a smaller denominator than shipped's.`,
 	);
 	console.log(
 		"   reported, not gated: the fold holds the model's drafts fixed. A live run under a different" +

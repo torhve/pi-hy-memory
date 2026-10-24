@@ -412,28 +412,32 @@ gate.
       are never merged (39 cases, 0 merges), so the repeats are a code-side dedup question rather than a
       merge question, and the arm's two SKIPs were the bank gate dropping a draft, not deduplicating one.
       The labels this needs are written out as `plan-divergence.md` tier 3, carried here as 8.3.
-- [ ] 7.18 The decision 7.14 produced, which is a choice and not another measurement. Two priced ways to
-      stop merges from retiring facts the corpus says must survive, and on these numbers the structural one
-      is cheaper. **Tighten the loose clause** in `sameSubject` — 4 shared tokens and a quarter of the
-      target's wording — and 14 of 107 merges get refused instead: 9 that would have dropped a value, 5
-      that would not, at the price of 5 duplicate facts kept, on top of the 4 refusals that already left
-      two active facts covering one value. **Or take the values out of the model's restatement burden**,
-      which is upstream's structure rather than a threshold: a verbatim surface copied from uncompressed
-      messages by code and never re-spoken by the model, deliberately not embedded and not injected on
-      read, so an UPDATE never has to repeat a value for that value to survive. The second is a storage and
-      read-path change and the first is a one-line change; pick one, and re-run `dev/merge-report.ts` over
-      a fresh corpus pair against the six ledgers already on disk. The repeat-facts cleanup stays behind
-      both: on these numbers the duplicates absorbed five of the arm run's six declared-value losses, so
-      removing them before the merge question is settled removes protection.
-      **Both measurement paths are in (2026-10-23), so this is open as a choice.** Tier 1 (TODO 8.1):
-      9 of 9 destroyed values were recoverable verbatim from the chunk that authored them, 0 absent,
-      though 4 of the 9 sit only in a spoken line — a copy can recover a value from the wrong wording.
-      Tier 2 (TODO 8.2), re-folding the same six ledgers: tightening the loose clause refuses 13 more
-      merges for 5 fewer declared values lost at merges and 5 duplicate facts kept, and the guard off is
-      worse than shipped (15 declared values dropped, 5 gone for good against 1). The audit's own
-      prediction was 14 refusals out of 107 with 9 dropping a value; the re-fold's number is 13 and 5,
-      so the tightening option is weaker than the audit suggested and cheaper than it costs is now a
-      measured claim rather than a forecast.
+- [ ] 7.18 The decision 7.14 produced, which is a choice and not another measurement. Three priced ways to
+      stop merges from retiring facts the corpus says must survive, all of them measured on
+      `dev/guard-fold-report.ts` over 10 ledgers (172 UPDATE proposals, self-check reproducing the recorded
+      bank in 10 of 10). Numbers in `EXPERIMENTS.md`, "TODO 7.18: a third way to hold a value".
+      **Tighten the loose clause** in `sameSubject` — 4 shared tokens and a quarter of the target's wording:
+      109 accepted against shipped's 127, 4 declared values lost at merges against 9, 1 value still gone by
+      the end, +366 bank tokens, +5 duplicate values. Weaker than the merge audit forecast (it predicted 14
+      refusals of 107 with 9 dropping a value; the re-fold says 13 refusals and 5 saved) and it decides on a
+      token count rather than on the value.
+      **A code-side value gate**, priced 2026-10-24 as two arms: accept an UPDATE only when every specific
+      token the target carries is restated by the draft. `value-carry` (that test plus the shipped wording
+      rule) accepts 90, refuses 70; `value-only` (the test alone) accepts 98, refuses 61. Neither leaves a
+      declared value lost at a judged merge or gone by the end, at +741 / +565 bank tokens and +7 duplicate
+      values. Two holes named in the report: the zero sits on a smaller denominator (12 and 13 proposals
+      ended with no active target to judge, against 0 for shipped), and the extractor is a matcher — a value
+      reworded into prose reads as a loss, and a declared phrase with no specific token (`line 63`) is
+      invisible to it. `value-only` additionally merges a target carrying no value on any subject overlap.
+      **Or the verbatim surface**, upstream's structure rather than a threshold: 9 of 9 destroyed values were
+      recoverable verbatim from the chunk that authored them, 0 absent, though 4 of the 9 sit only in a
+      spoken line. It costs 374 tokens if the surface holds only the chunks behind lost values and 22 995 if
+      every stored entry gets its source chunk, against an 11 024-token bank — and it is a storage and
+      read-path change, not a gate.
+      Nothing here is a live run: the fold holds the model's drafts fixed, so a gate that ships has to be
+      validated by running it, which is one corpus-4 arm (~340 s of model wall). The repeat-facts cleanup
+      stays behind all three: duplicates absorbed five of the arm run's six declared-value losses, so
+      removing them before this is settled removes protection.
 ### 8. Divergence from the upstream harness: measure it or park it on the record (plan: `plan-divergence.md`)
 
 Written 2026-10-23, after the merge audit (`78a2c6f`) made two things visible at once: the guard's
