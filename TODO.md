@@ -187,6 +187,44 @@ gate.
       round grows the window past the threshold again. Seven of nine ranged calls refused at the
       floor for zero writer cost, and `flush-only` left one session of three with no write at all,
       so the threshold is what guarantees coverage (`RESULTS.md`).
+- [x] 6.18 Can a fact the pool dropped still be read? No — fixed 2026-10-24. The `hy_recall`
+      query scored only `status === "active"`, so on a real session that reached `bankMaxTokens`
+      (157 writes; read 2026-10-24 while it was still writing: 615 facts retired by the ceiling,
+      1 405 specific values carried only by retired facts, oldest fact still current from write
+      116) the ceiling removed most of the session from the only read path, while `src/bank.ts`
+      and DESIGN.md both claimed a superseded fact "stays recallable". The query now scores the
+      whole bank (`recallHits`, `renderRecallHit` in `src/render.ts`): live facts fill the result
+      first, a retired fact is added only when it matches better than the weakest live one and
+      never more than three of them, every retired row says what dropped it, and a merge-retired
+      row names what replaced it. Pinned by `tools/recall-reach-check.ts` and by the tool itself
+      in `tools/recall-check.ts`, including that the tool cannot grow an active-only slice again.
+      Not measured: whether a retired row being quoted as current misleads a reader
+      — that is 6.11's question with a new class of row in it. Read again with
+      `dev/live-bank-report.ts --session <id>` (pinned by `tools/live-bank-report-check.ts`): the
+      numbers below were taken 2026-10-24 while that session was still writing, so they move.
+- [x] 6.19 What a fold cannot reproduce — measured, and smaller than it looked: retirement is
+      never written to the ledger, so folding that same session yields 1 442 active facts /
+      104 056 tokens where the session had 821 / 60 000. But `src/index.ts` re-applies
+      `enforceBudget` on reload, and re-applying it to the fold returns *exactly* the ids the
+      store marked current — `dev/live-bank-report.ts` prints that equality, and
+      `tools/live-bank-report-check.ts` pins that trimming never adds facts back. So a folding
+      instrument reproduces the recorded bank when it applies the pool, and reports a bank larger
+      than the writer saw when it does not. Still open: retirement is invisible in the ledger, so
+      an audit cannot say which fact the ceiling dropped and when. `hy.evict` stays proposed in
+      DESIGN for that, not for reproducibility.
+- [ ] 6.20 `fromUser` on a real session: 3 of 822 active facts are user-grounded. The summary
+      reserves `summaryConstraintShare` (0.1) for facts the user stated and refills the slice
+      with whatever fits, so in organic use that slice is close to vacuous. Establish whether
+      chunks rarely contain a user turn or whether `draft.refs` → `chunk.roles`
+      (`src/pipeline.ts:240`) misses them, before changing the share or the claim in DESIGN's
+      selection section.
+- [ ] 6.21 Retrieval refusals scale with the bank: 365 downgrades in that session — 167 "target
+      not retrieved for this draft", 152 "does not restate its subject", 46 "already superseded
+      in this batch". The writer names merge targets a `candidateLimit: 24` view never showed it.
+      This is 6.6's precision question arriving from the writer side, and it grows with the bank.
+- [ ] 6.22 `stats.json` counts the process, not the session: that session's ledger holds 155
+      write records and its stats say `writes: 10`, because the counters reset at `session_start`.
+      The status line reads as a session total. Either restore counters or say what they count.
 ### 7. Restraint: the axis no corpus here measures (plan: `plan-restraint.md`)
 
 - [x] 7.1 `dev/corpus-restraint.json`: 8 authored `attribution` pairs (identical claim, only the
@@ -437,12 +475,20 @@ gate.
       spoken line. It costs 374 tokens if the surface holds only the chunks behind lost values and 22 995 if
       every stored entry gets its source chunk, against an 11 024-token bank — and it is a storage and
       read-path change, not a gate.
-      Nothing here is a live run: the fold holds the model's drafts fixed, so a gate that ships has to be
-      validated by running it, which is one corpus-4 arm (~340 s of model wall). That arm is
-      `restraint4-base-gate` — corpus 4 with `--merge-value-gate` on, scored against `restraint4-base-600`
-      on the same corpus with it off — and its result decides the default. The repeat-facts cleanup
-      stays behind all three: duplicates absorbed five of the arm run's six declared-value losses, so
-      removing them before this is settled removes protection.
+      Live arms ran 2026-10-24 and neither settles the default. `restraint4-base-gate` (corpus 4, gate on)
+      recorded zero refusals — the gate never ran. `restraint3-gate` (corpus 3, gate on) fired twice: it
+      refused a recap-only chunk merging into the fact that `tctl flush --wait` exited `130`, which the
+      wording rule passes, at +2 facts / +32 tokens (+4 %) and +3 repeat facts — and changed no value
+      outcome, because that corpus banks every declared value twice and both refused merges left values
+      still carried by another chunk's fact. Replaying the author's own 155-write session through the same
+      guard refuses 211 of 290 merges and holds 268 values nothing current carries, for about six facts
+      displaced at the `bankMaxTokens` ceiling. Numbers in `EXPERIMENTS.md`.
+      **What would settle it:** a corpus where a declared value has exactly one carrier, so refusing a
+      merge prevents a loss rather than a duplicate (see 8.9). Until then the default stays `false` — the
+      gate demonstrably catches the wrong-subject class the wording rule passes, but its blast radius on
+      organic merges (73 % refused) is far wider than any corpus suggested. The repeat-facts cleanup stays
+      behind all of this: duplicates absorbed five of the arm run's six declared-value losses, so removing
+      them before the default is settled removes protection.
 ### 8. Divergence from the upstream harness: measure it or park it on the record (plan: `plan-divergence.md`)
 
 Written 2026-10-23, after the merge audit (`78a2c6f`) made two things visible at once: the guard's
@@ -560,6 +606,14 @@ choosing. Tiers are ordered by what can be measured with artifacts already on di
 - [x] 8.8 No test proposed, on the record: `keys`/`refs` (deliberate) and extract-never-sees-the-bank
       (decided by measurement, then confirmed in upstream's code). A plan that tested these would be
       spending budget on a difference neither side considers open.
+- [ ] 8.9 A corpus where a declared value has exactly one carrier, tier 7. Corpora 3 and 4 bank every
+      declared value in more than one chunk, so retiring one carrier is harmless and the value gate has
+      nothing to prevent: its two live refusals on corpus 3 bought duplicates, not values. Author a corpus
+      where each declared value is stated in exactly one chunk and printed nowhere else, and make a later
+      chunk propose the merge that would retire that carrier. Gate: the corpus check refuses any declared
+      value carried by more than one chunk; the shipped arm loses at least one declared value at a merge;
+      the gate-on arm loses none and grows the bank by the refusals it makes. ~22 chunks, ~340 s of model
+      wall per arm. This is the only arm that can decide `mergeValueGate`'s default.
 ## Notes
 
 - Writer route: primary `remote/hy-memory-30b-a3b`, measured in this session on a 10.9 k-token

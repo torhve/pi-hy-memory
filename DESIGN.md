@@ -504,13 +504,17 @@ ceiling, ranks and trims:
    evict three short ones.
 3. **Tombstone the rest**: `status: "superseded"`, `supersedeReason: "bank budget"`.
 
-A budget-dropped fact is **hidden but not lost**: it stays in the bank file and in the
-ledger, `hy_recall <id>` still returns it with its source evidence, but it is absent from
-`renderMemory()` (so not in the compaction summary) and it is not a candidate for a later
-UPDATE (only `active` entries are). It can only come back if a newer chunk re-states it,
-which creates a new entry rather than reviving the old one. Each write now reports
-`budgetDropped` (count and the first five ids) so eviction is visible in the audit
-instead of silent.
+A budget-dropped fact is **retired, not deleted**: it stays in the bank file and in the
+ledger, `hy_recall` still answers a query for what it holds (the query scores the whole bank
+and marks such a row `retired: bank budget`), and `hy_recall <id>` returns it with its source
+evidence. It is absent from `renderMemory()` (so not in the compaction summary) and it is not
+a candidate for a later UPDATE (only `active` entries are), so retirement changes what is
+offered as current, not what can be read. Measured on a 155-write session that reached the
+ceiling: 599 facts retired, 1 543 specific values carried by nothing current — with a
+query that read only `active` entries, that was unreachable, which is why the query reads
+the whole bank. It comes back as current only if a newer chunk re-states it, which creates a
+new entry rather than reviving the old one. Each write reports `budgetDropped` (count and the
+first five ids) so eviction is visible in the audit instead of silent.
 
 Sizing, measured on this writer: a fact costs ~72 tokens (`tokenCount`), so the cap is
 roughly `summaryMaxTokens / 72` facts — 6 000 ≈ 83, 8 000 ≈ 110. Two real sessions
@@ -685,8 +689,14 @@ writes fill it; a re-folded old bank keeps working with the other two slices.
 
 ### When the store itself is full
 
-`bankMaxTokens` is a ceiling, not a target, so "full" is rare — but at ~900 tokens of facts
-per chunk a 200-chunk session carries ~180 k and will hit it. In order of preference:
+`bankMaxTokens` is a ceiling, not a target. It was treated as rare — at ~900 tokens of facts
+per chunk, a 200-chunk session — until one of the author's own sessions reached it: 158 writes,
+the ledger folding to 1 442 facts / 104 056 tokens against a store that held 821 current /
+60 000, 621 facts retired by the ceiling, the oldest fact still current from write 116. Read
+while that session was still writing; `dev/live-bank-report.ts` re-reads it. The retirement is
+not in the ledger, but reload re-applies the ceiling and lands on exactly the ids the store
+marked current, so nothing is unrecoverable — what the ledger cannot say is *which* fact the
+ceiling dropped and when. In order of preference:
 
 1. **Demote.** A fact past the summary budget stays active and retrievable; it is simply not
    printed. This is already what the omission tail promises, and it costs nothing.
@@ -695,8 +705,10 @@ per chunk a 200-chunk session carries ~180 k and will hit it. In order of prefer
    updates), but it aims straight at its worst failure surface — lost specificity — so it is
    an experiment with a judge gate, not an assumption.
 3. **Evict.** Today's rule, kept as the last resort: deterministic, visible in the audit, and
-   the fact stays recallable. When it does fire, it should record `hy.evict` so a reload
-   cannot change what the reader saw.
+   the fact stays recallable — which it only does because `hy_recall` scores the whole bank
+   and marks the row retired; a query restricted to `active` entries would make this rule a
+   deletion wearing a tombstone's name. When it does fire, it should record `hy.evict` so a
+   reload cannot change what the reader saw.
 
 ### Plan
 

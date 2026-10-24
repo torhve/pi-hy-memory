@@ -95,6 +95,44 @@ const branch = [
 	sourceEntry,
 	{ id: "c1", type: "custom", customType: "hy.extract", data: extractRecord } as never,
 	{ id: "c2", type: "custom", customType: "hy.ops", data: opsRecord } as never,
+	// A second write that retires the first fact: the port value then lives only in a
+	// superseded row, which is the case the query has to still answer.
+	{
+		id: "c3",
+		type: "custom",
+		customType: "hy.extract",
+		data: {
+			type: "hy.extract",
+			chunkId: "hy-01234567-002",
+			coversUpToId: "e-src-2",
+			createdAt: "2026-10-18T00:02:00.000Z",
+			drafts: [
+				{
+					task: "llama-swap",
+					statement: "llama-swap serves the writer model, endpoint reviewed",
+					keys: ["llama-swap"],
+					refs: [0],
+					sourceEntryIds: ["e-src-2"],
+				},
+			],
+			rejectedCount: 0,
+			usage: { inTokens: 1, outTokens: 1, wallS: 1 },
+		},
+	} as never,
+	{
+		id: "c4",
+		type: "custom",
+		customType: "hy.ops",
+		data: {
+			type: "hy.ops",
+			chunkId: "hy-01234567-002",
+			coversUpToId: "e-src-2",
+			createdAt: "2026-10-18T00:02:00.000Z",
+			ops: [{ action: "UPDATE", draft: 0, target: newId("hy-01234567-001:0:ADD") }],
+			rejectedCount: 0,
+			usage: { inTokens: 1, outTokens: 1, wallS: 1 },
+		},
+	} as never,
 ];
 
 type ToolDef = {
@@ -154,7 +192,19 @@ has("id lookup: source text", byId, "[User]: use llama-swap at 127.0.0.1:8080");
 has("query: match found", await recall({ query: "llama-swap" }), "llama-swap serves the writer model");
 // No match: says so, and reports the bank size.
 has("query: no match", await recall({ query: "zebra-unrelated" }), "No facts match");
-has("query: bank size reported", await recall({ query: "zebra-unrelated" }), "1 facts in the bank");
+has(
+	"query: bank size reported",
+	await recall({ query: "zebra-unrelated" }),
+	"1 current and 1 retired facts; none matched",
+);
+// The value that only a retired row still carries: answered, and marked as retired.
+has("query: a retired fact is still answered", await recall({ query: "8080" }), "retired: replaced by newer statement");
+has("query: a retired row points forward", await recall({ query: "8080" }), "for what replaced it");
+check(
+	"query: the live fact leads when both match equally",
+	(await recall({ query: "llama-swap" })).split("\n")[0].startsWith(`[${newId("hy-01234567-002:0:UPDATE")}]`),
+	true,
+);
 // Unknown id.
 has("unknown id", await recall({ id: "000000000000" }), "No fact with id 000000000000");
 

@@ -58,7 +58,7 @@ import {
 } from "./hifi.js";
 import { createWriter, type Writer } from "./llm.js";
 import { writeChunk } from "./pipeline.js";
-import { renderFileOperations, renderMemory, summaryBudget } from "./render.js";
+import { recallHits, renderFileOperations, renderMemory, renderRecallHit, summaryBudget } from "./render.js";
 import { pruneSessions } from "./state.js";
 import { createStatusBar } from "./status.js";
 import { type BankEntry, type Draft, estimateTokens, type LedgerRecord } from "./types.js";
@@ -1335,7 +1335,7 @@ export default function piHyMemory(pi: ExtensionAPI): void {
 		name: "hy_recall",
 		label: "Hy recall",
 		description:
-			"Look up the session's durable fact bank. Query text searches active facts; an entry id returns the fact plus the exact source entries it was written from.",
+			"Look up the session's durable fact bank. Query text searches every fact the store holds, current and retired, and marks a retired one with what dropped it; an entry id returns the fact plus the exact source entries it was written from.",
 		promptSnippet: "Search the durable fact bank; id expands a fact with its source evidence.",
 		promptGuidelines: [
 			"Use hy_recall to check what this session already established, and to read the source entries behind a fact before acting on it.",
@@ -1390,23 +1390,14 @@ export default function piHyMemory(pi: ExtensionAPI): void {
 				.trim()
 				.toLowerCase();
 			const limit = Math.max(1, Math.min(50, params.limit ?? 12));
-			const scored = active.map((entry) => {
-				const haystack = `${entry.task} ${entry.statement} ${entry.keys.join(" ")}`.toLowerCase();
-				const score = query
-					? query.split(/\s+/).filter((token) => token.length > 2 && haystack.includes(token)).length
-					: 1;
-				return { entry, score };
-			});
-			const hits = scored
-				.filter((s) => s.score > 0)
-				.sort((a, b) => b.score - a.score)
-				.slice(0, limit);
+			const hits = recallHits(state.bank, query, limit);
+			const retired = hits.filter((hit) => hit.superseded).length;
 			if (hits.length === 0)
 				return {
 					content: [
 						{
 							type: "text",
-							text: `No facts match ${JSON.stringify(query)}. ${active.length} facts in the bank.`,
+							text: `No facts match ${JSON.stringify(query)}. The bank holds ${active.length} current and ${state.bank.length - active.length} retired facts; none matched.`,
 						},
 					],
 					details: undefined,
@@ -1415,10 +1406,14 @@ export default function piHyMemory(pi: ExtensionAPI): void {
 				content: [
 					{
 						type: "text",
-						text: hits.map(({ entry }) => `[${entry.id}] (${entry.task}) ${entry.statement}`).join("\n"),
+						text:
+							hits.map((hit) => renderRecallHit(hit)).join("\n") +
+							(retired > 0
+								? `\n\n${retired} of these are retired: a merge or the pool budget dropped them from the current bank. Read them with their id, and read the fact named there for the newer wording.`
+								: ""),
 					},
 				],
-				details: { hits: hits.length, active: active.length },
+				details: { hits: hits.length, active: active.length, retired },
 			};
 		},
 	});

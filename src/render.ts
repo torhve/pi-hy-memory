@@ -178,6 +178,59 @@ export function supersededTrail(bank: BankEntry[]): string {
 }
 
 /**
+ * Recall search over the whole bank, not only its active part.
+ *
+ * The query path used to filter to `status === "active"`, which made the pool budget
+ * silent amnesia: measured on a real 155-write session, 599 facts were superseded with
+ * reason `bank budget` and 1 543 specific values — commit ids, line ranges, file names —
+ * survived only inside facts no query could reach, while `enforceBudget` and DESIGN.md
+ * both claimed a superseded fact "stays recallable". Retirement is a ranking signal, not
+ * a deletion: a fact the ceiling dropped should still answer a question about the value
+ * it holds, and a fact a merge retired should point at what replaced it.
+ */
+export type RecallHit = { entry: BankEntry; score: number; superseded: boolean };
+
+/** How many retired facts one query may add. A ceiling retired hundreds, and a query that
+ * returned them in score order would read as a list of stale facts. */
+export const RECALL_RETIRED_LIMIT = 3;
+
+/**
+ * Live facts fill the result; a retired fact is added only when it matches the query better
+ * than the weakest live fact shown, and never more than `RECALL_RETIRED_LIMIT` of them. That
+ * ordering is the whole design: the current bank stays dominant, while a value that only a
+ * retired fact still carries is answered instead of silently gone.
+ */
+export function recallHits(bank: BankEntry[], query: string, limit: number): RecallHit[] {
+	const tokens = query.split(/\s+/).filter((token) => token.length > 2);
+	const newestFirst = (a: RecallHit, b: RecallHit) =>
+		b.score !== a.score ? b.score - a.score : (b.entry.chunkSeq ?? 0) - (a.entry.chunkSeq ?? 0);
+	const scored = bank.map((entry) => {
+		const haystack = `${entry.task} ${entry.statement} ${entry.keys.join(" ")}`.toLowerCase();
+		const score = tokens.length ? tokens.filter((token) => haystack.includes(token)).length : 1;
+		return { entry, score, superseded: entry.status !== "active" };
+	});
+	const live = scored
+		.filter((hit) => hit.score > 0 && !hit.superseded)
+		.sort(newestFirst)
+		.slice(0, limit);
+	const floor = live.length > 0 ? live[live.length - 1].score : 0;
+	const retired = scored
+		.filter((hit) => hit.score > 0 && hit.superseded && hit.score > floor)
+		.sort(newestFirst)
+		.slice(0, RECALL_RETIRED_LIMIT);
+	return [...live, ...retired];
+}
+
+/** One recalled fact, saying plainly whether it is current and what retired it. */
+export function renderRecallHit(hit: RecallHit): string {
+	const { entry } = hit;
+	if (!hit.superseded) return `[${entry.id}] (${entry.task}) ${entry.statement}`;
+	const reason = (entry.supersedeReason ?? "superseded").slice(0, 120);
+	const replaced = entry.supersededBy ? `; read ${entry.supersededBy} for what replaced it` : "";
+	return `[${entry.id}] (${entry.task}) ${entry.statement} — retired: ${reason}${replaced}`;
+}
+
+/**
  * The bank as the extract call can use it: what is already known, with no ids and no
  * refs. Extract proposes candidates and never reconciles, so a reconcile id is noise
  * there, and a line starting with a bracketed number would read as a transcript line

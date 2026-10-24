@@ -2315,3 +2315,108 @@ decision rather than a second spelling of the same one.
 An earlier cut of this section had `value-carry` implemented as `value-only` by accident, and the two arms
 producing identical numbers was reported as "the wording rule adds nothing". It was an alias. The fixture
 now pins that they differ.
+
+### The gate ships behind a setting, and the first arm says nothing about it (2026-10-24)
+
+`mergeValueGate` is now code: `src/values.ts` defines what a value is, `guardUpdateOps` in
+`src/protocol.ts` runs the subject test then the value test, and the setting defaults to `false`. The
+first live arm was corpus 4 with the gate on — `restraint4-base-gate`, against `restraint4-base-600` on
+the same corpus with it off.
+
+**It refused nothing.** The ledger records 4 subject refusals and 1 retrieval refusal and zero
+value-gate refusals, and the two banks came out indistinguishable on what the gate is for: declared
+values surviving the bank 16 of 17 in both, chunks losing at least one 1 of 12 in both, hidden-value
+carry 0 facts and 0 drafts in both. Everything else moved — 46 active facts and 1 344 tokens against
+47 and 1 401, the declared tool fact kept in 7 of 12 chunks against 8 of 12 — and none of that can be
+the gate's doing, because the gate never ran. Those are the writer's own run-to-run differences, the
+same variance the earlier arms were reported with.
+
+That was predictable from the re-fold, which is the useful part of this measurement: for
+`restraint4-base` and `restraint4-base-600` the shipped row and the value-carry row are identical
+(5 accepted, 7 refused, 0 declared values lost at merges, 47 facts, 1 401 tokens in both). Corpus 4
+has no merge where the wording rule passes and a value falls out — its declared losses come from the
+writer not banking a rule at all, not from a merge retiring one. So corpus 4 cannot price this gate,
+and running it cost ~250 s of model time to learn that.
+
+The arm that can discriminate is corpus 3, where the re-fold says the wording rule alone loses
+declared values: `restraint3-base` loses 3 at merges and `restraint3-actor` loses 6, with 5 and 11
+merges dropping a value, and the value gate refusing 2 and 4 of them. `restraint3-gate` is that run
+against `restraint3-base` on disk. Until it lands the default stays `false`: the re-fold says the rule
+holds values, and one inert run says nothing either way.
+
+### The gate replayed on a session nobody authored (2026-10-24)
+
+The corpora are authored, so a gate that never fires on them proves nothing. The author's own
+long session is the one organic bank here: 455 ledger records, 155 writes, and it reached
+`bankMaxTokens` (see TODO 6.18). It was still writing while it was read, so these counts are a
+snapshot; `dev/live-bank-report.ts --session <id>` re-reads them. Replaying its ledger through
+`guardUpdateOps` with the drafts held fixed — the same caveat every re-fold carries — prices the
+gate on it:
+
+| | gate off, as it ran | gate on |
+|---|---|---|
+| UPDATEs applied | 299 | 86 |
+| refused by the value gate | 0 | 213 |
+| applied merges that dropped a value the target carried | 253 | 0 |
+| values no current fact carries | 270 | 0 |
+| facts / tokens in the whole fold | 1 442 / 104 056 | 1 705 / 124 426 |
+| facts current inside the 60 000 ceiling | 821 | 813 |
+
+Two things this says that the corpora could not. **The gate is not rare in organic use:** it
+refuses 71 % of the merges the writer actually proposed, where corpus 4 gave it nothing to do and
+the ten-run fold gave it 41 %. Much of that is the value matcher being eager — the dropped tokens
+include fragments like `buffer_`, `s2a/s2b` and a line range `1296-1301` alongside real losses such
+as four embed domains and a `components/shared/` path — so a default-on gate would push most
+merges into ADDs.
+
+**And its cost is not the +20 % of tokens.** This session is at the ceiling, where extra facts do
+not add memory: they displace older ones. Inside 60 000 tokens the gate-on bank holds 813 facts
+against 821, so the price of holding those 270 values is eight facts the ceiling dropped instead
+— and a ceiling drop is now readable rather than lost.
+
+The severity of what it prevents also moved, because of the same day's reader fix. A value that
+"no current fact carries" is no longer unreachable: `hy_recall` now answers a query for a retired
+fact and marks it retired, subject to that query's rule that a retired fact is added only when it
+matches better than the weakest live fact and at most three of them per query (TODO 6.18). So the
+gate's claim is that it keeps values *current* — offered as the bank's live state, in the
+summary, and eligible as an UPDATE target — not that it keeps them *readable*. Any number in
+this section written before that fix would have overstated the loss as a deletion.
+
+Until `restraint3-gate` lands, the default stays `false`. The organic replay supports the
+direction, and it also shows the gate's blast radius is far wider than the corpora suggested.
+
+### The discriminating arm ran, and the gate fired on real drafts (2026-10-24)
+
+`restraint3-gate` is corpus 3 with `mergeValueGate: true`, against `restraint3-base` on the same
+corpus with it off: 22 of 22 chunks each, same pool, same candidate render.
+
+**It fired.** Two refusals, both recorded as ADDs, naming the values:
+
+- `hy-r3-r3d-k`: `target carries a value the draft does not restate (0640, audit.toml)` — a draft
+  about the audit file being 0750 merging into a fact carrying mode `0640` and `audit.toml`.
+- `hy-r3-nw-01`: `…(--wait, 130)` — a recap-only chunk ("only wanted to know the queue entry count")
+  merging into the fact that `tctl flush --wait` exited with code `130`.
+
+The second is the class the subject guard misses: the two statements share enough wording to pass
+`sameSubject`, and the merge retires a fact about an exit code that has nothing to do with the
+recap. The wording rule let it through in the gate-off arm; the value test refused it here.
+
+**What it cost and what it bought.** `restraint3-gate` banked 39 active facts / 805 tokens against
+`restraint3-base`'s 37 / 773 — two extra facts, +32 tokens (+4 %) — and repeat facts inside one
+chunk went 8 → 11, so part of that growth is duplication of a subject the merge would have folded.
+On the axis it exists for it bought nothing: declared values survived the bank 24 of 24 in **both**
+arms, chunks losing at least one declared value 0 of 12 in both. Reading the two refused merges in
+the gate-off bank shows why — `0640` and `audit.toml` are still carried there by a fact another
+chunk authored, as are `--wait` and `130`. The gate refused merges whose values the bank already
+held twice.
+
+Kept declared tool fact is 10/12 in both arms; "kept it and nothing else" 10/12 against 8/12, and
+actor-frame wording 12/39 against 15/37 — run-to-run movement, not the gate's doing.
+
+So the three readings now say three different things. Corpus 4: the gate never runs. Corpus 3: it
+runs on 2 of 9 merges, catches a wrong-subject merge the wording rule passes, and changes no value
+outcome because the corpus banks each value twice. The organic session: it refuses 211 of 290
+merges and holds 268 values nothing current carries. A corpus that repeats every declared value
+cannot price a gate whose whole job is not retiring the only carrier of one — which is why the
+organic replay, with its drafts already fixed in the ledger, is the arm that actually prices it,
+and why the default stays `false` until a corpus with single-carrier values exists.
