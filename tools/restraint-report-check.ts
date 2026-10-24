@@ -17,7 +17,7 @@
  *     never extracted at all — a dropped chunk is not abstention.
  */
 
-import { type CorpusChunk, carries, scoreRun, totals } from "../dev/restraint-report.js";
+import { actorFramedStatement, type CorpusChunk, carries, scoreRun, totals } from "../dev/restraint-report.js";
 import { newId } from "../src/bank.js";
 import type { LedgerRecord } from "../src/types.js";
 
@@ -232,8 +232,8 @@ const corpus: CorpusChunk[] = [
 	{
 		chunkId: "hy-x-tool-01",
 		class: "tool_output",
-		why: "nothing decided; help text states what a flag does",
-		probes: ["--dry-run"],
+		why: "nothing decided; help text states what a flag does, and the chunk declared a second value the bank never kept",
+		probes: ["--dry-run", "4096"],
 		transient: ["scrolling through the manual"],
 	},
 	{
@@ -737,6 +737,58 @@ assert(
 	`one banked fact authored by its own chunk carries neither a declared value nor declared chatter (06: the doctor describing itself), got ${t.toolNarrationFacts}`,
 );
 
+// Per-value coverage. 01 is the case no outcome column can see: it kept --dry-run, so it reads as a
+// clean fact-only keep, and its other declared value left the bank entirely. The other four losses
+// are chunks whose outcome already says nothing carrying a value reached the bank (02 kept chatter,
+// 04 withheld, 05 drafted-then-dropped, 06 banked something else) — the column agrees with those
+// outcomes instead of contradicting them, which is what makes the one it adds worth reading.
+assert(
+	byTool.get("hy-x-tool-01")!.probesKept.join(",") === "--dry-run" &&
+		byTool.get("hy-x-tool-01")!.probesLost.join(",") === "4096",
+	`tool-01: kept --dry-run and lost 4096, got kept=[${byTool.get("hy-x-tool-01")!.probesKept}] lost=[${byTool.get("hy-x-tool-01")!.probesLost}]`,
+);
+assert(
+	byTool.get("hy-x-tool-08")!.probesKept.join(",") === "MAX_QUEUE" &&
+		byTool.get("hy-x-tool-08")!.actorFramedFacts === 0,
+	`tool-08: its declared value survived the bank inside a fact 09 authored — coverage says the value is there, the authored column says who put it there, and the wording column credits neither to 08, got [${byTool.get("hy-x-tool-08")!.probesKept}]`,
+);
+assert(
+	t.toolProbesDeclared === 10 && t.toolProbesKept === 5 && t.toolChunksLostValue === 5,
+	`10 declared values across the nine chunks, 5 reached the bank, 5 chunks lost at least one, got ${t.toolProbesDeclared}/${t.toolProbesKept}/${t.toolChunksLostValue}`,
+);
+// Actor-frame wording: a statement opening with a person, or with the agent's own voice and its
+// subject left out. 07 is the pair the repeat column exists for — one copy is about the flag, the
+// other is about a user confirming the flag — and only the second is flagged.
+const w7 = byTool.get("hy-x-tool-07")!;
+assert(
+	w7.facts
+		.filter((f) => f.actorFramed)
+		.map((f) => f.statement)
+		.join("|") === "User confirmed --no-clobber is the flag for not overwriting.",
+	`tool-07: the confirmation copy is actor-frame wording, the flag copy is not, got ${w7.facts.map((f) => `${f.actorFramed ? "!" : " "}${f.statement}`).join(" | ")}`,
+);
+assert(
+	w7.actorFramedFacts === 1 && byTool.get("hy-x-tool-01")!.actorFramedFacts === 0,
+	"01 opens with the flag; 07 has one copy opening with a user",
+);
+assert(
+	byTool.get("hy-x-tool-02")!.facts[0].actorFramed === true &&
+		byTool.get("hy-x-tool-09")!.facts[0].actorFramed === false,
+	"02 banked a sentence about the user; 09 banked a sentence about a file",
+);
+assert(
+	actorFramedStatement("Opened the writer module: the staging file is settings.toml.tmp."),
+	"an agent-voice opener with its subject left out counts, so 'Ran tail -n 2 audit.log' counts too",
+);
+assert(
+	!actorFramedStatement("Snapshots are taken every 300 seconds per Ilse from the platform channel."),
+	"naming the source of a constraint is attribution, not actor-frame wording: the pattern flags generic person words, never names",
+);
+assert(
+	t.toolActorFramedAuthored === 3 && t.toolFactsAuthored === 7 && t.bankActorFramedFacts === 4,
+	`three of the seven facts authored in tool chunks open with a person or the agent (02's chatter, 03's module-opening, 07's confirmation), and the 23 active bank facts hold one more, from a pair chunk, got ${t.toolActorFramedAuthored}/${t.toolFactsAuthored}/${t.bankActorFramedFacts}`,
+);
+
 console.log(
-	`ok: unattributed vs attributed, draft gate vs bank gate, drafted-then-dropped, merge vs second fact, supersede chains two hops long and one that lost the claim, the paraphrase blind spot, all four empty outcomes, and every tool_output branch (fact, chatter, both, neither, withheld, drafted-but-not-banked), and a value banked twice that every other column reads as clean, and a fact credited to a chunk that did not author it`,
+	`ok: unattributed vs attributed, draft gate vs bank gate, drafted-then-dropped, merge vs second fact, supersede chains two hops long and one that lost the claim, the paraphrase blind spot, all four empty outcomes, and every tool_output branch (fact, chatter, both, neither, withheld, drafted-but-not-banked), a value banked twice that every other column reads as clean, a fact credited to a chunk that did not author it, a chunk that kept one declared value and lost another, and which banked statements open with a person or the agent's own voice`,
 );

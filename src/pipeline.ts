@@ -114,6 +114,15 @@ export async function writeChunk(
 		 * settled by the first run.
 		 */
 		bankIndex?: boolean | { maxTokens?: number };
+		/**
+		 * Experiment only, off by default and never set by the extension: replace the extract
+		 * system prompt with a variant, so a prompt-text change can be measured against the
+		 * same corpora and the same scorer before anything on the shipped path moves. The
+		 * variant is compared clause by clause against the shipped one by
+		 * `tools/extract-prompt-check.ts`, which also pins that the flagless request is
+		 * byte-identical to the one every published baseline ran on.
+		 */
+		extractSystem?: string;
 		rawDir?: string;
 		/**
 		 * Drafts from an extract call that already succeeded on this same window
@@ -173,10 +182,13 @@ export async function writeChunk(
 		const extractContent = bankIndex?.block
 			? `${bankIndex.block}\n${BANK_INDEX_CLAUSE}\n\n${chunk.text}`
 			: chunk.text;
+		// Undefined in every shipped path: the variant exists so a prompt-text change is
+		// measured before it replaces anything the writer actually sees.
+		const extractSystem = options.extractSystem ?? EXTRACT_SYSTEM;
 		const extract = await completeWithFallback(
 			primary,
 			options.fallback ?? null,
-			EXTRACT_SYSTEM,
+			extractSystem,
 			extractContent,
 			`extract ${chunkId}`,
 			{
@@ -200,7 +212,7 @@ export async function writeChunk(
 			const retry = await completeWithFallback(
 				primary,
 				options.fallback ?? null,
-				EXTRACT_SYSTEM,
+				extractSystem,
 				`${extractContent}${retryNote(error)}`,
 				`extract ${chunkId} (json retry)`,
 				{ preferFallback: options.preferFallback },

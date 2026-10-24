@@ -3,6 +3,7 @@
  *
  *   npx tsx dev/run.ts --run <runId> [--corpus FILE] [--pool 12000]
  *       [--candidate-render-mode union|perDraft] [--candidate-limit 12]
+ *       [--bank-index [--bank-index-tokens N]] [--extract-prompt actorframe]
  *
  * Writer route resolution, in order:
  *   1. POC_ORIGIN / POC_KEY / POC_MODEL (same convention as poc.ts);
@@ -34,6 +35,7 @@ import { renderMemory } from "../src/render.js";
 import type { SerializedChunk } from "../src/serialize.js";
 import { rolesFromText } from "../src/serialize.js";
 import type { BankEntry, Draft, LedgerRecord } from "../src/types.js";
+import { ACTOR_FRAME_EXTRACT_SYSTEM } from "./prompts-actorframe.js";
 import { rawWriter } from "./raw-writer.js";
 
 type Row = Record<string, any>;
@@ -150,6 +152,15 @@ async function main(): Promise<void> {
 	// Off unless the flag is given, so every published baseline stays the flagless path.
 	const bankIndex = process.argv.includes("--bank-index");
 	const bankIndexTokens = numArg("--bank-index-tokens", 600);
+	// Experiment arm: replace the extract prompt with a named variant. No variant name means
+	// the shipped prompt, so a published baseline is never re-run by accident.
+	const extractPromptName = arg("--extract-prompt", "");
+	const extractPrompts: Record<string, string> = { actorframe: ACTOR_FRAME_EXTRACT_SYSTEM };
+	const extractSystem = extractPromptName ? extractPrompts[extractPromptName] : undefined;
+	if (extractPromptName && !extractSystem) {
+		console.error(`--extract-prompt ${extractPromptName}: no such variant`);
+		process.exit(1);
+	}
 	const route = process.env.POC_ORIGIN
 		? { origin: process.env.POC_ORIGIN, apiKey: process.env.POC_KEY, model: modelSpec }
 		: await resolveRoute(modelSpec);
@@ -260,7 +271,7 @@ async function main(): Promise<void> {
 		prefix.push(r);
 	}
 	console.log(
-		`run=${runId} model=${route.model} origin=${route.origin} temp=0 kwargs=none timeout=600s candidates=${renderMode} limit=${candidateLimit}${bankIndex ? ` bank-index=${bankIndexTokens}t` : ""}`,
+		`run=${runId} model=${route.model} origin=${route.origin} temp=0 kwargs=none timeout=600s candidates=${renderMode} limit=${candidateLimit}${bankIndex ? ` bank-index=${bankIndexTokens}t` : ""}${extractPromptName ? ` extract-prompt=${extractPromptName}` : ""}`,
 	);
 	console.log(
 		`corpus=${corpus.length} chunks, ledger has ${doneChunk.size} complete, ${extractOf.size - doneChunk.size} resumable`,
@@ -301,6 +312,7 @@ async function main(): Promise<void> {
 					candidateRenderMode: renderMode,
 					candidateLimit,
 					bankIndex: bankIndex ? { maxTokens: bankIndexTokens } : undefined,
+					extractSystem,
 					resume: resumeFrom
 						? {
 								drafts: resumeFrom.drafts as Draft[],

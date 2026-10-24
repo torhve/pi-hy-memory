@@ -1325,3 +1325,161 @@ a value, and two facts credited to a chunk that did not author them.
 and a suppression guard aimed at narration would not have touched it. Measure first whether reconcile merges
 two drafts that carry the same declared value, and add the missing control — tool chunks whose chatter is
 declared and whose durable content is none — before writing any rule for the class.
+
+## Run: the actor-frame extract prompt, scored against the published baseline (2026-10-23)
+
+`restraint3-actor` differs from `restraint3-base` in one thing. Same 22-chunk corpus, same pool
+(12 000), same per-draft candidate rendering at limit 12, same temperature 0, same writer route: the
+extract call goes through `dev/prompts-actorframe.ts`, which is the shipped prompt plus the three clauses
+upstream Hy-Memory puts at the top of its own coding extract prompt — a statement's subject is the code,
+the command, the config or the decision and never a person or the agent; restraint as spending the same
+budget on what was actually executed rather than abstaining; and evidence fidelity (executed commands
+only, customary flags never invented). The arm is pinned additive and extract-only by
+`tools/extract-prompt-check.ts`; `src/index.ts` never sets it.
+
+**The arm is not free.** Its prompt is 1 784 characters longer, and the price is exactly that: 389
+tokens on every single extract call, measured per chunk and identical across all 22. The baseline spent
+about 391 input tokens per extract, so the arm's call is more than twice the size — 8 598 tokens against
+17 156 across the 22 chunks — while extract output barely moved, 2 690 → 2 822.
+Reconcile input *fell* (14 425 → 13 320) because the bank it reads is smaller. Wall time is not
+comparable: 84 s against 47 s, and 42 s of the baseline's total is the first call after the route went cold.
+
+### The two runs, side by side
+
+Same scorer, same gate, `dev/restraint-report.ts`. Counts are the number; percentages are orientation.
+
+| the 12 `tool_output` chunks | shipped prompt | actor-frame arm |
+|---|---|---|
+| the declared value reached the bank | 10/12 | 12/12 |
+| …and nothing else reached it | 8/12 | 5/12 |
+| declared chatter banked beside the value | 2 | 0 |
+| declared values survived, counted per value | 24/24 | 23/24 |
+| chunks that lost a declared value | 0/12 | 1/12 |
+| one value banked twice from one chunk | 8 chunks, 8 repeat facts | 5 chunks, 6 repeat facts |
+| exactly one authored fact, carrying the value | 2/12 | 4/12 |
+| facts authored here / carried in by a later merge | 22 / 2 | 21 / 4 |
+| facts carrying neither declared half | 1 | 3 |
+| statements opening with a person or the agent | 10 of 22 authored here, 15 of 37 in the bank | 4 of 21 authored here, 5 of 35 in the bank |
+| bank at the end | 37 active facts, 773 tokens | 35 active facts, 726 tokens |
+| ops | ADD 37 UPDATE 7 SKIP 0 | ADD 35 UPDATE 9 SKIP 2 |
+
+The arm's headline is the last two rows and the wording row: the bank it leaves is smaller and its
+sentences are about things. Restraint on the attribution pairs is **unchanged** — recall 4/4, restraint
+strict 0/4 withheld, attributed-ok 4/4, bank gate 3/4, paraphrase suspects 1/4, facts across the four
+pairs 7 in both runs — so the borrowed clauses neither damaged the relayed-claim handling nor improved
+it. The `nothing-durable` axis is unchanged too: 0/2 abstained in both runs, 4 facts banked from those
+chunks against 3.
+
+### What the arm changed, sentence by sentence
+
+The clauses target wording, and wording is what moved. Shipped prompt, then arm:
+
+- `hy-r3-to-11`: "Ran tail -n 2 audit.log; last line showed 'info: pass complete in 6.2 s' meaning last
+  pass finished normally in 6.2 seconds." → "tail -n 2 audit.log shows 'info: pass complete in 6.2 s';
+  last pass finished normally in 6.2 s".
+- `hy-r3-to-12`: "The help text for the preview flag states: --dry-run prints the diff and writes
+  nothing." → "tctl apply --help shows --dry-run prints the diff and writes nothing."
+- `hy-r3-to-07`: "The state/ folder contains audit.db, which is 32768 bytes and stamped 14:02." →
+  "ls -l state/ returned audit.db (32768 bytes, stamped 14:02)."
+- `hy-r3-to-04`, the case 7.13 could only report as noise: "User instructed to leave the drain lock
+  (pid 4412) for now; Assistant confirmed leaving it." → "Drain lock (pid 4412) to be left for now;
+  releasing it is out of scope for now." The constraint survives as the constraint, which is exactly what
+  upstream prescribes, and it is the one of the arm's three neither-half facts that is not a defect.
+- `hy-r3-to-08`, a fact a later merge carried in: "Audit file mode should be 0750, keeping it
+  group-readable (left at 0750)." → "Audit file must stay group-readable per Marn from infra; mode 0750
+  matches this requirement." The constraint now travels with the person who stated it, which is the
+  opposite of what the attribution cut found happening to relayed claims.
+
+Naming a source and making a person the subject are different acts, and the run separates them: across
+the whole bank, statements opening with a person or the agent's own voice fall 15/37 → 5/35, while every
+named-source fact survives (4/4 recall, attributed-ok 4/4). The arm writes "Jori on ops channel stated
+purge only touches the queue directory; …" and "Snapshots are taken every 300 seconds per Ilse from the
+platform channel; HY_SNAPSHOT_INTERVAL=300 configured matches." where the shipped prompt wrote "User
+confirmed setting HY_SNAPSHOT_INTERVAL to 300 and keeping it at 300." Actor frame and attribution are not
+in conflict, and this is the first measurement that shows it rather than assumes it.
+
+**SKIP was reached for, twice, both times at the bank gate.** `hy-r3-to-06`: `SKIP draft 0, reason
+"restates only release line request, not durable"` — the shipped prompt banked that request as a fact.
+`hy-r3-nw-02`: `SKIP draft 1, reason "recap only no change"`, and the same chunk had two ops rejected for
+reusing one draft. The baseline run never used SKIP, and neither run withheld at the draft gate: 0/4
+restraint pairs withheld, 0/2 nothing-durable chunks abstained, in both. The withhold vocabulary appears
+in the second call, not the first — which is where the protocol already has the authority for it.
+
+### What it cost, and where the instrument had to change to see it
+
+`hy-r3-to-01` is the run's worst result, and the outcome column cannot see it: the row reads
+`kept-fact` because *a* declared value is present. The arm did not write a worse fact here — it wrote the
+best one in the corpus, and the bank gate then destroyed it.
+
+| | shipped prompt | actor-frame arm |
+|---|---|---|
+| what chunk 1 drafted and banked | "The --purge-age flag drops queue entries older than n seconds, found on line 63 of manual.txt via grep for 'age'." — and a second copy of the same value banked alongside it | "--purge-age <n> drops queue entries older than n seconds (line 63 in manual.txt)" — thing as subject, flag behaviour and coordinate intact, with the chatter half banked beside it |
+| what the bank holds two chunks later | both copies still active | that entry superseded, and its replacement superseded again at chunk 10 by a draft about a different command's exit code |
+| the surviving record of the age flag | the flag, its behaviour, and line 63 | "User read manual for a few minutes to find the age flag (--purge-age)." |
+
+The deletion is an op the model asked for: at chunk 2, `UPDATE` on draft 1 targeted chunk 1's flag entry,
+with the writer's own reason "confirm 420s expiration unless pinned, aligns with purge-age docs". An UPDATE
+replaces the entry whole, so the flag name, what it does and the line it was found on left the bank in one
+op. `line 63` is this run's only lost declared value.
+
+What the reason string shows is the mechanism: the draft shared a *subject* with the entry it merged into —
+queue entries — and that was taken as identity of *value*. The subject guard ran on this op and passed it:
+4 of the target's 10 subject tokens matched (`queue`, `entries`, `seconds`, `line`). The six it did not
+share were the ones that made the entry about the flag at all — `purge-age`, `flag`, `documentation`,
+`drops`, `older`, `manual.txt`. The guard fires often, and it fires in both directions: the baseline
+recorded 6 attempted UPDATEs it downgraded to ADD for exactly this reason, while in the arm only 1 of its
+2 downgrades was the subject test and the other was a target never retrieved for that draft.
+The baseline banked the flag twice and lost nothing in the same chunk, which is the other half of one
+defect: reconcile is safe when it refuses to merge, and it is the merge that costs. This is the
+secondary-fact loss the protocol already names as the reason an UPDATE must restate everything still true,
+caught in a bank for the first time — and it chained: the replacement entry was itself superseded two
+chunks later by a draft about a different command's exit code.
+
+Two instrument changes followed, both reported columns and neither a gate, each pinned by a fixture in
+`tools/restraint-report-check.ts`:
+
+- **declared values counted per value.** A chunk can keep one declared value and lose another, and the
+  outcome column cannot tell. The fixture chunk now declares `--dry-run` *and* `4096`, banks a fact
+  carrying only the first, and asserts `kept=[--dry-run] lost=[4096]` — alongside the four fixture
+  chunks whose outcome already says nothing carrying a value arrived, so the column agrees with them
+  instead of contradicting them. This is what turns "`line 63` is gone" from something I noticed by
+  reading into something the report prints.
+- **which statements open with a person or the agent.** A pattern over the opening of a statement:
+  `User confirmed …`, `Ran tail -n 2 …`, `Opened the writer module …` count; `--dry-run prints the diff
+  and writes nothing` and `Snapshots are taken every 300 seconds per Ilse from the platform channel` do
+  not, because naming the source of a constraint is attribution and not actor frame. The fixture pins
+  both halves of `hy-x-tool-07`, where the same value is banked once about the flag and once about a user
+  confirming the flag, and only the second is flagged.
+
+The pattern is a floor, not a measurement: it reads the opening of a sentence, so a person-framed clause
+buried mid-sentence passes it. It is usable for comparing two prompts over one corpus precisely because
+every fact it names is one a reader would flag, and not because it finds them all.
+
+### What this comparison does not settle
+
+- **The narration column and the actor-frame column are not the same column.** Facts carrying neither
+  declared half went 1 → 3, and one of the three is the drain-lock constraint surviving in thing frame.
+  A correctly reworded constraint reads as a new failure to the scorer because the corpus declares
+  nothing durable in that chunk. That is a named gap in the `tool_output` label: the class has no label
+  for "a constraint the user stated that should survive", which is the shape upstream's prompt is trying
+  to produce, so counts on that column are not yet counts of anything.
+- **Chatter matching is literal, and the arm paraphrases.** `hy-r3-to-01`'s declared transient is
+  "reading the manual for a few minutes"; the arm banked "User read manual for a few minutes…", which the
+  anchor does not match, so the run reports `fact and chatter 0` for that chunk. The improvement from 2 to
+  0 on that column is real only for `hy-r3-to-06`, where the chatter half was actually skipped, and partly
+  an artefact for `hy-r3-to-01`.
+- **Retrieval is not held constant.** The two runs bank different facts, and candidates are retrieved
+  from what is already banked: the arm's drafts were shown 61 candidates against the baseline's 92, and 11
+  of its 46 drafts retrieved nothing against 6 of 44. Bank-shape differences are partly a consequence of
+  wording differences, not a second independent effect.
+- One run per arm, one model, temperature 0, no repeat runs, no judge verdicts (the judge endpoint was
+  unreachable all day). Reproducible, not general.
+
+**Decision: the shipped prompt does not move.** The arm is kept as a dev-only option because the axis it
+improves is real and measured, and the axis it damages is now visible rather than inferred: a smaller bank
+(37 facts / 773 tokens → 35 / 726), fewer repeats (8 chunks → 5), sentences about things (15/37 → 5/35),
+SKIP used for the first time — against one chunk where the value's meaning and its coordinate left the
+bank, three banked facts carrying neither declared half, and an extract call that costs twice the tokens.
+The gate for promotion is not "the wording looks better": it is a corpus that labels the two things this
+run showed we cannot yet tell apart — a user-stated constraint worth keeping, and chatter with nothing
+under it — measured on the same scorer.

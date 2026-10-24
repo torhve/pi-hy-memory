@@ -128,7 +128,17 @@ export interface ToolRow {
 		chatter: string | null;
 		repeat: boolean;
 		authoredHere: boolean;
+		keys: string[];
+		/** Wording only: does this statement open with a person or with the agent's own voice.
+		 * Reported, never scored — see `actorFramedStatement` above the scoring section. */
+		actorFramed: boolean;
 	}[];
+	/** Declared values that reached the bank from this chunk, and the ones that did not: a chunk can
+	 * keep *a* declared value and still lose another one, which the per-chunk outcome cannot see. */
+	probesKept: string[];
+	probesLost: string[];
+	/** Facts this chunk authored whose wording is about a person or the agent rather than the thing. */
+	actorFramedFacts: number;
 	/**
 	 * A declared value banked more than once from the same chunk. A restatement in an actor frame
 	 * ("User confirmed the flag is…") carries the value, so `facts` alone counts it as a kept fact
@@ -169,11 +179,37 @@ export interface RunScore {
 	empties: EmptyRow[];
 	tools: ToolRow[];
 	activeFacts: number;
+	/** Active bank facts whose wording opens with a person or the agent's own voice — wording-shaped,
+	 * reported for comparing two prompts over one corpus, never a gate. */
+	bankActorFramedFacts: number;
 	opTotals: Map<string, number>;
 }
 
 /** Split-chunk arms write `hy-…-001.1` and `…001.2` over one corpus chunk: fold them together. */
 const base = (chunkId: string): string => chunkId.replace(/\.\d+$/, "");
+
+/** A claim survives paraphrase as a token, not as a sentence: match the anchor as a whole token.
+ * A flag-shaped token needs a boundary that does not assume a word character on its outside — a `\b`
+ * in front of `--dry-run` matches nothing — while an ordinary token keeps `\b`, which is the boundary
+ * every earlier score in this repo was computed with. */
+/**
+ * Wording-shaped, reported, never scored. Upstream's coding prompt bans one thing a regular
+ * expression can actually see: "its grammatical subject is never a person and never the agent".
+ * This asks only whether a banked statement *opens* that way.
+ *
+ * A floor, not a measurement: "the drain lock stays held; the user asked for it" passes it, and so
+ * does a person-framed sentence that opens with the value. What it does guarantee is that every
+ * fact it names is one a reader would flag, which is what makes it usable for comparing two
+ * prompts over one corpus instead of as a gate.
+ */
+const OPENS_WITH_PERSON = /^(the\s+)?(user|assistant|operator|the agent|the model|i|we|they)\b/i;
+const OPENS_WITH_AGENT_VOICE =
+	/^(ran|checked|found|noted|verified|confirmed|made|did|updated|fixed|showed|told|gave|opened|read|used|tried|looked|pulled)\b/i;
+
+export function actorFramedStatement(statement: string): boolean {
+	const s = statement.trim();
+	return OPENS_WITH_PERSON.test(s) || OPENS_WITH_AGENT_VOICE.test(s);
+}
 
 /** A claim survives paraphrase as a token, not as a sentence: match the anchor as a whole token.
  * A flag-shaped token needs a boundary that does not assume a word character on its outside — a `\b`
@@ -512,13 +548,14 @@ export function scoreRun(chunks: CorpusChunk[], ledger: LedgerRecord[]): RunScor
 					// The chain reaches this chunk when a fact authored here was later absorbed into a
 					// fact authored elsewhere, so a fact in this list is not always one this chunk banked.
 					authoredHere: base(e.chunkId) === base(chunk.chunkId),
+					keys: e.keys ?? [],
+					actorFramed: actorFramedStatement(e.statement),
 				};
 			});
 		// A declared value can be banked more than once from one chunk: a restatement in an
 		// actor frame ("User confirmed the flag is…") still carries the value, so the columns
 		// above call it a kept fact. Mark the second copy and count the repeats separately —
 		// counting only facts this chunk authored, since a value reaching the bank once per
-		// chunk across several chunks is the cross-chunk duplication `bankDuplicated` already covers.
 		const valueUses = new Map<string, number>();
 		for (const f of facts) {
 			if (!f.probe || !f.authoredHere) continue;
@@ -530,6 +567,13 @@ export function scoreRun(chunks: CorpusChunk[], ledger: LedgerRecord[]): RunScor
 		const duplicateValueFacts = [...valueUses.values()].reduce((n, k) => n + Math.max(0, k - 1), 0);
 		const factsCarriedIn = facts.filter((f) => !f.authoredHere).length;
 		const authored = facts.filter((f) => f.authoredHere);
+		// Counted per declared value and not per chunk, because a chunk can keep one declared value
+		// and drop another while the outcome line still reads `kept-fact`.
+		const probesKept = probes.filter((p) =>
+			facts.some((f) => carries(p, textOf({ task: f.task, statement: f.statement, keys: f.keys }))),
+		);
+		const probesLost = probes.filter((p) => !probesKept.includes(p));
+		const actorFramedFacts = authored.filter((f) => f.actorFramed).length;
 		const factsValue = authored.filter((f) => f.probe !== null && !f.repeat).length;
 		const factsRepeat = authored.filter((f) => f.repeat).length;
 		const factsChatter = authored.filter((f) => f.probe === null && f.chatter !== null).length;
@@ -569,11 +613,21 @@ export function scoreRun(chunks: CorpusChunk[], ledger: LedgerRecord[]): RunScor
 			factsNeither,
 			factsCarriedIn,
 			singleCleanFact,
+			probesKept,
+			probesLost,
+			actorFramedFacts,
 			outcome,
 		};
 	});
 
-	return { pairs: pairRows, empties: emptyRows, tools: toolRows, activeFacts: bank.length, opTotals };
+	return {
+		pairs: pairRows,
+		empties: emptyRows,
+		tools: toolRows,
+		activeFacts: bank.length,
+		bankActorFramedFacts: bank.filter((e) => actorFramedStatement(e.statement)).length,
+		opTotals,
+	};
 }
 
 export interface Totals {
@@ -633,6 +687,18 @@ export interface Totals {
 	/** Banked facts whose supersede chain passes through the chunk but were authored in another chunk —
 	 * a later merge absorbed this chunk's fact into a fact written somewhere else. */
 	toolFactsCarriedIn: number;
+	/** Declared values counted per value and not per chunk: keeping one declared value while dropping
+	 * another still reads `kept-fact` in the outcome column, so the loss needs its own line. */
+	toolProbesDeclared: number;
+	toolProbesKept: number;
+	toolChunksLostValue: number;
+	/** Facts authored in these chunks whose wording opens with a person or the agent's own voice, over
+	 * all facts authored there, plus the same pattern across the whole active bank. Wording-shaped
+	 * floor, reported for comparing two prompts over one corpus, never a gate. */
+	toolActorFramedAuthored: number;
+	toolFactsAuthored: number;
+	bankActorFramedFacts: number;
+	bankFacts: number;
 }
 
 export function totals(score: RunScore): Totals {
@@ -675,6 +741,13 @@ export function totals(score: RunScore): Totals {
 		toolSingleCleanChunks: score.tools.filter((c) => c.singleCleanFact).length,
 		toolNarrationFacts: score.tools.reduce((n, c) => n + c.factsNeither, 0),
 		toolFactsCarriedIn: score.tools.reduce((n, c) => n + c.factsCarriedIn, 0),
+		toolProbesDeclared: score.tools.reduce((n, c) => n + c.probes.length, 0),
+		toolProbesKept: score.tools.reduce((n, c) => n + c.probesKept.length, 0),
+		toolChunksLostValue: score.tools.filter((c) => c.probesLost.length > 0).length,
+		toolActorFramedAuthored: score.tools.reduce((n, c) => n + c.actorFramedFacts, 0),
+		toolFactsAuthored: score.tools.reduce((n, c) => n + (c.facts.length - c.factsCarriedIn), 0),
+		bankActorFramedFacts: score.bankActorFramedFacts,
+		bankFacts: score.activeFacts,
 	};
 }
 
@@ -804,6 +877,12 @@ function main(): void {
 			console.log(
 				`  banked exactly one fact, and it carried the value: ${t.toolSingleCleanChunks}/${t.toolChunks} chunks  ${pct(t.toolSingleCleanChunks, t.toolChunks)}   facts this chunk authored: ${t.toolFactsBanked - t.toolFactsCarriedIn}, carried in by a later merge: ${t.toolFactsCarriedIn}   narration facts this chunk banked beside a value: ${t.toolNarrationFacts}   narrower than the stricter reading above: one fact can carry the value and the chatter at once`,
 			);
+			console.log(
+				`  declared values counted per value and not per chunk: ${t.toolProbesKept}/${t.toolProbesDeclared} survived the bank; chunks that lost at least one declared value: ${t.toolChunksLostValue}/${t.toolChunks}`,
+			);
+			console.log(
+				`  actor-frame wording — a statement opening with a person or with the agent's own voice: ${t.toolActorFramedAuthored}/${t.toolFactsAuthored} facts authored in these chunks, ${t.bankActorFramedFacts}/${t.bankFacts} across the whole active bank. Wording-shaped floor, reported, never scored: it reads how a statement opens, so a person-framed clause buried mid-sentence passes it.`,
+			);
 			console.log("\nwhat each tool_output chunk kept:");
 			for (const c of score.tools) {
 				for (const f of c.facts) {
@@ -816,8 +895,15 @@ function main(): void {
 							: f.chatter
 								? "chatter"
 								: "neither";
-					console.log(`  ${c.chunkId.padEnd(20)} ${tag.padEnd(9)} ${f.task} | ${f.statement.slice(0, 120)}`);
+					const marker = f.actorFramed ? "  [person or agent as subject]" : "";
+					console.log(
+						`  ${c.chunkId.padEnd(20)} ${tag.padEnd(9)} ${f.task} | ${f.statement.slice(0, 120)}${marker}`,
+					);
 				}
+				if (c.probesLost.length > 0)
+					console.log(
+						`  ${c.chunkId.padEnd(20)} ${"lost values".padEnd(9)} ${c.probesLost.join(", ")}   declared values this chunk banked and the bank did not keep`,
+					);
 			}
 		}
 

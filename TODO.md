@@ -317,6 +317,62 @@ gate.
       worth keeping. That control chunk class has to exist before the narration claim can be settled. The
       soft axis for `restraint3-base` is unmeasured (the judge endpoint was unreachable); no claim rests on
       it.
+- [x] 7.15 **Read the harness instead of inferring it from the paper** (done 2026-10-23). The
+      coding module of the upstream repo was read at file level at `main`
+      `6b0bd866798049940c752c402512bb0e16c98a2b` — `extractor.py`, `preproc.py`, `writer_coding.py`,
+      `reconciler_coding.py`, `fact_reconciler_coding.py`, `store.py`, `types.py`, the module's own
+      tests, `docs/scene-coding.md` — and DESIGN.md now carries a dated *The harness as shipped*
+      section plus a divergence table. Four things this session had left blind, answered:
+      **extraction rate** — upstream's coding prompt *mandates* at least one experience ("MANDATORY:
+      You MUST output at least ONE experience. Do NOT return an empty list.") while its working
+      prompt was softened to "DEFAULT TO EXTRACTING" plus one named exception, because the
+      unconditional mandate had been "the direct cause of fabricated experiences" and a stall
+      distilled into an experience reproduces itself; our prompt sits on the permissive side and
+      measures 0/8 withheld, so the disagreement is now on the record rather than assumed.
+      **actor frame** — upstream's coding prompt opens with a hard constraint that the grammatical
+      subject of a statement is the code or the decision, never the user and never the agent, with
+      no bookkeeping closers, and frames restraint as *budget reallocation* rather than abstention;
+      that is the exact class our `tool_output` numbers count. **over-storage** — their durability
+      bar lives in the schema, not the answer: exactly one session fact per write with no
+      threshold, 0–N experiences that must pass a value threshold; their fact reconciler offers only
+      INSERT and SUPERSEDE and says storing the fact "is not your decision". **quote-side truth** —
+      they keep a summary surface (`subject: statement`, embedded) and a verbatim surface (`details`,
+      copied from uncompressed messages by code, never by model transcription, deliberately not
+      embedded and not injected on read), which is the structural answer to the problem our repeats
+      circle: in a bank with a verbatim surface, restating a value is not how the value survives.
+      Also on the record: their tool-args window is 600 chars and was raised from 80 because 80 cut
+      real flags, with a regression test asserting a late `-Depth 3` survives the prompt — ours is
+      240 chars with no omission marker. Three DESIGN.md claims were wrong and are corrected in
+      place: the schema is ours and not the model's (no upstream `keys`, no upstream positional
+      `refs`); the confidence field exists in their experience layer and not their fact layer; the
+      ADD/UPDATE/DELETE vocabulary is their experience reconciler's, not the fact layer's. Caveat
+      carried in the doc: shipped `main` is not the training distribution, and `main` moved twice in
+      the fortnight before the read, so every name in that section is as-read on that date.
+- [x] 7.16 **The arm 7.15 implies, scored** (done 2026-10-23). `restraint3-actor` is `restraint3-base`
+      with `--extract-prompt actorframe` and nothing else changed. It moves wording and it costs a durable
+      value. Statements opening with a person or with the agent's own voice fall 15/37 → 5/35 across the
+      bank (10/22 → 4/21 among facts authored in the 12 `tool_output` chunks); declared chatter banked
+      beside a value falls 2 → 0; one value banked twice falls 8 chunks → 5; the bank ends smaller
+      (37 active facts / 773 tokens → 35 / 726); SKIP was reached for twice, both times on the
+      not-durable half, and both at the bank gate — the first use of the withhold vocabulary in this
+      corpus family, while neither run withheld at the draft gate (restraint strict 0/4) or abstained on a
+      `nothing-durable` chunk (0/2). What it cost: `hy-r3-to-01` kept the flag name and lost what the flag
+      does and the line it was found on, and the replacement sentence is itself actor-framed ("User read
+      manual for a few minutes to find the age flag"). Attribution is untouched — 4/4 recall, 0/4 strict,
+      4/4 attributed-ok, 3/4 bank gate, identical in both arms. Not shipped; the arm stays dev-only and
+      the shipped prompt does not move. EXPERIMENTS.md carries the comparison, the sentence-by-sentence
+      pairs, and the two instrument gaps the comparison exposed.
+- [ ] 7.17 The two labels the `tool_output` class is missing, which 7.16 made impossible to score around.
+      Banked facts carrying neither declared half went 1 → 3 under the arm, and one of the three is a
+      user-stated constraint surviving as a constraint — the shape upstream's prompt aims at, filed by the
+      scorer as narration because the chunk declares nothing durable there. And the arm paraphrases declared
+      chatter ("read manual for a few minutes" against the declared "reading the manual for a few minutes"),
+      which a literal anchor misses, so "chatter banked 2 → 0" is part measurement and part artefact. Both
+      need to exist in the corpus before either arm can be promoted: tool chunks where the user states a
+      constraint that should survive as a constraint, and tool chunks with declared chatter and no durable
+      content at all — the control 7.13 says the class lacks. Then re-measure both arms against it. Still
+      open from 7.14: whether reconcile merges two drafts carrying the same declared value, which the arm's
+      two SKIPs hint at without answering.
 ## Notes
 
 - Writer route: primary `remote/hy-memory-30b-a3b`, measured in this session on a 10.9 k-token
