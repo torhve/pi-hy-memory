@@ -163,14 +163,22 @@ pulled up queue module to see where a write lands (src/queue.rs)", carrying neit
 rate, and it does not by itself say whether the arm's "chatter banked 2 → 0" was a gain or a rewording:
 corpus 4 is what that measurement needs.
 
-Then re-measure both arms against corpus 4 with the existing scorer, and `dev/merge-report.ts` on top:
-`restraint4-base` and `restraint4-actor`. Estimated ~15–20 min each on the current writer route —
-**provisional**, taken from corpus-3 runs, and to be replaced by the measured wall time once the first
-arm finishes. Run them as background tasks.
+Both arms then ran against corpus 4 through the same scorer with `dev/merge-report.ts` and
+`dev/session-scope-report.ts` on top: `restraint4-base` and `restraint4-actor`, 22 of 22 chunks each, 340.6 s
+and 358.1 s of per-chunk model wall, which replaces the ~15–20 min figure with a measurement.
 
 **Gate before any promotion decision:** the arm must keep its wording gain (statements opening with
 a person or the agent's own voice, 15/37 → 5/35) **and** stop losing a declared value, on the labeled
 class. If it keeps the wording gain and still costs a value, the arm stays dev-only permanently.
+
+**The gate's outcome on corpus 4.** The wording gain did not follow the arm into the labeled corpus — both
+arms kept the declared tool fact 8 times out of 12, against 10/12 and 12/12 on corpus 3 — and the arm still
+cost a value: one executed UPDATE dropped `night.toml` where the shipped arm's four dropped nothing, and it
+duplicated more (6/12 chunks and 7 facts against 5/12 and 5). By the gate's own terms the arm is not
+promoted on this evidence — one run per arm against 22 authored chunks, with several label changes landing
+at once, so a settled rejection would need a replicate or an ablation.
+What did move is the wording axis alone: bank-wide statements opening with a person or with the agent's own
+voice fell from 16 of 48 to 12 of 47. The numbers and their reading are in `EXPERIMENTS.md`.
 
 ## Tier 4 — Clipping: test survival to the final bank, and fix the doc row first
 
@@ -257,17 +265,17 @@ that trigger.
 |---|---|---|---|
 | 1 verbatim recoverability | ledgers + corpora on disk | offline, minutes | 7.18's structural option, for or against |
 | 2 guard priced incl. off | same ledgers; optional 8–12 chunk labeled arm | offline, minutes; +minutes if the arm runs | 7.18's tightening option, and the third option |
-| 3 the two missing labels | new corpus chunks | ~1 h authoring + two 15–20 min runs | the actor-frame promotion decision (7.16/7.17) |
+| 3 the two missing labels | new corpus chunks | ran: ~1 h authoring + two runs, 340.6 s and 358.1 s of model wall | the actor-frame promotion decision (7.16/7.17), answered against promoting |
 | 4 clipping survival | fixture, then one small run | ~30 min offline + one short run | whether our 240-char silent cut costs values, and a DESIGN.md fix |
 | 5 mandated extraction | support contract first | blocked until the contract is written | whether our permissiveness is actually the safer bet |
-| 6a session scope | synthetic bank scenario | ~30 min offline | whether destructive authority needs fencing at all |
+| 6a session scope | synthetic bank scenario, plus a classifier over every ledger | ~30 min offline, ran | whether destructive authority needs fencing at all — there is no fence, and 5 refused cross-session proposals show the request being made |
 | 6b memory unit | — | parked | re-entry trigger recorded |
 
 Tiers 1, 2, 4's fixture and 6a touch no `src/`. Tier 3 and tier 4's run cost model calls on the
-existing writer route (extract ≈ 232 s was measured on a 10.9 k-token chunk; these corpora are
-small-chunk, so the 15–20 min figure per arm is an estimate carried over from corpus 3, to be replaced
-by the first measured wall time) and should run as background tasks. No corpus contains hostnames, absolute
-home-directory paths, or credential-shaped strings; `out/` and `captures-dev/` stay gitignored.
+existing writer route (extract ≈ 232 s was measured on a 10.9 k-token chunk; corpus 4's two arms measured
+340.6 s and 358.1 s of per-chunk model wall over 22 small chunks, run as background tasks) and should run as
+background tasks. No corpus contains hostnames, absolute home-directory paths, or credential-shaped strings;
+`out/` and `captures-dev/` stay gitignored.
 
 ## Validation and stop rules
 

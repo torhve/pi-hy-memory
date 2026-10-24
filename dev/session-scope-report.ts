@@ -51,9 +51,35 @@ export interface CrossSessionOp {
 	targetTask: string;
 	/** true when the op wrote a replacement, which overwrites the target's only session marker */
 	rewroteProvenance: boolean;
+	/** true when the bank applied it; false when the model asked for it and the bank wrote an ADD instead */
+	applied: boolean;
 	reason: string;
 }
 
+/** What kind of refusal a downgraded proposal was, read from the reason the bank recorded in the ledger. */
+export type ProposalKind =
+	| "subject guard"
+	| "target not retrieved"
+	| "already superseded in batch"
+	| "reason not recorded";
+
+const KINDS: { prefix: string; kind: ProposalKind }[] = [
+	{ prefix: "target does not restate its subject", kind: "subject guard" },
+	{ prefix: "update target not retrieved for this draft", kind: "target not retrieved" },
+	{ prefix: "target already superseded in this batch", kind: "already superseded in batch" },
+];
+
+/**
+ * `src/pipeline.ts` and `src/protocol.ts` write these three reasons, and the three kinds mean different
+ * things: one is the subject guard saying no to a merge, one is the candidate set never offering the target,
+ * one is the target having been superseded earlier in the same batch. An unrecognised reason is a kind this
+ * report would silently misreport, so it stops rather than guessing.
+ */
+export function proposalKind(reason: string): ProposalKind {
+	if (reason === "") return "reason not recorded";
+	for (const { prefix, kind } of KINDS) if (reason.startsWith(prefix)) return kind;
+	throw new Error(`unrecognised refusal reason, which this report cannot classify: ${reason}`);
+}
 export interface RunScope {
 	run: string;
 	chunks: number;
@@ -71,6 +97,18 @@ export interface RunScope {
 	targetUnscoped: number;
 	/** destructive ops whose target was not an active entry when the op ran */
 	targetInactive: number;
+	/** destructive ops the model asked for that the bank refused, recording an ADD instead */
+	proposedOps: number;
+	/** refused proposals aimed at an entry the acting session itself wrote */
+	proposedSameSession: number;
+	/** refused proposals aimed at an entry a different session wrote */
+	proposedCrossSession: CrossSessionOp[];
+	/** refused proposals whose target's creating chunk carries no session id */
+	proposedTargetUnscoped: number;
+	/** refused proposals whose target was not an active entry at the time, including a refusal naming no id */
+	proposedTargetInactive: number;
+	/** refused proposals split by the reason the bank recorded, since the kinds mean different things */
+	proposedKinds: Record<ProposalKind, number>;
 }
 
 function chunkRecords(records: LedgerRecord[]): Extract<LedgerRecord, { type: "hy.ops" }>[] {
@@ -91,6 +129,17 @@ export function analyseLedger(run: string, records: LedgerRecord[]): RunScope {
 		crossSession: [],
 		targetUnscoped: 0,
 		targetInactive: 0,
+		proposedOps: 0,
+		proposedSameSession: 0,
+		proposedCrossSession: [],
+		proposedTargetUnscoped: 0,
+		proposedTargetInactive: 0,
+		proposedKinds: {
+			"subject guard": 0,
+			"target not retrieved": 0,
+			"already superseded in batch": 0,
+			"reason not recorded": 0,
+		},
 	};
 
 	// Paired with each ops record's position in the ledger so the prefix is taken by index. indexOf on the
@@ -133,8 +182,47 @@ export function analyseLedger(run: string, records: LedgerRecord[]): RunScope {
 				targetChunk: target.chunkId,
 				targetSession,
 				targetTask: target.task,
+				applied: true,
 				rewroteProvenance: op.action === "UPDATE",
 				reason: op.reason ?? "",
+			});
+		}
+
+		// A refused proposal is evidence about what the model asked for, not about what the bank did. The
+		// bank wrote an ADD instead, so nothing was destroyed — but the request named a live entry by id,
+		// and nothing in the request knew or cared which session last wrote that entry.
+		for (const downgraded of record.downgradedOps ?? []) {
+			scope.proposedOps++;
+			// The reason string is the bank's own record of which rule said no, so the kinds are not inferred
+			// from the fact that a merge became an ADD.
+			scope.proposedKinds[proposalKind(downgraded.reason ?? "")]++;
+			// A refusal record is written by the bank, not the model, and the optional field is the bank's own
+			// shape: a record that names no entry id aimed at nothing, so it cannot have crossed anything.
+			const target = downgraded.target === undefined ? undefined : byId.get(downgraded.target);
+			if (!target || target.status !== "active") {
+				scope.proposedTargetInactive++;
+				continue;
+			}
+			const targetSession = sessionOf(target.chunkId);
+			if (targetSession === null || opSession === null) {
+				scope.proposedTargetUnscoped++;
+				continue;
+			}
+			if (targetSession === opSession) {
+				scope.proposedSameSession++;
+				continue;
+			}
+			scope.proposedCrossSession.push({
+				run,
+				chunkId: record.chunkId,
+				opSession,
+				action: "UPDATE",
+				targetChunk: target.chunkId,
+				targetSession,
+				targetTask: target.task,
+				applied: false,
+				rewroteProvenance: false,
+				reason: downgraded.reason,
 			});
 		}
 	}
@@ -143,6 +231,23 @@ export function analyseLedger(run: string, records: LedgerRecord[]): RunScope {
 	const classified = scope.sameSession + scope.crossSession.length + scope.targetUnscoped + scope.targetInactive;
 	if (classified !== scope.destructiveOps)
 		throw new Error(`${run}: ${scope.destructiveOps} destructive ops but ${classified} classified`);
+
+	// The same discipline for proposals: a class the count cannot place is a class it would not report.
+	const classifiedProposals =
+		scope.proposedSameSession +
+		scope.proposedCrossSession.length +
+		scope.proposedTargetUnscoped +
+		scope.proposedTargetInactive;
+	if (classifiedProposals !== scope.proposedOps)
+		throw new Error(
+			`${run}: ${scope.proposedOps} refused destructive proposals but ${classifiedProposals} classified`,
+		);
+
+	// And each refusal has to be attributed to the rule that recorded it, since a merge the subject guard
+	// refused and a target the candidate set never offered are different events.
+	const kindSum = Object.values(scope.proposedKinds).reduce((sum, n) => sum + n, 0);
+	if (kindSum !== scope.proposedOps)
+		throw new Error(`${run}: ${scope.proposedOps} refused proposals but ${kindSum} classified by kind`);
 
 	return scope;
 }
@@ -167,6 +272,8 @@ function main(): void {
 	const scoped = scopes.filter((s) => !s.unscopedIds);
 	const spanning = scoped.filter((s) => s.spansSessions);
 	const totalOps = scopes.reduce((sum, s) => sum + s.destructiveOps, 0);
+	const totalProposed = scopes.reduce((sum, s) => sum + s.proposedOps, 0);
+	const totalProposedCross = scopes.reduce((sum, s) => sum + s.proposedCrossSession.length, 0);
 	const totalCross = scopes.reduce((sum, s) => sum + s.crossSession.length, 0);
 
 	console.log(
@@ -181,11 +288,29 @@ function main(): void {
 	const totalSame = scopes.reduce((sum, s) => sum + s.sameSession, 0);
 	const totalUnscoped = scopes.reduce((sum, s) => sum + s.targetUnscoped, 0);
 	const totalInactive = scopes.reduce((sum, s) => sum + s.targetInactive, 0);
-	console.log(`destructive ops read (UPDATE + DELETE): ${totalOps}; crossing a session boundary: ${totalCross}`);
+	console.log(`destructive ops applied (UPDATE + DELETE): ${totalOps}; crossing a session boundary: ${totalCross}`);
 	console.log(
 		`  ${totalOps} = ${totalSame} aimed at an entry of the acting session + ${totalCross} crossing a ` +
 			`boundary + ${totalUnscoped} in ledgers with no session id + ${totalInactive} aimed at an entry ` +
 			"that was no longer active",
+	);
+	console.log(
+		`destructive proposals the bank refused and recorded as ADD instead: ${totalProposed}; aimed at an entry ` +
+			`another session wrote: ${totalProposedCross}`,
+	);
+	const kindTotals: Record<ProposalKind, number> = {
+		"subject guard": 0,
+		"target not retrieved": 0,
+		"already superseded in batch": 0,
+		"reason not recorded": 0,
+	};
+	for (const scope of scopes)
+		for (const kind of Object.keys(kindTotals) as ProposalKind[]) kindTotals[kind] += scope.proposedKinds[kind];
+	console.log(
+		`  the 3 kinds the bank records saying no: subject guard ${kindTotals["subject guard"]}, ` +
+			`target not retrieved for that draft ${kindTotals["target not retrieved"]}, ` +
+			`target already superseded earlier in the same batch ${kindTotals["already superseded in batch"]}, ` +
+			`no reason recorded ${kindTotals["reason not recorded"]}`,
 	);
 
 	for (const scope of spanning) {
@@ -193,8 +318,11 @@ function main(): void {
 		console.log(
 			`  ${pad("chunk", 16)} ${pad("op", 8)} ${pad("target chunk", 16)} ${pad("target session", 14)} task`,
 		);
-		if (scope.crossSession.length === 0) {
-			console.log(`  ${scope.destructiveOps} destructive ops, none of them aimed at another session's entry`);
+		if (scope.crossSession.length === 0 && scope.proposedCrossSession.length === 0) {
+			console.log(
+				`  ${scope.destructiveOps} destructive ops applied and ${scope.proposedOps} refused, none of them ` +
+					"aimed at another session's entry",
+			);
 		}
 		for (const row of scope.crossSession) {
 			console.log(
@@ -202,6 +330,15 @@ function main(): void {
 					`${pad(row.targetSession, 14)} ${row.targetTask.slice(0, 44)}`,
 			);
 			console.log(`    reason recorded: ${row.reason || "(none)"}`);
+		}
+		for (const row of scope.proposedCrossSession) {
+			console.log(
+				`  ${pad(row.chunkId, 16)} ${pad("refused", 8)} ${pad(row.targetChunk, 16)} ` +
+					`${pad(row.targetSession, 14)} ${row.targetTask.slice(0, 44)}`,
+			);
+			console.log(
+				`    reason recorded: ${row.reason || "(none)"} — an ADD was written instead, so nothing was destroyed`,
+			);
 		}
 	}
 
@@ -223,6 +360,9 @@ function main(): void {
 	);
 	console.log("built by hand with an entry from session A and an op from session B — is what shows what the rule");
 	console.log("permits, rather than what happened to be recorded.");
+	console.log("\nA refused proposal is not a fence: the bank said no to a wording test, not to a session");
+	console.log("boundary. The request named a live entry another session had written, by id, and nothing in the");
+	console.log("pipeline asked which session that id belonged to.");
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) main();

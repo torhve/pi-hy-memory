@@ -26,9 +26,10 @@
  */
 
 import { passClause } from "../dev/merge-report.js";
-import { applyOps } from "../src/bank.js";
+import { analyseLedger } from "../dev/session-scope-report.js";
+import { applyOps, foldLedger } from "../src/bank.js";
 import { candidatesPerDraft, sameSubject } from "../src/protocol.js";
-import type { BankEntry, Draft, ReconcileOp } from "../src/types.js";
+import type { BankEntry, Draft, LedgerRecord, ReconcileOp } from "../src/types.js";
 
 let failures = 0;
 function assert(cond: boolean, label: string): void {
@@ -175,6 +176,113 @@ assert(replacement!.status === "superseded", "the entry is still active after th
 const unrelated = sameSubject(unrelatedDraft, constraint);
 assert(!unrelated.ok, `a draft that restates nothing was accepted anyway: ${JSON.stringify(unrelated)}`);
 
+// 5. The real-data half of this tier counts two different things and must never read them as one: an op the
+//    bank applied, and one it refused and wrote as an ADD instead. A refusal is a wording test saying no,
+//    not a session boundary saying no. The ledgers below are authored here — no model, no corpus — so what
+//    gets pinned is the classifier that reads real ledgers.
+function fixtureLedger(applied: boolean, reason: string): LedgerRecord[] {
+	const usage = { inTokens: 100, outTokens: 40, wallS: 1 };
+	const records: LedgerRecord[] = [
+		{
+			type: "hy.extract",
+			chunkId: CHUNK_A1,
+			coversUpToId: `${CHUNK_A1}-r1`,
+			createdAt: "2026-10-23T09:00:00.000Z",
+			drafts: [{ ...constraintDraft, sourceEntryIds: [] }],
+			rejectedCount: 0,
+			usage,
+		},
+		{
+			type: "hy.ops",
+			chunkId: CHUNK_A1,
+			coversUpToId: `${CHUNK_A1}-r1`,
+			createdAt: "2026-10-23T09:00:05.000Z",
+			ops: [{ action: "ADD", draft: 0 }],
+			rejectedCount: 0,
+			usage,
+		},
+		{
+			type: "hy.extract",
+			chunkId: CHUNK_B1,
+			coversUpToId: `${CHUNK_B1}-r1`,
+			createdAt: "2026-10-23T09:30:00.000Z",
+			drafts: [{ ...incomingDraft, sourceEntryIds: [] }],
+			rejectedCount: 0,
+			usage,
+		},
+	];
+	// The id session A's entry gets belongs to the fold, not to this file: build the prefix, read the id
+	// back, and the destructive op below aims at a live entry the other session wrote.
+	const written = foldLedger(records);
+	const target = written.find((entry) => entry.chunkId === CHUNK_A1);
+	if (!target) throw new Error("the fixture ledger never wrote session A's entry");
+	records.push({
+		type: "hy.ops",
+		chunkId: CHUNK_B1,
+		coversUpToId: `${CHUNK_B1}-r1`,
+		createdAt: "2026-10-23T09:30:05.000Z",
+		ops: applied ? [{ action: "UPDATE", draft: 0, target: target.id, reason: "restated the purge subject" }] : [],
+		rejectedCount: 0,
+		downgradedOps: applied ? [] : [{ reason, draft: 0, target: target.id }],
+		usage,
+	});
+	return records;
+}
+
+const guardReason = "target does not restate its subject (3/8 shared); recorded as ADD";
+const retrievalReason = "update target not retrieved for this draft; recorded as ADD";
+const refusedScope = analyseLedger("fixture-refused", fixtureLedger(false, guardReason));
+assert(
+	refusedScope.destructiveOps === 0 && refusedScope.crossSession.length === 0,
+	`a proposal the bank refused was counted as an applied crossing: ${JSON.stringify(refusedScope.crossSession)}`,
+);
+assert(
+	refusedScope.proposedOps === 1 && refusedScope.proposedCrossSession.length === 1,
+	`the refused cross-session proposal went uncounted: ${JSON.stringify(refusedScope.proposedCrossSession)}`,
+);
+assert(refusedScope.proposedCrossSession[0]?.applied === false, "the instrument marked a refused proposal as applied");
+assert(
+	refusedScope.proposedCrossSession[0]?.targetChunk === CHUNK_A1,
+	"the refused proposal did not name the chunk the other session wrote",
+);
+
+const ranScope = analyseLedger("fixture-applied", fixtureLedger(true, guardReason));
+assert(
+	ranScope.destructiveOps === 1 && ranScope.crossSession.length === 1,
+	`the applied cross-session op went uncounted: ${JSON.stringify(ranScope.crossSession)}`,
+);
+assert(ranScope.crossSession[0]?.applied === true, "the instrument marked an applied op as refused");
+assert(ranScope.proposedOps === 0, "an op the bank applied was also counted as a refusal");
+
+assert(
+	refusedScope.spansSessions && ranScope.spansSessions,
+	"the fixture ledger stopped spanning two sessions, so no crossing could be seen in it",
+);
+
+// 5. The bank records which rule said no, and the report reads it off that record rather than inferring a
+//    kind from an ADD landing where an UPDATE was proposed. A merge the subject guard refused and a target
+//    the candidate set never offered are different events; an unrecognised reason stops the report instead
+//    of becoming a fourth bucket that quietly absorbs whatever it does not know.
+const retrievalScope = analyseLedger("fixture-retrieval-refusal", fixtureLedger(false, retrievalReason));
+assert(
+	refusedScope.proposedKinds["subject guard"] === 1 && refusedScope.proposedKinds["target not retrieved"] === 0,
+	`the subject-guard refusal was not classified as one: ${JSON.stringify(refusedScope.proposedKinds)}`,
+);
+assert(
+	retrievalScope.proposedKinds["target not retrieved"] === 1 &&
+		retrievalScope.proposedKinds["subject guard"] === 0 &&
+		retrievalScope.proposedCrossSession.length === 1,
+	`a retrieval refusal aimed at another session's entry was not kept apart from a guard refusal: ${JSON.stringify(retrievalScope.proposedKinds)}`,
+);
+
+let unknownReasonStopped = false;
+try {
+	analyseLedger("fixture-unknown-reason", fixtureLedger(false, "some rule said no that this report does not know"));
+} catch {
+	unknownReasonStopped = true;
+}
+assert(unknownReasonStopped, "the report classified a refusal reason it has no kind for instead of stopping");
+
 if (failures === 0) {
 	console.log("  the permission structure, all three cases this fixture runs:");
 	console.log(
@@ -194,7 +302,9 @@ if (failures === 0) {
 			`the guard scored the pair ${cross.shared}/${cross.targetSize} identically across sessions and within ` +
 			`one; after the merge the only session marker left in the bank belongs to the session that destroyed ` +
 			`the fact, and ${cross.targetSize - cross.shared} of the target's subject tokens went unrestated ` +
-			`(accepted by the loose clause: ${passClause(cross.shared, cross.targetSize)})`,
+			`(accepted by the loose clause: ${passClause(cross.shared, cross.targetSize)}); and the ledger ` +
+			`classifier keeps the two apart — ${ranScope.crossSession.length} applied crossing and ` +
+			`${refusedScope.proposedCrossSession.length} refused crossing in the ledgers authored here`,
 	);
 } else {
 	console.error(`FAIL: ${failures} session-scope assertion(s) failed`);

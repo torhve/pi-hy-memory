@@ -403,8 +403,10 @@ gate.
       count as a supplied value. Applied to the frozen corpus-3 ledgers the paraphrase column names the artefact
       7.17 predicted — 0 under the shipped prompt, 1 under the actor arm (`hy-r3-to-03`, chatter "I pulled up the
       queue module" banked as "Assistant pulled up queue module to see where a write lands") — and leaves every
-      published number where it was. Still open: re-measuring both arms, which needs the corpus run rather than
-      re-scored, and a label for *survived as a rule* that is a judgement about the fact rather than a wording
+      published number where it was. **Both arms then ran against corpus 4 (2026-10-24).** The arm's advantage
+      did not follow it into the labeled corpus — 8/12 tool facts kept in each arm, against 10/12 and 12/12 on
+      corpus 3 — and the paraphrase stopped being an artefact of the arm: 1 in each, both at the same chunk.
+      Still open: a label for *survived as a rule* that is a judgement about the fact rather than a wording
       match.
       7.14's open mechanism question was answered the same day by `dev/merge-report.ts`: same-value drafts
       are never merged (39 cases, 0 merges), so the repeats are a code-side dedup question rather than a
@@ -457,11 +459,14 @@ choosing. Tiers are ordered by what can be measured with artifacts already on di
       **Offline half done (2026-10-24).** Corpus 4 is written and contract-checked — 12 `tool_output`, 4
       constraint chunks, 4 calls past the 240-character window with 2 values hidden past the cut and nowhere
       else in either session, 4 tool-bearing nothing-durable chunks, 1 cross-session pair over 2 authored
-      sessions — and `tools/restraint-corpus-mutation-check.ts` rejects 36 deliberate breakings across the four
+      sessions — and `tools/restraint-corpus-mutation-check.ts` rejects 37 deliberate breakings across the four
       committed corpora. The scorer counts the three labels and `tools/restraint-report-check.ts` pins them,
       including the guard that a chunk printing `45` in plain sight is not evidence that a bank fact carrying
-      `45` invented it. Remaining: `restraint4-base` and `restraint4-actor` on a writer route, `dev/merge-report.ts`
-      on top of them, and the promotion gate below, which needs both arms and not one.
+      `45` invented it. **Live half done the same day the writer route came back (2026-10-24):**
+      `restraint4-base` and `restraint4-actor`, 22 of 22 chunks each, audited with `dev/merge-report.ts` and
+      `dev/session-scope-report.ts` on top. The promotion gate below was answered against promoting: the arm
+      kept no tool-fact gain on this corpus, 8/12 against 8/12, and its one loose-clause merge dropped
+      `night.toml` where the shipped arm's four dropped nothing. Numbers in `EXPERIMENTS.md`.
 - [ ] 8.4 Clipping survival, tier 4. The DESIGN.md row is corrected first, by function name rather
       than line number: tool call arguments in `textOfParts()` cut at 240 chars with no marker, bodies
       and tool results through `clip()` at `maxEntryChars` (3000 default) *with* `…` — both in
@@ -476,8 +481,15 @@ choosing. Tiers are ordered by what can be measured with artifacts already on di
 - [ ] 8.6 Session-scoped destructive authority, tier 6a. A synthetic bank scenario — entry authored in
       session A, `DELETE`/`UPDATE` proposed from session B — plus a count of how often that already
       happens across the existing ledgers — which is only possible where a ledger spans more than one
-      `hy-<sessionId8>-` prefix, and a scan found that in one run on disk. Counted where it exists,
-      recorded as unavailable otherwise. Only then decide whether scoping deserves a `src/` change.
+      `hy-<sessionId8>-` prefix, and a scan found that in three runs on disk. Re-counted over 30 ledgers on
+      2026-10-24: 392 applied destructive ops cross no boundary, and the 329 destructive proposals the bank
+      refused instead of applying — 152 refused by the subject guard, 92 where the candidate set never offered
+      the target, 85 where the target had already been superseded earlier in the same batch — include 5 aimed at
+      an entry another session wrote, all 5 in the two corpus-4 runs and all 5 subject-guard refusals. The
+      classifier now reports applied ops and refused proposals apart, splits the refusals by the reason the bank
+      recorded, and the fixture pins both splits, including that an unknown reason stops the report rather than
+      landing in a leftover bucket. Counted where it exists, recorded as unavailable otherwise. The decision
+      about whether scoping deserves a `src/` change is still open.
 - [ ] 8.7 Atomic claims vs one fact per session plus experiences, tier 6b — **parked**, recorded as
       parked. Re-entry trigger: any storage redesign, a verbatim payload field adopted, or a move
       toward one-fact-per-session. The 39 same-value cases never merged and the refusals leaving 2+
@@ -489,7 +501,8 @@ choosing. Tiers are ordered by what can be measured with artifacts already on di
 
 - Writer route: primary `remote/hy-memory-30b-a3b`, measured in this session on a 10.9 k-token
   chunk: extract ≈ 232 s, reconcile ≈ 17 s. All runners therefore use 600 s timeouts, resumable
-  chunk-level progress, and record per-stage wall time; a corpus run is ~15–20 min, so plan runs
+  chunk-level progress, and record per-stage wall time; corpus 4's 22-chunk arms measured 340.6 s and 358.1 s
+of per-chunk model wall over 22 chunks each, so plan runs
   as background tasks. The local llama-swap `hy-memory-30b-a3b` remains the fallback arm and the
   speed comparison for 1.6.
 - Judge must never be the writer model (self-preference), and judge keys/endpoints stay in env

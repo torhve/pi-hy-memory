@@ -1733,23 +1733,47 @@ and drafts and has no session to scope by, and an UPDATE is accepted only if the
 
 | measure | value |
 |---|---|
-| run directories under `out/` | 34, of which 28 have a `ledger.jsonl` |
-| ledgers whose chunk ids carry a session (`hy-<sessionId8>-`) | 19 |
+| run directories under `out/` | 36, of which 30 have a `ledger.jsonl` |
+| ledgers whose chunk ids carry a session (`hy-<sessionId8>-`) | 21 |
 | ledgers with no session in any chunk id (authored corpora, `hy-r3-to-01` style) | 9 — excluded, not counted as single-session evidence |
-| ledgers demonstrably spanning more than one session | **1** (`baseline-kitx`), one of the 19 above rather than a fourth category |
-| destructive ops read (UPDATE + DELETE) | 383 |
+| ledgers demonstrably spanning more than one session | **3** (`baseline-kitx`, `restraint4-base`, `restraint4-actor`), each one of the 21 above rather than a fourth category |
+| destructive ops applied (UPDATE + DELETE) | 392 |
 | of those, crossing a session boundary | **0** |
-| how the 383 split | 217 aimed at an entry of the acting session, 0 crossing a boundary, 166 in ledgers with no session id, 0 aimed at an entry that was no longer active |
+| how the 392 split | 226 aimed at an entry of the acting session, 0 crossing a boundary, 166 in ledgers with no session id, 0 aimed at an entry that was no longer active |
+| destructive proposals the bank refused, recording an ADD instead | 329 |
+| …the subject guard said no to the merge | 152 |
+| …the candidate set never offered the target for that draft | 92 |
+| …the target had already been superseded earlier in the same batch | 85 |
+| of those 329, aimed at an entry another session had written | **5** — 2 in `restraint4-base`, 3 in `restraint4-actor`, 0 in `baseline-kitx`, and all 5 were subject-guard refusals rather than retrieval failures |
 
 `baseline-kitx` runs `hy-01a15629-001/002` then `hy-01a1510e-077/016/012`. Its one destructive op
 (`hy-01a15629-002` UPDATE) targets an entry written by `hy-01a15629-001` — its own session. So the tier's
 direct evidence is one observed opportunity, not taken.
 
-These counts describe this working tree's `out/` as of this commit, not a permanent property of the repo:
-a run directory only counts if it has a `ledger.jsonl`, and 6 of the 34 directories do not.
+**In these two runs, every crossing sits among the refused proposals.** Corpus 4 was written with a
+cross-session restatement in it on purpose, and the two runs show what the model made of it: five times a draft
+in one authored session proposed superseding a live entry the other session had written —
+`hy-4f0a0002-to-11` against `hy-4f0a0001-to-07` and `hy-4f0a0002-to-12` against `hy-4f0a0001-to-03` in the
+shipped-prompt arm, and `hy-4f0a0002-to-12`, `hy-4f0a0002-nw-03` and `hy-4f0a0002-nw-04` against
+`hy-4f0a0001-to-03`, `hy-4f0a0001-to-04` and `hy-4f0a0001-to-08` in the actor arm. Every one was stopped by the
+subject guard, at between 0 and 3 shared tokens of the target's wording, and an ADD was banked in its place.
+The zero above is therefore a zero about *applied* ops, and the tier's earlier form — "383 destructive ops, none
+crossing" — understated the rule: the instrument read only the ops a run kept and not the `downgradedOps`
+records that say what was asked for. Five refused proposals out of 329, in the two ledgers of 30 that span two
+authored sessions, is what these runs contain; it is not a rate at which the model reaches across sessions, and
+nothing here shows what would have happened on a corpus that did not plant the restatement. What the synthetic
+half shows is about the rule rather than the rate: `candidatesPerDraft`, `sameSubject` and `applyOps` read task,
+statement, keys and entry ids, and none of them consults session identity, so a request that named a live entry
+another session had written, by id, was refused by a wording test and not by an ownership rule.
+These counts describe this working tree's `out/` as of this commit, not a permanent property of the repo: a run
+directory only counts if it has a `ledger.jsonl`, and 6 of the 36 directories do not.
 
-The fold is rebuilt before each chunk rather than once per ledger, and `analyseLedger` throws if a run's
-destructive ops do not split cleanly across the four classes. `foldLedger` builds a fresh bank out of
+The fold is rebuilt before each chunk rather than once per ledger, and `analyseLedger` throws if either set of
+destructive ops — applied, or refused and recorded as an ADD — fails to split cleanly across the four classes,
+or if a refusal cannot be attributed to one of the three reasons the bank records. An unrecognised reason stops
+the report rather than becoming a leftover bucket, because a report that guesses at a refusal kind would count a
+merge the guard refused as though it were a target that was never offered.
+`foldLedger` builds a fresh bank out of
 fresh entries and only reads the records it is given, so re-folding a prefix cannot inherit another
 fold's mutations; each prefix is taken by record index rather than by object identity. An entry's `chunkId` is the only session
 marker the bank keeps, and a superseding write replaces it via `entryFromDraft`, so folding the whole ledger
@@ -1771,26 +1795,26 @@ It shows what the rule *permits*; it is not evidence about how often the permiss
 - A cross-session DELETE needed nothing beyond the id.
 - The contrast holds: a draft sharing no wording was refused. Wording is the fence; ownership is not.
 
-**What this does not say.** Zero recorded cross-session ops is a fact about how runs were captured, not a
-record of safety: a run with one session prefix cannot contain one. In production the bank is one store
-shared by every session that touches the state directory, so cross-session targeting is the ordinary case.
-The synthetic pair is authored by hand and shows what the rule *permits*, not how often the permission is
-used or how much it costs when it is. No `src/` change was made for this tier; fencing destructive authority
-by session remains a decision, not a measurement.
+**What this does not say.** Zero *applied* cross-session ops is a fact about how runs were captured and about
+what the subject guard happened to refuse, not a record of safety: a run with one session prefix cannot contain
+one, and a proposal stopped by a wording test is not a proposal stopped by a boundary. In production the bank is
+one store shared by every session that touches the state directory, so cross-session targeting is the ordinary
+case. The synthetic pair is authored by hand and shows what the rule *permits*, not how often the permission is
+used or how much it costs when it is. No `src/` change was made for this tier; fencing destructive authority by
+session remains a decision, not a measurement.
 
 ## Tier 3, offline half: the fourth corpus, and three labels the scorer did not have (2026-10-24)
 
-Tier 3's live half needs two writer-route runs and the route has been unreachable for a week. Its offline
-half does not, and it is the part that has to exist before either arm can be judged: the labels 7.17 named,
-in a corpus, with an instrument able to count them. Corpus 3 stays untouched so its published numbers stay
-comparable.
+Tier 3's live half needs two writer-route runs, and the route had been unreachable for a week when this half was
+written; both arms ran the day the route came back, and their numbers are in the section below. This half is the
+part that had to exist before either arm could be judged: the labels 7.17 named, in a corpus, with an instrument
+able to count them. Corpus 3 stays untouched so its published numbers stay comparable.
 
 **`dev/corpus-restraint4.json`, 22 chunks, two authored sessions.** 12 `tool_output` chunks, 4 `nothing_work`
 chunks with tool output under them, 3 attribution pairs, and four labels the earlier corpora do not carry:
 
 - **4 chunks hold a tool call whose arguments run past the 240-character window** the shipped renderer cuts
   arguments at, measured by rendering the call through `renderEntry` and comparing against the authored full
-  argument string rather than against a number written in a plan. 2 of them hide a value past the cut that
   argument string rather than against a number written in a plan. 2 of them hide a value past the cut whose
   wording appears in no chunk's visible text in either session (`--retention-days 45`, `--fail-on-missing`).
   A hidden value has to keep at least one token that no chunk shows at all, and the check names the ones it
@@ -1865,7 +1889,90 @@ reading `fact and chatter 0` for it was not describing absence. It does **not** 
 word-matching, so a synonym substitution still slips past it. Corpus 4's declared chatter is what that
 measurement needs, and it needs two runs on a writer route.
 
-**Limits of this half.** Corpus 4 has never been run: every number above is either a corpus property checked
-against the renderer, a fixture with constructed answers, or a re-scoring of ledgers that already existed. No
-`src/` file changed, no published number changed, and no rule was written for the `tool_output` class from
-these labels — the class still has no shipped behaviour, which is what 7.13 measured and 8.3 is still open on.
+**Limits of this offline half.** Everything above is a corpus property checked against the renderer, a fixture
+with constructed answers, or a re-scoring of ledgers that already existed. No `src/` file changed, no published
+number changed, and no rule was written for the `tool_output` class from these labels — the class still has no
+shipped behaviour, which is what 7.13 measured and 8.3 is still open on.
+
+## Tier 3, live half: both corpus-4 arms ran, and the actor arm's gain did not follow (2026-10-24)
+
+The writer route came back on the day the corpus landed, and both arms ran against
+`dev/corpus-restraint4.json` on it — the same 30B model corpus 3's published numbers came from, resolved by
+name. 22 of 22 chunks banked in each arm. Summing the per-chunk model time in each ledger gives **340.6 s**
+for the shipped-prompt arm and **358.1 s** for the actor arm, which replaces the "~15–20 min per arm" figure
+`plan-divergence.md` carried over from corpus 3 with a measurement. Reproduce with `dev/run.ts` passing the
+writer model through the environment variables it already reads, plus `--pool 12000` and
+`--candidate-render-mode perDraft` as both corpus-3 arms used; score with `dev/restraint-report.ts`, audit with
+`dev/merge-report.ts --corpus` and `dev/session-scope-report.ts`.
+
+| measure | `restraint4-base` | `restraint4-actor` |
+|---|---|---|
+| active facts / bank tokens at the end | 48 / 1268 | 47 / 1221 |
+| ops across the run | ADD 48, SKIP 1, UPDATE 4 | ADD 47, SKIP 2, UPDATE 5 |
+| kept the declared tool fact | 8/12 (67%) | 8/12 (67%) |
+| kept it and nothing else | 4/12 | 4/12 |
+| fact and chatter / chatter only / something else | 3 / 0 / 1 | 3 / 0 / 1 |
+| same declared value banked twice from one chunk | 5/12 chunks, 5 facts | 6/12 chunks, 7 facts |
+| declared values surviving, counted per value | 16/17 | 16/17 |
+| executed UPDATEs that dropped a value | 0/4 | 1/5 |
+| refusals recorded | 7 (6 subject guard, 1 target never shown) | 6 (6 subject guard) |
+| declared rule text beside tool output | 3/5 verbatim, 1 content words only, 1 lost | 3/5 verbatim, 2 content words only, 0 lost |
+| possible chatter paraphrase | 1 | 1 |
+| hidden-value carry | 0 banked facts carrying an unread token | 0 |
+| facts banked from the four nothing-durable chunks | 9, from 4/4 chunks, 0 abstained | 9, from 4/4, 0 abstained |
+| quote side clean, 3 attribution pairs | draft gate 0/3, bank gate 3/3 | draft gate 0/3, bank gate 3/3 |
+| actor-frame openings | 12/30 in tool chunks, 16/48 bank-wide | 10/30, 12/47 |
+
+**The gate 8.3 set for this pair does not clear.** The gate was: keep the wording gain *and* stop costing a
+declared value. On corpus 4 the wording gain is not there to keep — both arms keep the declared tool fact 8
+times out of 12, where on corpus 3 the actor arm kept it 12 times against the shipped prompt's 10 — and the
+arm still costs a value: its one loose-clause merge, `hy-4f0a0002-r4c-q` replacing `hy-4f0a0002-r4c-k` at 5/11
+shared, dropped `night.toml`, while the shipped arm's 4 executed UPDATEs dropped nothing. It also duplicates
+more (6/12 chunks and 7 facts against 5/12 and 5). The gate does not clear on this evidence — one run per arm
+against 22 authored chunks, and corpus 4 changes several things at once, so a settled rejection of the arm would
+need a replicate or an ablation rather than this comparison. Corpus 3's published numbers stay frozen as
+published, and 7.17's verdict becomes: the arm's advantage did not survive being measured against labels corpus
+3 did not have.
+
+**The only gain visible here is the wording-shaped one.** Statements opening with a person or with the agent's
+own voice fall from 16 of 48 bank-wide facts to 12 of 47. That is the axis `dev/prompts-actorframe.ts` was
+written to move, it is reported and never scored, and it is the only axis the actor prompt moved: 8/12 against
+8/12 on the tool fact, 3 attribution pairs read identically in both arms, 9 facts banked from the four
+nothing-durable chunks in both.
+
+**Two of the four lost-value cases are the same case in both arms.** The one declared value each arm failed to
+bank is `queue holds 18 entries`, at `hy-4f0a0002-to-12`, and in both arms that chunk's only banked tie is a
+user rule rather than its tool fact, which is why its outcome column reads `kept-other`. The rule-text column
+then splits the arms: the shipped arm lost one of five rule statements outright, the actor arm lost none but
+carried two of five only as rearranged content words. Neither number says a rule was obeyed.
+
+**The chatter label stopped being an actor-arm artefact.** Corpus 3 produced 0 paraphrases under the shipped
+prompt and 1 under the actor arm. Corpus 4 produces 1 in each, and both are the same chunk: `hy-4f0a0001-to-02`
+declares "tail of build log" and "rerun later" as chatter, and the bank keeps "User will rerun build later if
+changes" (shipped) and "Re-run cache build later" (actor) as durable facts. The literal `fact and chatter`
+column cannot see either one, and the reading is not causal: it is word matching, so a shared technical noun
+over-counts it and a synonym substitution slips past it.
+
+**The hidden-value probe came back negative on live runs.** Corpus 4 hides `--retention-days 45` and
+`--fail-on-missing` past the 240-character argument window, in two chunks, and no banked fact in either arm
+carries a token no chunk shows. That is what the instrument was built to be able to say, and it says it about
+runs rather than a fixture — but a zero here means neither model wrote the unread token into a banked
+statement, not that no model ever would.
+
+**Abstention is still zero where the corpus makes it a judgment.** All four `nothing_work` chunks carry tool
+output and declare nothing durable, and each arm banked 9 facts out of them: queue status and last change, the
+build-log tail with the counts ignored, "counts are noise on every build", the `git diff --stat` output and the
+user confirming that was all they wanted, the tile-index recount and its report file. This is the same width
+7.13 measured for the class, reproduced on a corpus built to make abstention a choice. 8.3 remains open.
+
+**What tier 6a had to change because of these runs** is written in that tier's section above: the applied-op
+count stayed at zero crossings, and the refused proposals — 5 of them, all in these two runs — are where the
+crossings are.
+
+**What these two runs do not settle.** Corpus 4 differs from corpus 3 in more than one thing at once: it has
+authored sessions, tool-call arguments cut at the window the renderer actually uses, hidden values, declared
+user rules, and `nothing_work` chunks with tool output under them. The shipped arm's drop from 10/12 to 8/12
+and the actor arm's from 12/12 to 8/12 are therefore not attributable to any single one of those changes, and
+they are not the published corpus-3 numbers rewritten: corpus 3's ledgers were re-scored and left where they
+were. Both arms ran once, on one route, against an authored corpus of 22 chunks. Nothing under `src/` changed
+for this tier either.
