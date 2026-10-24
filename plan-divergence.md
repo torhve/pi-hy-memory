@@ -32,7 +32,7 @@ and its `UPDATE`→`ADD` downgrade in `src/pipeline.ts`; `textOfParts()` (tool c
 | no verbatim payload field, no summary/verbatim split | **tier 1**, first, because TODO 7.18 hangs on it |
 | actor-frame statements, budget-reallocation wording, evidence fidelity | **tier 3**, blocked until the corpus carries the two labels 7.17 named |
 | tool args clipped at 240 chars; tool results clipped by characters | **tier 4**, plus a correction: the doc row is wrong about the marker |
-| destructive authority scoped to one session | **tier 6a**, a synthetic bank scenario instead of a full park |
+| destructive authority scoped to one session | **tier 6a**, measured at both ends of the pipeline; fence considered and **not shipped** |
 | `subject-guard` on (ours) vs off (theirs) — decided, dissent on record | **tier 2**, priced by offline replay, including the option 7.18 never listed: off |
 | `keys` / `refs`, and extract-never-sees-the-bank | **no test** — deliberate, and one was already confirmed twice |
 
@@ -246,6 +246,19 @@ guard scores an identical pair the same across sessions as within one (3/8, loos
 cross-session UPDATE overwrites the bank's only session marker with the destroying session's, and a
 cross-session DELETE needs nothing but the id.
 
+**Measured offline again (2026-10-24).** Re-counted over 30 ledgers, the applied half is unchanged in kind: 392
+destructive ops, 0 crossing a boundary, 166 of them in ledgers whose chunk ids carry no session at all. The
+crossings sit among the proposals the bank refused instead of applying — 5 of 329 — and the menu is now counted
+apart from the ops: 3075 merge candidates offered, 125 written by another session, 28 of those merge-eligible
+under `sameSubject`, all 28 in the corpus authored with two sessions about one subject area. The two places a
+fence could sit then measured opposite ways. At the merge gate it would have refused 0 of 392 applied ops, so no
+bank on disk changes and its value is purely preventive; at retrieval it would remove 125 candidates and leave 9
+of the 186 session-carrying chunks with no candidate to merge against, one of them in the only organic
+two-session run, where all five candidates shown at `hy-01a1510e-077` had been written by the other session and
+none was merge-eligible. Cheap to hold, expensive to apply. **Decided 2026-10-24: the fence is not shipped.**
+The tier stays measured by its fixture and its recount, and re-opens if a ledger shows an applied cross-session
+`UPDATE`/`DELETE` or cross-session candidates turn out merge-eligible outside an authored corpus.
+
 **6b. Atomic claims vs one fact per session plus experiences — parked, on purpose.** Changing the
 unit of memory invalidates every published baseline in this repo, and their compat path suggests they
 did not expect models to stop emitting several facts. The evidence we have (39 cases of several drafts
@@ -268,7 +281,7 @@ that trigger.
 | 3 the two missing labels | new corpus chunks | ran: ~1 h authoring + two runs, 340.6 s and 358.1 s of model wall | the actor-frame promotion decision (7.16/7.17), answered against promoting |
 | 4 clipping survival | fixture, then one small run | ~30 min offline + one short run | whether our 240-char silent cut costs values, and a DESIGN.md fix |
 | 5 mandated extraction | support contract first | blocked until the contract is written | whether our permissiveness is actually the safer bet |
-| 6a session scope | synthetic bank scenario, plus a classifier over every ledger | ~30 min offline, ran | whether destructive authority needs fencing at all — there is no fence, and 5 refused cross-session proposals show the request being made |
+| 6a session scope | synthetic bank scenario, plus a classifier over every ledger and a recount of the merge candidates each chunk was offered | ~30 min offline, ran | whether destructive authority needs fencing at all — there is no fence; 5 of 329 refused proposals reached across a session boundary, 28 of 125 cross-session candidates were merge-eligible, and the two places a fence could sit measure opposite ways |
 | 6b memory unit | — | parked | re-entry trigger recorded |
 
 Tiers 1, 2, 4's fixture and 6a touch no `src/`. Tier 3 and tier 4's run cost model calls on the

@@ -478,8 +478,9 @@ choosing. Tiers are ordered by what can be measured with artifacts already on di
       under a written support contract (values present in source text, resolvable `sourceEntryId`
       citations, zero supported claims expected on not-durable chunks). Semantic judging needs the
       judge endpoint, which was unreachable across the recent runs.
-- [ ] 8.6 Session-scoped destructive authority, tier 6a. A synthetic bank scenario — entry authored in
-      session A, `DELETE`/`UPDATE` proposed from session B — plus a count of how often that already
+- [x] 8.6 **Decided 2026-10-24: no `src/` change.** Session-scoped destructive authority, tier 6a. A
+      synthetic bank scenario — entry authored in session A, `DELETE`/`UPDATE` proposed from session B — plus
+      a count of how often that already
       happens across the existing ledgers — which is only possible where a ledger spans more than one
       `hy-<sessionId8>-` prefix, and a scan found that in three runs on disk. Re-counted over 30 ledgers on
       2026-10-24: 392 applied destructive ops cross no boundary, and the 329 destructive proposals the bank
@@ -488,8 +489,16 @@ choosing. Tiers are ordered by what can be measured with artifacts already on di
       an entry another session wrote, all 5 in the two corpus-4 runs and all 5 subject-guard refusals. The
       classifier now reports applied ops and refused proposals apart, splits the refusals by the reason the bank
       recorded, and the fixture pins both splits, including that an unknown reason stops the report rather than
-      landing in a leftover bucket. Counted where it exists, recorded as unavailable otherwise. The decision
-      about whether scoping deserves a `src/` change is still open.
+      landing in a leftover bucket. Counted where it exists, recorded as unavailable otherwise. The menu axis is
+      measured on the same ledgers: the reconcile stage was offered 3075 merge candidates — 2054 written by the
+      acting session, 125 by another session, 896 with no session marker — and 28 of the 125 pass `sameSubject`
+      against some draft in the chunk that saw them, all 28 in the two corpus-4 runs and none in the one organic
+      two-session run. A fence at the merge gate would have refused 0 of the 392 applied ops, so every bank on
+      disk is identical under it; a fence at retrieval would remove 125 candidates and leave 9 of the 186
+      session-carrying chunks with no candidate at all, one of them organic. Decided: scoping does not get a
+      `src/` change, and `tools/session-scope-check.ts` pins the unscoped behaviour instead. Re-entry trigger: a
+      ledger with an applied cross-session `UPDATE`/`DELETE`, or a run where cross-session candidates turn out
+      merge-eligible outside a corpus authored to plant them.
 - [ ] 8.7 Atomic claims vs one fact per session plus experiences, tier 6b — **parked**, recorded as
       parked. Re-entry trigger: any storage redesign, a verbatim payload field adopted, or a move
       toward one-fact-per-session. The 39 same-value cases never merged and the refusals leaving 2+

@@ -283,6 +283,69 @@ try {
 }
 assert(unknownReasonStopped, "the report classified a refusal reason it has no kind for instead of stopping");
 
+// 6. The menu axis, kept apart from the op axis. A fact from the other session can be offered as a merge
+//    candidate without the guard letting a draft destroy it. Session B's neighbour fact shares the technical
+//    noun "queue" and the word "directory" with session A's fact: enough for retrieval to put it on the menu,
+//    not enough for the subject guard to accept it as a restatement.
+const shortUsage = { inTokens: 100, outTokens: 40, wallS: 1 };
+const menuRecords: LedgerRecord[] = [
+	{
+		type: "hy.extract",
+		chunkId: CHUNK_A1,
+		coversUpToId: `${CHUNK_A1}-r1`,
+		createdAt: "2026-10-23T09:00:00.000Z",
+		drafts: [{ ...constraintDraft, sourceEntryIds: [] }],
+		rejectedCount: 0,
+		usage: shortUsage,
+	},
+	{
+		type: "hy.ops",
+		chunkId: CHUNK_A1,
+		coversUpToId: `${CHUNK_A1}-r1`,
+		createdAt: "2026-10-23T09:00:05.000Z",
+		ops: [{ action: "ADD", draft: 0 }],
+		rejectedCount: 0,
+		usage: shortUsage,
+	},
+	{
+		type: "hy.extract",
+		chunkId: CHUNK_B1,
+		coversUpToId: `${CHUNK_B1}-r1`,
+		createdAt: "2026-10-23T09:30:00.000Z",
+		drafts: [{ ...neighbourDraft, sourceEntryIds: [] }],
+		rejectedCount: 0,
+		usage: shortUsage,
+	},
+	{
+		type: "hy.ops",
+		chunkId: CHUNK_B1,
+		coversUpToId: `${CHUNK_B1}-r1`,
+		createdAt: "2026-10-23T09:30:05.000Z",
+		ops: [{ action: "ADD", draft: 0 }],
+		rejectedCount: 0,
+		usage: shortUsage,
+	},
+];
+const menuScope = analyseLedger("fixture-menu", menuRecords);
+const menuRow = menuScope.exposure.find((row) => row.chunkId === CHUNK_B1);
+const neighbourPair = sameSubject(neighbourDraft, constraint);
+assert(
+	menuRow !== undefined && menuRow.cross === 1 && menuRow.crossEligible === 0,
+	`the other session's fact on the menu was not kept apart from a merge the guard would permit: ${JSON.stringify(menuRow)}`,
+);
+assert(
+	!neighbourPair.ok,
+	`the guard should refuse the neighbour pair as a restatement: shared ${neighbourPair.shared}/${neighbourPair.targetSize}`,
+);
+
+// And the case the tier is about: the restatement drafted in session B is offered session A's fact, and the
+// guard would have let it through. Whether the model reached for it is a separate count.
+const refusedRow = refusedScope.exposure.find((row) => row.chunkId === CHUNK_B1);
+assert(
+	refusedRow !== undefined && refusedRow.cross >= 1 && refusedRow.crossEligible >= 1,
+	`session A's fact was not offered to session B's restatement as a merge-eligible candidate: ${JSON.stringify(refusedRow)}`,
+);
+
 if (failures === 0) {
 	console.log("  the permission structure, all three cases this fixture runs:");
 	console.log(
@@ -304,7 +367,10 @@ if (failures === 0) {
 			`the fact, and ${cross.targetSize - cross.shared} of the target's subject tokens went unrestated ` +
 			`(accepted by the loose clause: ${passClause(cross.shared, cross.targetSize)}); and the ledger ` +
 			`classifier keeps the two apart — ${ranScope.crossSession.length} applied crossing and ` +
-			`${refusedScope.proposedCrossSession.length} refused crossing in the ledgers authored here`,
+			`${refusedScope.proposedCrossSession.length} refused crossing in the ledgers authored here — and the menu is ` +
+			`counted apart from both: ${menuRow?.cross} candidate from the other session offered to a draft that ` +
+			`wording alone refuses (${menuRow?.crossEligible} eligible), ${refusedRow?.crossEligible} offered to a ` +
+			`draft the guard would accept`,
 	);
 } else {
 	console.error(`FAIL: ${failures} session-scope assertion(s) failed`);

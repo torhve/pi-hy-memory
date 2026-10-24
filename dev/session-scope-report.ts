@@ -20,12 +20,13 @@
  *   npx tsx dev/session-scope-report.ts
  */
 
-import { existsSync, readdirSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 
 import { pathToFileURL } from "node:url";
 
 import { foldLedger } from "../src/bank.js";
-import type { LedgerRecord } from "../src/types.js";
+import { candidatesPerDraft, sameSubject, selectShownPerDraft } from "../src/protocol.js";
+import type { BankEntry, LedgerRecord } from "../src/types.js";
 import { loadLedger } from "./merge-report.js";
 
 const RUNS_ROOT = "out";
@@ -109,6 +110,8 @@ export interface RunScope {
 	proposedTargetInactive: number;
 	/** refused proposals split by the reason the bank recorded, since the kinds mean different things */
 	proposedKinds: Record<ProposalKind, number>;
+	/** per chunk: what the reconcile stage was offered as merge candidates, split by who wrote each one */
+	exposure: ExposureRow[];
 }
 
 function chunkRecords(records: LedgerRecord[]): Extract<LedgerRecord, { type: "hy.ops" }>[] {
@@ -140,12 +143,14 @@ export function analyseLedger(run: string, records: LedgerRecord[]): RunScope {
 			"already superseded in batch": 0,
 			"reason not recorded": 0,
 		},
+		exposure: [],
 	};
 
 	// Paired with each ops record's position in the ledger so the prefix is taken by index. indexOf on the
 	// record object would work today — loadLedger parses every line into its own object — but it is the kind
 	// of identity assumption that breaks quietly if a loader ever reuses or interns a record.
 	const positions = ops.map((record) => ({ record, index: records.indexOf(record) }));
+	const settings = settingsFor(run);
 	for (const { record, index } of positions) {
 		if (index < 0) throw new Error(`${run}: ops record ${record.chunkId} is missing from the ledger it came from`);
 		// The bank as it stood before this chunk ran: everything earlier in the ledger, nothing later.
@@ -155,6 +160,49 @@ export function analyseLedger(run: string, records: LedgerRecord[]): RunScope {
 		const byId = new Map(before.map((e) => [e.id, e]));
 		const opSession = sessionOf(record.chunkId);
 
+		// What the reconcile stage was offered for this chunk. The ledger records the model's choices and not
+		// the menu it chose from, so the menu is rebuilt here from the recorded drafts over the bank as it
+		// stood before this chunk, with the run's own recorded candidate settings.
+		const drafts = draftsOfLedgerPrefix(records, index, record.chunkId);
+		const row: ExposureRow = {
+			chunkId: record.chunkId,
+			drafts: drafts?.length ?? 0,
+			shown: 0,
+			own: 0,
+			cross: 0,
+			crossEligible: 0,
+			unscoped: 0,
+			crossTasks: [],
+		};
+		if (drafts)
+			for (const entry of shownSet(
+				candidatesPerDraft(before, drafts, settings.limit),
+				settings.limit,
+				settings.mode,
+			)) {
+				row.shown++;
+				const candidateSession = sessionOf(entry.chunkId);
+				if (candidateSession === null || opSession === null) row.unscoped++;
+				else if (candidateSession === opSession) row.own++;
+				else {
+					row.cross++;
+					// Whether the shipped rule would have let a draft in this chunk supersede that entry. The
+					// guard never consults session identity, so this is the number a session fence would remove.
+					if (drafts.some((draft) => sameSubject(draft, entry).ok)) {
+						row.crossEligible++;
+						row.crossTasks.push(`${entry.task} (${entry.chunkId}) merge-eligible`);
+					} else row.crossTasks.push(`${entry.task} (${entry.chunkId})`);
+				}
+			}
+		if (row.own + row.cross + row.unscoped !== row.shown)
+			throw new Error(
+				`${run}: ${row.chunkId} offered ${row.shown} candidates but classified ${row.own + row.cross + row.unscoped}`,
+			);
+		if (row.crossEligible > row.cross)
+			throw new Error(
+				`${run}: ${row.chunkId} counted ${row.crossEligible} eligible merges among ${row.cross} cross-session candidates`,
+			);
+		scope.exposure.push(row);
 		for (const op of record.ops) {
 			if (op.action !== "UPDATE" && op.action !== "DELETE") continue;
 			scope.destructiveOps++;
@@ -252,6 +300,62 @@ export function analyseLedger(run: string, records: LedgerRecord[]): RunScope {
 	return scope;
 }
 
+/**
+ * What the reconcile stage was *offered*, as opposed to what it chose. A ledger records the model's ops and
+ * never the candidate menu, so the menu is recomputed here: the recorded drafts, the bank as it stood before
+ * the chunk, and the shipped `candidatesPerDraft` and shown-set the run itself used. The settings come from
+ * the run's own `metrics.json`; a run that recorded none is reported with `dev/run.ts`'s defaults and says so.
+ *
+ * This is the axis a session fence would act on. A refused proposal shows the model reached for another
+ * session's fact; exposure shows how often that fact was put in front of it in the first place.
+ */
+export interface ExposureRow {
+	chunkId: string;
+	drafts: number;
+	shown: number;
+	own: number;
+	cross: number;
+	/** of the cross-session candidates, how many were merge-eligible: some draft in this chunk passes `sameSubject` against them */
+	crossEligible: number;
+	unscoped: number;
+	/** tasks of the candidates written by another session, so each row can be read by hand */
+	crossTasks: string[];
+}
+
+interface RunSettings {
+	mode: "union" | "perDraft";
+	limit: number;
+	/** true when the run recorded neither setting and this report assumed the defaults */
+	assumed: boolean;
+}
+
+function settingsFor(run: string): RunSettings {
+	const path = `${RUNS_ROOT}/${run}/metrics.json`;
+	if (!existsSync(path)) return { mode: "union", limit: 12, assumed: true };
+	const metrics = JSON.parse(readFileSync(path, "utf8")) as { renderMode?: string; candidateLimit?: number };
+	const mode = metrics.renderMode === "union" || metrics.renderMode === "perDraft" ? metrics.renderMode : "union";
+	const limit = typeof metrics.candidateLimit === "number" ? metrics.candidateLimit : 12;
+	return { mode, limit, assumed: metrics.renderMode === undefined || metrics.candidateLimit === undefined };
+}
+
+/** The drafts this chunk's extract wrote: walk back to the extract record this ops record answers. */
+function draftsOfLedgerPrefix(records: LedgerRecord[], opsIndex: number, chunkId: string) {
+	for (let i = opsIndex - 1; i >= 0; i--) {
+		const record = records[i];
+		if (record.type === "hy.extract" && record.chunkId === chunkId) return record.drafts;
+		if (record.type === "hy.ops" && record.chunkId === chunkId) break;
+	}
+	return undefined;
+}
+
+function shownSet(perDraft: Map<number, BankEntry[]>, limit: number, mode: "union" | "perDraft"): BankEntry[] {
+	if (mode === "perDraft") return selectShownPerDraft(perDraft, limit);
+	const union = new Map<string, BankEntry>();
+	for (const list of perDraft.values())
+		for (const entry of list) if (!union.has(entry.id)) union.set(entry.id, entry);
+	return [...union.values()].slice(0, limit);
+}
+
 function discoverRuns(): string[] {
 	if (!existsSync(RUNS_ROOT)) return [];
 	return readdirSync(RUNS_ROOT, { withFileTypes: true })
@@ -275,6 +379,8 @@ function main(): void {
 	const totalProposed = scopes.reduce((sum, s) => sum + s.proposedOps, 0);
 	const totalProposedCross = scopes.reduce((sum, s) => sum + s.proposedCrossSession.length, 0);
 	const totalCross = scopes.reduce((sum, s) => sum + s.crossSession.length, 0);
+	const offered = scopes.flatMap((s) => s.exposure);
+	const sumOf = (pick: (row: ExposureRow) => number): number => offered.reduce((sum, row) => sum + pick(row), 0);
 
 	console.log(
 		`ledgers read: ${scopes.length}; carrying a session id in their chunk ids: ${scoped.length}; ` +
@@ -312,12 +418,38 @@ function main(): void {
 			`target already superseded earlier in the same batch ${kindTotals["already superseded in batch"]}, ` +
 			`no reason recorded ${kindTotals["reason not recorded"]}`,
 	);
+	console.log(
+		`merge candidates the reconcile stage was offered over these runs: ${sumOf((row) => row.shown)}; ` +
+			`written by the acting session ${sumOf((row) => row.own)}, by another session ${sumOf((row) => row.cross)}, ` +
+			`carrying no session marker ${sumOf((row) => row.unscoped)}`,
+	);
+	console.log(
+		`  chunks where a fact from another session was on the menu: ${offered.filter((row) => row.cross > 0).length}` +
+			` of ${offered.length} chunks that reached the reconcile stage`,
+	);
+	console.log(
+		`  of the candidates written by another session, ${sumOf((row) => row.crossEligible)} were merge-eligible:` +
+			` some draft in that chunk passes 'sameSubject' against them. That is the permission a session fence` +
+			` at retrieval would remove, whether or not the model ever reached for it.`,
+	);
 
 	for (const scope of spanning) {
 		console.log(`\n${scope.run}: ${scope.sessions.length} sessions, ${scope.chunks} chunks`);
 		console.log(
 			`  ${pad("chunk", 16)} ${pad("op", 8)} ${pad("target chunk", 16)} ${pad("target session", 14)} task`,
 		);
+		const offeredHere = scope.exposure;
+		const crossMenu = offeredHere.filter((row) => row.cross > 0);
+		console.log(
+			`  offered ${offeredHere.reduce((n, row) => n + row.shown, 0)} merge candidates over ` +
+				`${offeredHere.length} chunks; ${offeredHere.reduce((n, row) => n + row.cross, 0)} of them written by ` +
+				`the other session, in ${crossMenu.length} chunks`,
+		);
+		for (const row of crossMenu)
+			console.log(
+				`    ${pad(row.chunkId, 16)} ${row.cross} of ${row.shown} from the other session, ` +
+					`${row.crossEligible} merge-eligible — ${row.crossTasks.join("; ")}`,
+			);
 		if (scope.crossSession.length === 0 && scope.proposedCrossSession.length === 0) {
 			console.log(
 				`  ${scope.destructiveOps} destructive ops applied and ${scope.proposedOps} refused, none of them ` +
@@ -363,6 +495,15 @@ function main(): void {
 	console.log("\nA refused proposal is not a fence: the bank said no to a wording test, not to a session");
 	console.log("boundary. The request named a live entry another session had written, by id, and nothing in the");
 	console.log("pipeline asked which session that id belonged to.");
+	console.log(
+		"\nMenu, not op: the reconcile stage was offered " +
+			`${sumOf((row) => row.shown)} candidates, ${sumOf((row) => row.cross)} of them written by another ` +
+			`session, and ${sumOf((row) => row.crossEligible)} of those pass 'sameSubject' against some draft in ` +
+			"the chunk that saw them. A fence at the merge gate would refuse crossing ops; a fence at retrieval " +
+			"would remove candidates the stage judged against, leaving " +
+			`${offered.filter((row) => row.shown > 0 && row.shown - row.cross === 0).length} chunks with no ` +
+			"candidate at all. Both are counted here, and neither is applied.",
+	);
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) main();

@@ -1745,6 +1745,12 @@ and drafts and has no session to scope by, and an UPDATE is accepted only if the
 | …the candidate set never offered the target for that draft | 92 |
 | …the target had already been superseded earlier in the same batch | 85 |
 | of those 329, aimed at an entry another session had written | **5** — 2 in `restraint4-base`, 3 in `restraint4-actor`, 0 in `baseline-kitx`, and all 5 were subject-guard refusals rather than retrieval failures |
+| merge candidates the reconcile stage was offered, across the same 30 ledgers | 3075 |
+| …written by the acting session | 2054 |
+| …written by another session | **125** |
+| …carrying no session marker at all (authored corpora) | 896 |
+| chunks that reached the reconcile stage with a fact from another session on the menu | **28** of 361 |
+| …of those cross-session candidates, merge-eligible: some draft in that chunk passes `sameSubject` against them | **28** of 125, all 28 in the two corpus-4 runs |
 
 `baseline-kitx` runs `hy-01a15629-001/002` then `hy-01a1510e-077/016/012`. Its one destructive op
 (`hy-01a15629-002` UPDATE) targets an entry written by `hy-01a15629-001` — its own session. So the tier's
@@ -1765,6 +1771,21 @@ nothing here shows what would have happened on a corpus that did not plant the r
 half shows is about the rule rather than the rate: `candidatesPerDraft`, `sameSubject` and `applyOps` read task,
 statement, keys and entry ids, and none of them consults session identity, so a request that named a live entry
 another session had written, by id, was refused by a wording test and not by an ownership rule.
+
+**What each fence would have changed.** A session fence could sit in one of two places, and the two have opposite
+measured consequences. Requiring the acting session to own the target of an `UPDATE` or `DELETE` would have
+refused **0 of the 392 applied ops**: the four-class split is exhaustive — 226 same-session, 0 crossing, 166 in
+ledgers whose chunk ids carry no session at all, 0 aimed at an entry no longer active — and the 5 attempts the
+model made had already been refused and written as ADDs. Every bank in `out/` is identical under that fence, so
+its value would be entirely preventive and nothing on disk measures it. Fencing *retrieval* instead — offering a
+draft only entries from its own session — removes 125 candidates, and across the 186 chunks that carry a session
+that is 9 chunks left with no merge candidate at all and 12 more losing more than half. In the only organic
+two-session run, `hy-01a1510e-077` was shown five candidates and all five had been written by the other session,
+none of them merge-eligible: there the other session's facts were context the reconcile stage judged against,
+not merges it was about to make. In the corpus-4 runs the same fence would remove 55 and 61 candidates and leave
+5 and 3 chunks with nothing to merge against, which is what authoring two sessions about one subject area
+produces. All 28 merge-eligible cross-session candidates are in that authored corpus; the organic run's 9
+cross-session candidates include none.
 These counts describe this working tree's `out/` as of this commit, not a permanent property of the repo: a run
 directory only counts if it has a `ledger.jsonl`, and 6 of the 36 directories do not.
 
@@ -1800,8 +1821,11 @@ what the subject guard happened to refuse, not a record of safety: a run with on
 one, and a proposal stopped by a wording test is not a proposal stopped by a boundary. In production the bank is
 one store shared by every session that touches the state directory, so cross-session targeting is the ordinary
 case. The synthetic pair is authored by hand and shows what the rule *permits*, not how often the permission is
-used or how much it costs when it is. No `src/` change was made for this tier; fencing destructive authority by
-session remains a decision, not a measurement.
+used or how much it costs when it is. **The tier's decision, taken 2026-10-24: no `src/` change.** Fencing
+destructive authority by session is cheap to hold and expensive to apply, and the only cross-session
+merge-eligibility on disk sits in the corpus authored to plant it, so the fence stays unshipped and the finding
+stays measured. Re-entry trigger: any ledger with an applied cross-session `UPDATE`/`DELETE`, or a run where
+cross-session candidates turn out merge-eligible outside an authored corpus.
 
 ## Tier 3, offline half: the fourth corpus, and three labels the scorer did not have (2026-10-24)
 
