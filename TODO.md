@@ -425,10 +425,15 @@ gate.
       a fresh corpus pair against the six ledgers already on disk. The repeat-facts cleanup stays behind
       both: on these numbers the duplicates absorbed five of the arm run's six declared-value losses, so
       removing them before the merge question is settled removes protection.
-      Both options now have a measurement path that needs no model call and no new corpus:
-      `plan-divergence.md` tier 1 (TODO 8.1) prices the verbatim surface against the nine values the
-      merges already destroyed, and tier 2 (TODO 8.2) prices the guard at three settings including off.
-      The choice is made after those two numbers, not before them.
+      **Both measurement paths are in (2026-10-23), so this is open as a choice.** Tier 1 (TODO 8.1):
+      9 of 9 destroyed values were recoverable verbatim from the chunk that authored them, 0 absent,
+      though 4 of the 9 sit only in a spoken line — a copy can recover a value from the wrong wording.
+      Tier 2 (TODO 8.2), re-folding the same six ledgers: tightening the loose clause refuses 13 more
+      merges for 5 fewer declared values lost at merges and 5 duplicate facts kept, and the guard off is
+      worse than shipped (15 declared values dropped, 5 gone for good against 1). The audit's own
+      prediction was 14 refusals out of 107 with 9 dropping a value; the re-fold's number is 13 and 5,
+      so the tightening option is weaker than the audit suggested and cheaper than it costs is now a
+      measured claim rather than a forecast.
 ### 8. Divergence from the upstream harness: measure it or park it on the record (plan: `plan-divergence.md`)
 
 Written 2026-10-23, after the merge audit (`78a2c6f`) made two things visible at once: the guard's
@@ -437,19 +442,28 @@ divergence table in DESIGN.md contains a row that describes the wrong half of it
 is a reason to adopt upstream's design; both are reasons to put a number on each difference before
 choosing. Tiers are ordered by what can be measured with artifacts already on disk.
 
-- [ ] 8.1 Verbatim recoverability, tier 1. For each of the nine corpus-declared values a merge
+- [x] 8.1 **Done 2026-10-23.** Verbatim recoverability, tier 1. For each of the nine corpus-declared values a merge
       destroyed, check whether a verbatim copy of the chunk that authored it contains it — the claim
       7.18's structural option rests on, measured before any storage change. Also report how many
       *surviving* declared values currently depend on the model having re-said them. Offline, no
       model call. Decides recoverability only: attachment, searchability, read-side injection and token
       cost stay open in 7.18. Stop rule: under two thirds recoverable and the structural option loses
-      its main argument.
-- [ ] 8.2 The subject guard priced including "off", tier 2. The guard is a code-side verdict
+      its main argument. **Measured:** 9 of 9 recoverable verbatim from the chunk that authored the destroyed
+      entry, 0 false hits, 0 absent — but 4 of the 9 sit only in a spoken line, so a copy can recover a value
+      from the wrong wording. Of 92 surviving values, 72 still carry ≥ 4 consecutive words of their source and
+      20 survive only as model restatement. The stop rule is met, so 7.18's structural option keeps its
+      argument; what it does not settle is attachment, searchability, read-path injection and token cost.
+- [x] 8.2 **Done 2026-10-23.** The subject guard priced including "off", tier 2. The guard is a code-side verdict
       (`src/pipeline.ts:332`) and every downgrade is recorded in `hy.ops`, so three settings —
       as-shipped, tightened, and guard off — are one re-fold over the six ledgers. Report accepted
       no-subject merges, accepted merges that dropped a value, active facts covering the same declared
       value after each chunk, and supersede chains of length ≥2 with whether the value survived. A
-      small labeled authored corpus (8–12 chunks) runs only if the replay leaves a real tie.
+      small labeled authored corpus (8–12 chunks) runs only if the replay leaves a real tie. **Measured** over six
+      ledgers, with the as-shipped re-fold reproducing the recorded bank entry for entry in 6 of 6 runs: accepted
+      / refused / declared lost at merges / gone by the end is 107 / 22 / 9 / 1 as shipped, 92 / 35 / 4 / 1
+      tightened, 122 / 0 / 15 / 5 off. Off is measurably worse, and tightening the loose clause is not supported
+      on these numbers — it refused 13 more merges for 5 fewer declared values lost at merges and 5 duplicate
+      facts kept. `dev/guard-fold-report.ts`, pinned by `tools/guard-fold-check.ts`.
 - [ ] 8.3 The two labels the `tool_output` class is missing, tier 3 — this is 7.17. Decided: corpus 3
       stays frozen so its published numbers stay comparable, and the labels go into a new
       `dev/corpus-restraint4.json`, measured as a fresh `restraint4-base` / `restraint4-actor` pair. Add
@@ -457,7 +471,7 @@ choosing. Tiers are ordered by what can be measured with artifacts already on di
       and a paraphrase-tolerant chatter label. Re-run both restraint3 arms. Promotion gate: the arm
       keeps its wording gain *and* stops costing a declared value.
       **Offline half done (2026-10-24).** Corpus 4 is written and contract-checked — 12 `tool_output`, 4
-      constraint chunks, 4 calls past the 240-character window with 2 values hidden past the cut and nowhere
+      constraint chunks, 4 calls past the argument window with 2 values hidden past the cut and nowhere
       else in either session, 4 tool-bearing nothing-durable chunks, 1 cross-session pair over 2 authored
       sessions — and `tools/restraint-corpus-mutation-check.ts` rejects 38 deliberate breakings across the four
       committed corpora. The scorer counts the three labels and `tools/restraint-report-check.ts` pins them,
@@ -467,14 +481,15 @@ choosing. Tiers are ordered by what can be measured with artifacts already on di
       `dev/session-scope-report.ts` on top. The promotion gate below was answered against promoting: the arm
       kept no tool-fact gain on this corpus, 8/12 against 8/12, and its one loose-clause merge dropped
       `night.toml` where the shipped arm's four dropped nothing. Numbers in `EXPERIMENTS.md`.
-- [ ] 8.4 Clipping survival, tier 4. The DESIGN.md row is corrected first, by function name rather
-      **Marker shipped 2026-10-24**: tool call arguments in `textOfParts()` are cut at `ARGS_WINDOW` (240)
+- [x] 8.4 **Done 2026-10-24, both halves.** Clipping survival, tier 4. The DESIGN.md row was corrected
+      first, by function name rather than line number, since it had described the wrong half of its own claim.
+      **Marker shipped 2026-10-24**: tool call arguments in `textOfParts()` are cut at `ARGS_WINDOW`
+      (600 since 2026-10-24, 240 before)
       and now carry clip()'s `…`, where they used to be cut with nothing; bodies and tool results still go
       through `clip()` at `maxEntryChars` (3000 default) *with* `…` — both in `src/entries.ts`, whose row in
       DESIGN.md is corrected by function name rather than line number. `tools/clip-check.ts` pins the failure
-      mode as shipped (240 characters plus the marker, flag past the window, arguments still not closing as
+      mode as shipped (the window plus the marker, flag past the window, arguments still not closing as
       JSON), `dev/clip-report.ts` counts marker presence in the captures (0 of 589, because they were
-      rendered before it), and `tools/restraint-corpus-check.ts` measures the window *and* whether the
       rendered before it), and `tools/restraint-corpus-check.ts` measures the window *and* whether the
       renderer marks a cut instead of assuming either. **Window arm run 2026-10-24**: `serializeEntries` takes
       `maxArgChars` (default `ARGS_WINDOW`, no shipped caller sets it — pinned), `dev/clip-window-report.ts`
@@ -489,7 +504,7 @@ choosing. Tiers are ordered by what can be measured with artifacts already on di
       600.** Consequences of moving it, all taken: `tools/clip-check.ts` re-pinned (a call past 600 is cut and
       marked, a call whose flag sits past 240 is now shown whole and at 240 was not), `dev/clip-window-report.ts`
       and `tools/clip-window-check.ts` re-rooted so the arm compares the window 600 replaced against the shipped
-      one, corpus 4 regenerated with its hidden values now past 600, and both corpus-4 arms re-running so the
+      one, corpus 4 regenerated with its hidden values now past 600, and both corpus-4 arms re-ran, 22 of 22 chunks each, so the
       published numbers are rendered by the window that ships. Re-entry trigger: a value that matters past 600.
 - [ ] 8.5 Their mandate against our empty list, tier 5 — blocked, deliberately. Score fabrication only
       under a written support contract (values present in source text, resolvable `sourceEntryId`
