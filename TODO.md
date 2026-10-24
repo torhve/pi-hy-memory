@@ -198,7 +198,11 @@ gate.
       never more than three of them, every retired row says what dropped it, and a merge-retired
       row names what replaced it. Pinned by `tools/recall-reach-check.ts` and by the tool itself
       in `tools/recall-check.ts`, including that the tool cannot grow an active-only slice again.
-      Not measured: whether a retired row being quoted as current misleads a reader
+      First organic probe (2026-10-24, `EXPERIMENTS.md`): asked about a value two budget-retired
+      facts carry and nothing current does, the session said "both retired from the active bank",
+      cited both ids, and wrote them in the past tense. So the marker was read on one probe — with
+      its own history to corroborate it. Not measured: a fresh session with no history of the fact,
+      and whether the model will *act* on a retired value without checking for a current carrier
       — that is 6.11's question with a new class of row in it. Read again with
       `dev/live-bank-report.ts --snapshot out/live-snapshot --session <id>` (pinned by
       `tools/live-bank-report-check.ts`): the numbers below were read 2026-10-24 from a frozen

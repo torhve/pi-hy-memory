@@ -2423,3 +2423,35 @@ merges and holds 268 values nothing current carries. A corpus that repeats every
 cannot price a gate whose whole job is not retiring the only carrier of one — which is why the
 organic replay, with its drafts already fixed in the ledger, is the arm that actually prices it,
 and why the default stays `false` until a corpus with single-carrier values exists.
+
+
+## First organic read of a retired fact (2026-10-24)
+
+The reader fix was written against numbers from a snapshot; this is the first time the fixed query
+answered on the live session. In the session that reached `bankMaxTokens`, `gb_theme` is carried by
+exactly two facts and **both** are retired by the ceiling — before the fix the query scored only
+`status === "active"` and would have answered "no facts match".
+
+What came back, asked in that session after a reload: it opened with "two things, both retired from
+the active bank but retrievable with their ids", cited `[dfc6bdaeaa4d]` and `[79eb6fd931ce]`, put the
+first in the past tense ("the key the theme store wrote before issue #13 introduced the two palette
+slots"), and described the second as the mutation check that had proved the SSR tests had teeth.
+Neither was presented as current state. So on this probe the `retired:` marker was read rather than
+ignored, and the id-per-row shape gave it something to cite.
+
+Three things this does not establish.
+
+1. **n = 1, and the reader had help.** That session had its own history of the storage-guard work,
+   so it could corroborate the row from context. The harder case is a *fresh* session recalling a
+   retired fact it has never seen: there the row is the only evidence, and the tense it writes in
+   is the marker's job alone.
+2. **The row's wording enters the conversation whole.** `renderRecallHit` returns the full
+   statement, so a retired fact costs what it costs and can be quoted at length. Nothing yet
+   measures whether that displaces current facts in the reader's window.
+3. **The acting question was not run.** The probe worth doing is the follow-up: ask it to *use* a
+   value that only a retired row carries — change a number, reuse a flag — and see whether it
+   checks for a current carrier first or edits from a retired fact as if it were state. That is
+   TODO 6.18's open half and 6.11's question with a new class of row in it.
+
+What it does establish is the cheap part, which was the bug: a value that 1 405 other values share
+the fate of — carried by nothing current — is answerable again, and the answer says so.
