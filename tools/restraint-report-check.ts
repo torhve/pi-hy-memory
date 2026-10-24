@@ -850,6 +850,22 @@ const ruleCorpus: CorpusChunk[] = [
 			"[2] [Assistant @ 10:22]: 8 locked tiles; nothing else to do here.",
 		].join("\n"),
 	},
+	{
+		// 04: the draft-gate half on its own. A draft reaches for a flag no chunk in this corpus shows, and
+		// reconcile never banks it — the writer had a value it could not have read, and the bank is where
+		// that stopped. Kept apart from rule-02, where the same kind of fact reached the bank.
+		chunkId: "hy-x-rule-04",
+		class: "tool_output",
+		probes: ["6 warm keys"],
+		transient: ["a note about sweeping again later"],
+		hidden: ["--warm-window"],
+		text: [
+			"[0] [Assistant @ 10:30]: How many keys were warm at the last sweep?",
+			'[1] [called keys {"command": "keys warm-count --dry-run --checksum sha256"} @ 10:31]',
+			"[2] [Tool result for keys @ 10:31]: 6 warm keys",
+			"[3] [Assistant @ 10:32]: 6 warm keys, a note about sweeping again later.",
+		].join("\n"),
+	},
 ];
 
 const ruleLedger: LedgerRecord[] = [
@@ -879,6 +895,11 @@ const ruleLedger: LedgerRecord[] = [
 		{ action: "ADD", draft: 2 },
 		{ action: "ADD", draft: 3 },
 	]),
+	extract("hy-x-rule-04", [
+		draft("warm keys", "6 warm keys at the last sweep.", false),
+		draft("warm window", "Warm keys are counted over --warm-window.", false),
+	]),
+	ops("hy-x-rule-04", [{ action: "ADD", draft: 0 }]),
 ];
 
 const ruleScore = scoreRun(ruleCorpus, ruleLedger);
@@ -886,6 +907,7 @@ const rtool = new Map(ruleScore.tools.map((c) => [c.chunkId, c]));
 const c1 = rtool.get("hy-x-rule-01")!;
 const c2 = rtool.get("hy-x-rule-02")!;
 const c3 = rtool.get("hy-x-rule-03")!;
+const c4 = rtool.get("hy-x-rule-04")!;
 
 // A kept rule and a lost one, told apart by the bank rather than by intent.
 assert(
@@ -914,6 +936,22 @@ assert(
 assert(
 	c3.hiddenSurvivals.length === 0 && c3.facts.some((f) => f.statement.includes("900")),
 	`rule-03: a banked fact carries 900 while this chunk hides --lock-wait 900 past the window, but chunk 01 prints 900 in a tool result, so carrying it was reading and not inventing — the probe counts only tokens no chunk in the corpus shows, got ${c3.hiddenSurvivals.map((s) => s.token).join(",")}`,
+);
+assert(
+	c2.hiddenDrafts.length === 1 && c2.hiddenDrafts[0]!.token === "--retention-days",
+	`rule-02: the draft carries the unread flag as well as the banked fact, so the draft gate sees the same supplied value, got ${c2.hiddenDrafts.length}`,
+);
+assert(
+	c3.hiddenDrafts.length === 0,
+	`rule-03: its draft carries 900, a token another chunk prints, so nothing at the draft gate counts as unread, got ${c3.hiddenDrafts.map((s) => s.token).join(",")}`,
+);
+assert(
+	c4.hiddenDrafts.length === 1 && c4.hiddenSurvivals.length === 0,
+	`rule-04: the writer drafted the unread flag and reconcile never banked it — that is a value the model reached for and the bank refused, not one it never read, got drafts=${c4.hiddenDrafts.length} facts=${c4.hiddenSurvivals.length}`,
+);
+assert(
+	c4.facts.length === 1 && c4.facts[0]!.probe === "6 warm keys",
+	`rule-04: only the tool fact reached the bank, got ${c4.facts.map((f) => f.probe ?? "neither").join(",")}`,
 );
 assert(
 	hiddenSignatures("--retention-days 45", "19 stale keys survive").join(",") === "--retention-days,45",
@@ -959,8 +997,10 @@ assert(
 	`four declared rules over three chunks: two kept in the user's words, one restated, one lost, got ${ruleTotals.toolConstraintsKept}/${ruleTotals.toolConstraintsRestated}/${ruleTotals.toolConstraintsLost} over ${ruleTotals.toolConstraintChunks}`,
 );
 assert(
-	ruleTotals.toolHiddenChunks === 2 && ruleTotals.toolHiddenSurvivalFacts === 1,
-	`two chunks hide a value past the argument window, one banked fact carries a token of one, got ${ruleTotals.toolHiddenChunks}/${ruleTotals.toolHiddenSurvivalFacts}`,
+	ruleTotals.toolHiddenChunks === 3 &&
+		ruleTotals.toolHiddenSurvivalFacts === 1 &&
+		ruleTotals.toolHiddenDraftFacts === 2,
+	`three chunks hide a value past the argument window: one banked fact carries an unread token, and two drafts carry one — the second drafted a value reconcile never banked, got facts=${ruleTotals.toolHiddenSurvivalFacts} drafts=${ruleTotals.toolHiddenDraftFacts} over ${ruleTotals.toolHiddenChunks}`,
 );
 assert(
 	ruleTotals.toolChatterParaphraseFacts === 1,

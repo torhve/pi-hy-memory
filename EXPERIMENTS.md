@@ -2000,3 +2000,43 @@ and the actor arm's from 12/12 to 8/12 are therefore not attributable to any sin
 they are not the published corpus-3 numbers rewritten: corpus 3's ledgers were re-scored and left where they
 were. Both arms ran once, on one route, against an authored corpus of 22 chunks. Nothing under `src/` changed
 for this tier either.
+
+## Tier 4, run half: what the silent 240-character cut cost the two corpus-4 arms (2026-10-24)
+
+Tier 4's fixture half (2026-10-23) established the rule and the shape of the loss: `clip()` marks its cuts
+with `…`, while tool call arguments in `textOfParts()` are cut with `JSON.stringify(…).slice(0, 240)` and no
+marker at all, so a cut call reaches the writer as malformed JSON with no sign that text was removed. The run
+half asked whether that costs a value the session needed. It needed no new run: `dev/corpus-restraint4.json`
+was authored with the labels tier 4 needed — 4 chunks carrying a call the shipped renderer cuts at the window
+it actually uses, 2 of them hiding a value nowhere else in the corpus — and both corpus-4 arms had already run
+on it.
+
+**The instrument needed one addition first.** "0 banked facts carry an unread token" has two readings, and the
+report could not tell them apart: the writer never had the value, or the writer wrote it and reconcile refused
+it. `dev/restraint-report.ts` now counts the draft gate beside the bank (`toolHiddenDraftFacts`), and
+`tools/restraint-report-check.ts` pins the difference with a fourth rule chunk (`hy-x-rule-04`) whose draft
+carries `--warm-window`, a flag no chunk in that fixture shows, and whose ops bank only the tool fact:
+1 draft carrying an unread token, 0 banked facts. The fixture's other two hidden-value cases stay as they were
+— a drafted *and* banked flag counted at both gates, and a fact carrying `900` where another chunk prints `900`
+counted at neither.
+
+**Both arms, same numbers.** `hidden-value carry — tokens no chunk in the corpus shows: 2/12 chunks hold a
+value past the argument window; 0 banked facts and 0 drafts carry one of its unread tokens`. Neither arm banked
+`--retention-days` or `--fail-on-missing`, and neither drafted either, so in these runs the removed tail held a
+value the model never reached at all — it was not a value the guard threw away. On the same two ledgers, declared
+values the writer *could* read survived **16/17** in both arms, one chunk losing a value (`hy-4f0a0002-to-12`,
+"queue holds 18 entries"). The cost of the cut is visible as that difference: 16/17 where the value was in what
+the writer saw, 0/2 where it was past the cut.
+
+**The organic half, unchanged.** Over 51 captured chunk texts (3715 rendered lines, 1955 tool calls shown):
+589 calls cut at 240 with no marker (30.1%), 555 of them cut inside a quoted string (94.2%), 50 of 51 captures
+holding at least one cut call, 584 of the cut calls having their own result shown on the next line, and 20 of
+those results carrying a flag the visible arguments did not. That last figure bounds the writer's other route
+rather than measuring the loss: a flag readable in a result line means the writer had a way to learn it, not
+that the removed tail held it.
+
+**What this does not settle.** The 16/17 versus 0/2 comparison is inside one pair of runs and is not causal:
+the two hidden values were authored to appear nowhere else, and corpus 4 differs from corpus 3 in several ways
+at once. Whether a wider window would have banked them is a different run — the same chunk rendered at 240 and
+at 600 — which has not been run, and the captures cannot price it because a captured chunk text is already cut
+and the full arguments are not in it. The decision about the window itself is recorded in DESIGN.md.

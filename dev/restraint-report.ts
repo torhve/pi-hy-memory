@@ -190,6 +190,10 @@ export interface ToolRow {
 	 * one of its tokens anyway. A survivor here was supplied by the model, not read from the session. */
 	hidden: string[];
 	hiddenSurvivals: { statement: string; token: string }[];
+	/** Drafts from this chunk that carry an unread token of the hidden value. A draft carrying it was
+	 * written from the model's own wording rather than read: reported at the draft gate so a value the
+	 * bank refused and a value the writer never had are not the same line. */
+	hiddenDrafts: { statement: string; token: string }[];
 	/** Bank facts carrying no declared value and none of the declared chatter verbatim, but holding a
 	 * declared chatter phrase's content words: the chatter arrived paraphrased, which is the hole
 	 * literal chatter matching left open in the 2026-10-22 label audit. */
@@ -667,6 +671,17 @@ export function scoreRun(chunks: CorpusChunk[], ledger: LedgerRecord[]): RunScor
 		const hiddenSurvivals = authored
 			.filter((f) => f.hidden !== null)
 			.map((f) => ({ statement: f.statement, token: f.hidden as string }));
+		// The same token read at the draft gate: the model wrote it before the bank decided anything, so
+		// this is where a value the writer was never shown would first appear.
+		const hiddenDrafts =
+			ev?.present && hiddenTokens.length > 0
+				? ev.drafts
+						.filter((d) => hiddenTokens.some((token) => carries(token, textOf(d))))
+						.map((d) => ({
+							statement: d.statement,
+							token: hiddenTokens.find((token) => carries(token, textOf(d))) as string,
+						}))
+				: [];
 		for (const f of facts) {
 			f.chatterParaphrase =
 				f.probe === null &&
@@ -725,6 +740,7 @@ export function scoreRun(chunks: CorpusChunk[], ledger: LedgerRecord[]): RunScor
 			factsConstraint,
 			hidden: chunk.hidden ?? [],
 			hiddenSurvivals,
+			hiddenDrafts,
 			factsChatterParaphrase,
 			crossSession: chunk.crossSession ?? null,
 			outcome,
@@ -813,6 +829,9 @@ export interface Totals {
 	 * writer's own input cannot explain, and the fabrication probe's positive case. */
 	toolHiddenChunks: number;
 	toolHiddenSurvivalFacts: number;
+	/** Drafts — not banked facts — carrying an unread token: the writer's own words reached for a value
+	 * no chunk shows, whether or not the bank kept it. */
+	toolHiddenDraftFacts: number;
 	/** Banked chatter that arrived paraphrased rather than quoted — the hole the 2026-10-22 label audit
 	 * found and literal chatter matching could not see. */
 	toolChatterParaphraseFacts: number;
@@ -881,6 +900,7 @@ export function totals(score: RunScore): Totals {
 		toolFactsConstraint: score.tools.reduce((n, c) => n + c.factsConstraint, 0),
 		toolHiddenChunks: score.tools.filter((c) => c.hidden.length > 0).length,
 		toolHiddenSurvivalFacts: score.tools.reduce((n, c) => n + c.hiddenSurvivals.length, 0),
+		toolHiddenDraftFacts: score.tools.reduce((n, c) => n + c.hiddenDrafts.length, 0),
 		toolChatterParaphraseFacts: score.tools.reduce((n, c) => n + c.factsChatterParaphrase, 0),
 		toolActorFramedAuthored: score.tools.reduce((n, c) => n + c.actorFramedFacts, 0),
 		toolFactsAuthored: score.tools.reduce((n, c) => n + (c.facts.length - c.factsCarriedIn), 0),
@@ -1022,7 +1042,10 @@ function main(): void {
 				`  declared rule text beside tool output: ${t.toolConstraintsKept}/${t.toolConstraintsDeclared} kept verbatim in a bank fact, ${t.toolConstraintsRestated} present only as a rearrangement of its content words, ${t.toolConstraintsLost} reaching no bank fact at all, over ${t.toolConstraintChunks}/${t.toolChunks} chunks. A keep here means the rule's wording sits in a banked fact, not that the rule was obeyed; and a bank fact whose only tie to the chunk is such a rule — ${t.toolFactsConstraint} of them — is the case where the rule text survived and the tool fact did not, which the outcome column can only read as kept-other.`,
 			);
 			console.log(
-				`  hidden-value carry — tokens no chunk in the corpus shows: ${t.toolHiddenChunks}/${t.toolChunks} chunks hold a value past the argument window, and ${t.toolHiddenSurvivalFacts} banked facts carry one of its unread tokens. The reading is supplied-not-read for those tokens only: a flag name or a number that any chunk prints is dropped from the count, the corpus check rejects a hidden value whose every token is visible somewhere, and a value carried from a later chunk is not this chunk's.`,
+				`  hidden-value carry — tokens no chunk in the corpus shows: ${t.toolHiddenChunks}/${t.toolChunks} chunks hold a value past the argument window; ${t.toolHiddenSurvivalFacts} banked facts and ${t.toolHiddenDraftFacts} drafts carry one of its unread tokens.`,
+			);
+			console.log(
+				`  The reading is supplied-not-read for those tokens only: a flag name or a number that any chunk prints is dropped from the count, the corpus check rejects a hidden value whose every token is visible somewhere, and a value carried from a later chunk is not this chunk's. The two halves say different things — no draft and no fact means the value never reached the model's pen, while a draft with no surviving fact would mean the bank refused a value the writer had read.`,
 			);
 			console.log(
 				`  possible chatter paraphrase: ${t.toolChatterParaphraseFacts} banked facts hold a declared chatter phrase's content words without quoting it. Word matching, not understanding: a synonym substitution slips past this and a shared technical noun can over-count it, and it is the hole the 2026-10-22 label audit found that literal chatter matching could not see.`,
