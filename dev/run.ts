@@ -151,6 +151,10 @@ async function main(): Promise<void> {
 	// Experiment arm (TODO 7.10): extract sees the bank's task lines before it proposes.
 	// Off unless the flag is given, so every published baseline stays the flagless path.
 	const bankIndex = process.argv.includes("--bank-index");
+	// Experiment arm (TODO 7.18): refuse an UPDATE whose draft drops a value its target carries,
+	// even when the subject guard calls the two one subject. Off unless the flag is given, so every
+	// baseline on disk stays the flagless path and the arm says so in its own log line.
+	const mergeValueGate = process.argv.includes("--merge-value-gate");
 	const bankIndexTokens = numArg("--bank-index-tokens", 600);
 	// Experiment arm: replace the extract prompt with a named variant. No variant name means
 	// the shipped prompt, so a published baseline is never re-run by accident.
@@ -230,6 +234,7 @@ async function main(): Promise<void> {
 		pool: number;
 		renderMode: string;
 		candidateLimit: number;
+		mergeValueGate?: boolean;
 		chunks: Row[];
 	} = {
 		runId,
@@ -237,6 +242,7 @@ async function main(): Promise<void> {
 		pool,
 		renderMode,
 		candidateLimit,
+		mergeValueGate,
 		chunks: [],
 	};
 	// Chunks finished in an earlier attempt keep their full metrics rows when
@@ -271,7 +277,7 @@ async function main(): Promise<void> {
 		prefix.push(r);
 	}
 	console.log(
-		`run=${runId} model=${route.model} origin=${route.origin} temp=0 kwargs=none timeout=600s candidates=${renderMode} limit=${candidateLimit}${bankIndex ? ` bank-index=${bankIndexTokens}t` : ""}${extractPromptName ? ` extract-prompt=${extractPromptName}` : ""}`,
+		`run=${runId} model=${route.model} origin=${route.origin} temp=0 kwargs=none timeout=600s candidates=${renderMode} limit=${candidateLimit}${bankIndex ? ` bank-index=${bankIndexTokens}t` : ""}${extractPromptName ? ` extract-prompt=${extractPromptName}` : ""}${mergeValueGate ? " merge-value-gate=on" : ""}`,
 	);
 	console.log(
 		`corpus=${corpus.length} chunks, ledger has ${doneChunk.size} complete, ${extractOf.size - doneChunk.size} resumable`,
@@ -312,6 +318,7 @@ async function main(): Promise<void> {
 					candidateRenderMode: renderMode,
 					candidateLimit,
 					bankIndex: bankIndex ? { maxTokens: bankIndexTokens } : undefined,
+					mergeValueGate,
 					extractSystem,
 					resume: resumeFrom
 						? {

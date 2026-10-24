@@ -44,31 +44,13 @@ import { pathToFileURL } from "node:url";
 import { foldLedger } from "../src/bank.js";
 import { sameSubject } from "../src/protocol.js";
 import type { BankEntry, Draft, LedgerRecord, ReconcileOp } from "../src/types.js";
+import { valueTokens as specificTokens } from "../src/values.js";
 import { type CorpusChunk, carries } from "./restraint-report.js";
 
 const RUNS_ROOT = "out";
-const SPECIFIC = /(-{1,2}[a-z0-9][a-z0-9._/+-]*|[a-z0-9][a-z0-9._/+-]{1,})/g;
 
-/**
- * A token that holds a value instead of wording: a number, a flag, a dotted file name, a path,
- * or an underscored identifier. Wording tokens ("queue", "entries", "seconds") are deliberately
- * excluded — the guard already reads those, and the point of this measurement is what the guard
- * does not read.
- */
-export function specificTokens(text: string): Set<string> {
-	const out = new Set<string>();
-	for (const raw of text.toLowerCase().match(SPECIFIC) ?? []) {
-		const token = raw.replace(/[.,:]+$/, "");
-		if (token.length < 2) continue;
-		const isNumber = /\d/.test(token);
-		const isFlag = token.startsWith("--");
-		const isFile = /^[a-z0-9_-]+\.[a-z0-9.]+$/.test(token);
-		const isPath = token.includes("/") && token.length > 3;
-		const isIdentifier = token.includes("_") && token.length >= 5;
-		if (isNumber || isFlag || isFile || isPath || isIdentifier) out.add(token);
-	}
-	return out;
-}
+/** The shipped definition, not a second reading of it: `src/values.ts` is what the merge gate uses. */
+export { specificTokens };
 
 /**
  * Which clause in sameSubject let an UPDATE through. Two ways to pass: the draft restates half

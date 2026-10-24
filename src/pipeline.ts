@@ -14,6 +14,7 @@ import { completeWithFallback, type Writer } from "./llm.js";
 import { EXTRACT_SYSTEM, reconcileSystem } from "./prompts.js";
 import {
 	candidatesPerDraft,
+	guardUpdateOps,
 	parseDrafts,
 	parseOps,
 	renderBankForReconcile,
@@ -105,6 +106,16 @@ export async function writeChunk(
 		 * drafts whose candidates fall outside the cap see nothing.
 		 */
 		candidateRenderMode?: "union" | "perDraft";
+		/**
+		 * Refuse an UPDATE whose draft drops a value its target carries — a number, a flag, a dotted
+		 * file name, a path, an underscored identifier — even when the wording test says the two are the
+		 * same subject. TODO 7.18's third option, priced in `dev/guard-fold-report.ts` over 10 ledgers:
+		 * the wording rule alone loses 9 corpus-declared values at merges and this gate loses 0, at +741
+		 * bank tokens and +7 values carried by two facts. Off until the run on the record says it holds:
+		 * refusing a merge leaves its target active, which changes what a later merge can target, and the
+		 * re-fold cannot see that cascade in a live run's drafts.
+		 */
+		mergeValueGate?: boolean;
 		/**
 		 * Experiment only (TODO 7.10), off by default and never set by the extension: give the
 		 * extract call the bank's task lines alongside the chunk, so a draft that only restates
@@ -323,19 +334,8 @@ export async function writeChunk(
 		// proves the entry was on screen for this draft; it cannot tell that the
 		// subject changed. Measured: "node-b offline / container 121 start failure"
 		// was applied over "LXC containers on nodes", erasing the inventory.
-		const byId = new Map(bank.map((entry) => [entry.id, entry]));
-		ops = ops.map((op) => {
-			if (op.action !== "UPDATE") return op;
-			const target = byId.get(op.target);
-			const draft = drafts[op.draft];
-			if (!target || !draft) return op;
-			const verdict = sameSubject(draft, target);
-			if (verdict.ok) return op;
-			downgradedOps.push({
-				reason: `target does not restate its subject (${verdict.shared}/${verdict.targetSize} shared); recorded as ADD`,
-				op: { action: op.action, draft: op.draft, target: op.target },
-			});
-			return { action: "ADD" as const, draft: op.draft };
+		ops = guardUpdateOps(bank, drafts, ops, downgradedOps, {
+			valueGate: options.mergeValueGate === true,
 		});
 	}
 

@@ -421,21 +421,26 @@ gate.
       the end, +366 bank tokens, +5 duplicate values. Weaker than the merge audit forecast (it predicted 14
       refusals of 107 with 9 dropping a value; the re-fold says 13 refusals and 5 saved) and it decides on a
       token count rather than on the value.
-      **A code-side value gate**, priced 2026-10-24 as two arms: accept an UPDATE only when every specific
-      token the target carries is restated by the draft. `value-carry` (that test plus the shipped wording
-      rule) accepts 90, refuses 70; `value-only` (the test alone) accepts 98, refuses 61. Neither leaves a
-      declared value lost at a judged merge or gone by the end, at +741 / +565 bank tokens and +7 duplicate
-      values. Two holes named in the report: the zero sits on a smaller denominator (12 and 13 proposals
-      ended with no active target to judge, against 0 for shipped), and the extractor is a matcher — a value
-      reworded into prose reads as a loss, and a declared phrase with no specific token (`line 63`) is
-      invisible to it. `value-only` additionally merges a target carrying no value on any subject overlap.
+      **A code-side value gate**, priced 2026-10-24 as two arms and implemented the same day behind
+      `mergeValueGate` (default `false`): accept an UPDATE only when every specific token the target
+      carries is restated by the draft. `value-carry` (that test plus the shipped wording rule) accepts
+      90, refuses 70; `value-only` (the test alone) accepts 98, refuses 61. Neither leaves a declared
+      value lost at a judged merge or gone by the end, at +741 / +565 bank tokens and +7 duplicate
+      values. The shipped gate is `value-carry`, in `src/values.ts` and `guardUpdateOps`, refused with
+      the values it stopped named in the ledger reason; `value-only` stays an arm in the fold, because
+      it merges a target carrying no value on any subject overlap. Two holes named in the report: the
+      zero sits on a smaller denominator (12 and 13 proposals ended with no active target to judge,
+      against 0 for shipped), and the extractor is a matcher — a value reworded into prose reads as a
+      loss, and a declared phrase with no specific token (`line 63`) is invisible to it.
       **Or the verbatim surface**, upstream's structure rather than a threshold: 9 of 9 destroyed values were
       recoverable verbatim from the chunk that authored them, 0 absent, though 4 of the 9 sit only in a
       spoken line. It costs 374 tokens if the surface holds only the chunks behind lost values and 22 995 if
       every stored entry gets its source chunk, against an 11 024-token bank — and it is a storage and
       read-path change, not a gate.
       Nothing here is a live run: the fold holds the model's drafts fixed, so a gate that ships has to be
-      validated by running it, which is one corpus-4 arm (~340 s of model wall). The repeat-facts cleanup
+      validated by running it, which is one corpus-4 arm (~340 s of model wall). That arm is
+      `restraint4-base-gate` — corpus 4 with `--merge-value-gate` on, scored against `restraint4-base-600`
+      on the same corpus with it off — and its result decides the default. The repeat-facts cleanup
       stays behind all three: duplicates absorbed five of the arm run's six declared-value losses, so
       removing them before this is settled removes protection.
 ### 8. Divergence from the upstream harness: measure it or park it on the record (plan: `plan-divergence.md`)

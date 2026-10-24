@@ -24,9 +24,13 @@
  * be reconstructed. But a downgrade is not one check: the recorded reasons in these six runs name the
  * subject test ("target does not restate its subject"), the retrieval test ("update target not
  * retrieved for this draft"), and the batch test ("target already superseded in this batch"). Only the
- * subject test is what these three arms change, so only subject refusals are put back as UPDATEs; the
- * rest stay ADDs and are counted separately. Ops rejected before any of this, by parseOps, are not
- * recoverable at all — the ledger keeps at most six, truncated — and none of the six runs has any.
+ * subject test is what these arms change, so only subject refusals are put back as UPDATEs; the rest
+ * stay ADDs and are counted separately. A ledger written with `mergeValueGate` on records a fourth kind,
+ * the value gate's refusal, which is also left as an ADD: the fold reproduces that bank either way, but
+ * it cannot re-decide those merges, so a gate-on ledger prices the wording arms and not the gate itself.
+ * Ops rejected before any of
+ * this, by parseOps, are not recoverable at all — the ledger keeps at most six, truncated — and none of
+ * the runs on disk has any.
  *
  * The fold then re-derives the guard decision for every proposed UPDATE against the bank as it stands
  * at that point in the replay — the same check src/pipeline.ts makes at write time — and a refused
@@ -218,9 +222,10 @@ interface Pending {
  * The model's proposals, before our guard touched them: a recorded ADD whose draft index appears in the
  * record's downgradedOps was an UPDATE when the reconciler wrote it.
  */
-/** Which of our three write-time checks refused the merge. Only the first is a tier-2 variable. */
-export function downgradeKind(reason: string): "subject" | "retrieval" | "batch" | "other" {
+/** Which of our write-time checks refused the merge. Only the subject test is a fold variable. */
+export function downgradeKind(reason: string): "subject" | "value gate" | "retrieval" | "batch" | "other" {
 	if (/does not restate its subject/.test(reason)) return "subject";
+	if (/carries a value the draft does not restate/.test(reason)) return "value gate";
 	if (/not retrieved|never shown|not candidate/i.test(reason)) return "retrieval";
 	if (/superseded in this batch|already replaced/.test(reason)) return "batch";
 	return "other";

@@ -64,6 +64,16 @@ export type HyConfig = {
 	/** Wall-clock cap for the checkpoint call. */
 	hifiTimeoutMs: number;
 	candidateRenderMode: "union" | "perDraft";
+	/**
+	 * Refuse an UPDATE whose draft drops a value its target carries — a number, a flag, a dotted file
+	 * name, a path, an underscored identifier — even when the subject guard calls the two one subject.
+	 * TODO 7.18's third option, priced in `dev/guard-fold-report.ts`: across 10 recorded runs the wording
+	 * rule alone loses 9 corpus-declared values at merges and this gate loses none, at +7 % bank tokens
+	 * and +7 values held by two facts at once. Off until the live run agrees with the re-fold — refusing
+	 * a merge leaves its target active, so a run under this gate drafts against a different bank, which
+	 * is the one thing a re-fold cannot see.
+	 */
+	mergeValueGate: boolean;
 	waitForWriteOnSettle: boolean;
 	/** Upper bound on how long session_shutdown waits for an in-flight write. */
 	shutdownWaitMs?: number;
@@ -161,6 +171,7 @@ export const SETTING_DEFAULTS: HyConfig = {
 	hifiRetryLimit: 3,
 	hifiTimeoutMs: 120_000,
 	candidateRenderMode: "perDraft",
+	mergeValueGate: false,
 	waitForWriteOnSettle: true,
 	model: "hy-memory-30b-a3b",
 	maxTokens: 8000,

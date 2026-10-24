@@ -34,6 +34,7 @@ import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { foldLedger } from "../src/bank.js";
 import type { BankEntry, LedgerRecord } from "../src/types.js";
+import { carries as shippedCarries } from "../src/values.js";
 
 export interface CorpusChunk {
 	chunkId: string;
@@ -250,13 +251,10 @@ export function actorFramedStatement(statement: string): boolean {
 }
 
 /** A claim survives paraphrase as a token, not as a sentence: match the anchor as a whole token.
- * A flag-shaped token needs a boundary that does not assume a word character on its outside — a `\b`
- * in front of `--dry-run` matches nothing — while an ordinary token keeps `\b`, which is the boundary
- * every earlier score in this repo was computed with. */
+ * This is `src/values.ts`'s boundary rule, the same one the merge gate reads — not a second
+ * definition of it, so a score and a refusal cannot disagree about what a value is. */
 export function carries(anchor: string, text: string): boolean {
-	const esc = anchor.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-	const pattern = anchor.startsWith("-") ? `(?<![\\w-])${esc}(?![\\w-])` : `\\b${esc}\\b`;
-	return new RegExp(pattern, "i").test(text);
+	return shippedCarries(anchor, text);
 }
 
 const textOf = (row: { task: string; statement: string; keys: string[] }): string =>

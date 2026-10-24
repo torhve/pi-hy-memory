@@ -552,6 +552,7 @@ export default function piHyMemory(pi: ExtensionAPI): void {
 					bankMaxTokens: config.bankMaxTokens,
 					candidateLimit: candidateBudget(),
 					candidateRenderMode: config.candidateRenderMode,
+					mergeValueGate: config.mergeValueGate,
 					fallback,
 					preferFallback: (state?.primaryDownUntil ?? 0) > Date.now(),
 					busyRetries: config.busyRetries,

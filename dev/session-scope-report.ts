@@ -60,20 +60,23 @@ export interface CrossSessionOp {
 /** What kind of refusal a downgraded proposal was, read from the reason the bank recorded in the ledger. */
 export type ProposalKind =
 	| "subject guard"
+	| "value gate"
 	| "target not retrieved"
 	| "already superseded in batch"
 	| "reason not recorded";
 
 const KINDS: { prefix: string; kind: ProposalKind }[] = [
 	{ prefix: "target does not restate its subject", kind: "subject guard" },
+	{ prefix: "target carries a value the draft does not restate", kind: "value gate" },
 	{ prefix: "update target not retrieved for this draft", kind: "target not retrieved" },
 	{ prefix: "target already superseded in this batch", kind: "already superseded in batch" },
 ];
 
 /**
- * `src/pipeline.ts` and `src/protocol.ts` write these three reasons, and the three kinds mean different
- * things: one is the subject guard saying no to a merge, one is the candidate set never offering the target,
- * one is the target having been superseded earlier in the same batch. An unrecognised reason is a kind this
+ * `src/pipeline.ts` writes these four reasons, and the kinds mean different things: one is the subject
+ * guard saying no to a merge, one is the value gate refusing a draft that drops a value the target
+ * carries, one is the candidate set never offering the target, one is the target having been superseded
+ * earlier in the same batch. An unrecognised reason is a kind this
  * report would silently misreport, so it stops rather than guessing.
  */
 export function proposalKind(reason: string): ProposalKind {
@@ -139,6 +142,7 @@ export function analyseLedger(run: string, records: LedgerRecord[]): RunScope {
 		proposedTargetInactive: 0,
 		proposedKinds: {
 			"subject guard": 0,
+			"value gate": 0,
 			"target not retrieved": 0,
 			"already superseded in batch": 0,
 			"reason not recorded": 0,
@@ -414,6 +418,7 @@ function main(): void {
 	);
 	const kindTotals: Record<ProposalKind, number> = {
 		"subject guard": 0,
+		"value gate": 0,
 		"target not retrieved": 0,
 		"already superseded in batch": 0,
 		"reason not recorded": 0,

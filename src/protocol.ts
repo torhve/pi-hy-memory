@@ -5,6 +5,7 @@
 
 import type { BankEntry, Draft, ExtractResult, ReconcileOp, ReconcileResult } from "./types.js";
 import { isId } from "./types.js";
+import { valuesTheDraftDrops } from "./values.js";
 
 const MAX_STATEMENT_CHARS = 420;
 const MAX_TASK_CHARS = 120;
@@ -425,4 +426,58 @@ export function sameSubject(
 	// a few shared specifics and at least 15% of the target's vocabulary.
 	const ok = targetSize === 0 || shared / targetSize >= 0.5 || (shared >= 3 && shared / targetSize >= 0.15);
 	return { ok, shared, targetSize };
+}
+
+/**
+ * The two write-time checks an UPDATE has to pass, applied to a proposed op list.
+ *
+ * Both refuse by recording an ADD instead, because the two failure shapes are not equally
+ * recoverable: a refused merge leaves the same claim banked twice, which a later write can clean
+ * up, while an applied merge overwrites history that nothing can restore.
+ *
+ *   1. the subject test — an UPDATE must restate its target. Measured: a draft about "node-b
+ *      offline, container 121 start failure" was applied over "LXC containers on nodes", a full host
+ *      inventory, because the two share a node name. Retrieval cannot see that; the inventory *was*
+ *      on screen, because it mentions the same node.
+ *   2. the value test (`mergeValueGate`, TODO 7.18) — same subject is not the same question as
+ *      keeping what the old fact held. "queue purge age is 420, line 63" and "queue retention rule
+ *      was reviewed" are one subject, and the merge destroys 420.
+ *
+ * Refusals are appended to `downgradedOps` with the reason the bank recorded, which is what
+ * `dev/merge-report.ts` and `dev/session-scope-report.ts` read back out of the ledger — so the
+ * wording of these two strings is a published interface, not a log line.
+ */
+export function guardUpdateOps(
+	bank: BankEntry[],
+	drafts: Draft[],
+	ops: ReconcileOp[],
+	downgradedOps: { reason: string; op: unknown }[],
+	guards: { valueGate: boolean },
+): ReconcileOp[] {
+	const byId = new Map(bank.map((entry) => [entry.id, entry]));
+	return ops.map((op) => {
+		if (op.action !== "UPDATE") return op;
+		const target = byId.get(op.target);
+		const draft = drafts[op.draft];
+		if (!target || !draft) return op;
+		const verdict = sameSubject(draft, target);
+		if (!verdict.ok) {
+			downgradedOps.push({
+				reason: `target does not restate its subject (${verdict.shared}/${verdict.targetSize} shared); recorded as ADD`,
+				op: { action: op.action, draft: op.draft, target: op.target },
+			});
+			return { action: "ADD" as const, draft: op.draft };
+		}
+		if (guards.valueGate) {
+			const dropped = valuesTheDraftDrops(target, draft);
+			if (dropped.length > 0) {
+				downgradedOps.push({
+					reason: `target carries a value the draft does not restate (${dropped.slice(0, 6).join(", ")}); recorded as ADD`,
+					op: { action: op.action, draft: op.draft, target: op.target },
+				});
+				return { action: "ADD" as const, draft: op.draft };
+			}
+		}
+		return op;
+	});
 }
