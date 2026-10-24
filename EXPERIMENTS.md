@@ -1557,3 +1557,116 @@ problem entirely: a merge would no longer have to restate a value for the value 
 second is upstream's existing structure, and on these numbers it is the cheaper of the two, because
 it does not trade destruction against duplication. Neither is applied. Nothing in `src/` changed for
 this measurement.
+
+## Tier 1: were the destroyed values recoverable at all? (offline, 2026-10-23)
+
+The structural option in plan-divergence.md — carry a verbatim copy of the source chunk behind each
+fact, upstream's `details`, copied by code and never re-spoken — was priced against a tightening of
+the subject guard. Pricing it needs one fact first: **would a verbatim copy have preserved what the
+merge destroyed, or would it have copied bytes that never held the value?**
+
+`dev/verbatim-report.ts` answers that offline. No model call, no route, no endpoint, no temperature:
+it reads the merge audit's rows over six ledgers, takes each corpus-declared value an accepted merge
+destroyed, and searches the **verbatim text of the chunk that authored the destroyed entry** — the
+text the pipeline already had in hand at that moment. Matching rules were fixed before any number was
+read: whitespace runs collapsed, typographic dashes and quotes unified with their ASCII forms,
+markdown emphasis and code-span markers stripped, underscores inside identifiers left intact, and the
+token-boundary rule from the probe matcher. No fuzzy matching. `false-hit` is a reported category:
+where a naive substring search says the value is present and the boundary rule refuses.
+
+Measured over six runs:
+
+| | |
+|---|---|
+| declared values an accepted merge destroyed | 9 |
+| recoverable verbatim from that chunk | **9** |
+| false hit (substring present, boundary refuses) | 0 |
+| absent (the characters are not in the source at all) | 0 |
+| of those 9, value sits in a **tool output** line | 5 |
+| of those 9, value sits only in a **spoken** line | 4 |
+| declared values that survived the merge | 92 |
+| …and still carry ≥ 4 consecutive words of their source chunk | 72 |
+| …surviving only as model restatement | 20 |
+
+The tier's stop rule was set before measuring: if fewer than two-thirds of the destroyed values were
+findable in the source text, the verbatim option would be dropped. It is not dropped: **9 of 9**.
+
+What this rules out is the strong objection — that a copy would preserve nothing because the value was
+never in any text the writer held. What it does not show is that verbatim storage is the right move.
+The 4 values found only in a spoken line were recoverable from an *earlier wording*, not from the tool
+output that produced them, and a copy that recovers a value from the wrong line is a copy of the wrong
+thing.
+
+**Price, two ways** (`estimateTokens`, no model): a verbatim surface holding only the chunks behind
+this run's lost values costs **374 tokens**; a surface holding one verbatim block behind **every**
+stored entry costs **12,475 tokens**. The active bank across these six runs is 5,770 tokens. The
+narrow form is cheap enough to be a real option; the whole-surface form is larger than the memory it
+protects.
+
+`tools/verbatim-report-check.ts` pins the matching rules against a chunk with known answers: `4096`
+inside `14096` must be a false hit, `--dry-run` inside `--dry-run-all` a false hit, `0640` inside
+`*0640*` recoverable from the tool output, a value that appears only in an assistant line recoverable
+but flagged `spoken line`, `9999` absent, one active entry classified as quoting its source and one as
+restating it, and the narrow surface priced below the whole-surface one.
+
+## Tier 2: the same bank re-folded under three subject guards (offline, 2026-10-23)
+
+`dev/guard-fold-report.ts` re-runs the fold on the same ledgers under three settings, changing only
+`sameSubject`'s relaxation: **as shipped**, **tightened** (the loose clause needs ≥ 4 shared tokens *and*
+≥ 25% of the target's wording; the "restated half" clause untouched), and **off** (every UPDATE the
+reconciler proposed is applied).
+
+Two things had to be true before any comparison meant anything.
+
+**The fold has to be the shipped fold.** Each arm rebuilds one batch's proposal stream from the ledger
+and calls shipped `src/bank.ts` `applyOps`, with the guard re-derived from shipped `src/protocol.ts`.
+Recorded `UPDATE`s are proposals; refusals the pipeline downgraded to `ADD` are put back as the UPDATEs
+they were — but only the ones the **subject test** refused (22). The retrieval test and the batch test
+also downgrade proposals (7), they are not tier-2 variables, and they stay as recorded. Self-check: the
+as-shipped re-fold reproduces the recorded bank, entry for entry, in **6 of 6 runs**.
+
+**The rule has to be re-derived, not trusted.** The shipped arm runs the shipped clause over the
+restored proposals and refused 22 of 22. `tools/guard-fold-check.ts` pins the opposite case — a
+recorded refusal that the re-derived rule would let through — and the fixture names it.
+
+Measured over six runs, 129 merge proposals:
+
+| setting | accepted | refused | target gone | values dropped at merges | declared lost at merges | **gone by the end** | dup values | facts | tokens |
+|---|---|---|---|---|---|---|---|---|---|
+| as shipped | 107 | 22 | 0 | 58 | 9 | **1** | 31 | 245 | 5770 |
+| tightened | 92 | 35 | 2 | 39 | 4 | **1** | 36 | 258 | 6100 |
+| guard off | 122 | 0 | 7 | 95 | 15 | **5** | 29 | 223 | 5264 |
+
+`accepted + refused + target gone = proposed` in every arm, asserted in the instrument rather than
+assumed by the reader; a target that a previous choice in the same fold never wrote is a cascade, not a
+refusal, and it is counted in its own column.
+
+**Two measurements, and only one of them is about the bank.** "Declared lost at merges" counts values a
+merge dropped. "Gone by the end" counts values the bank held at some point in that fold and no longer
+holds at all. They differ because a second draft in the same chunk so often restates the value: under the
+shipped guard, 9 declared values were dropped at merges and exactly **1** left the bank for good. A
+destructive merge is not a lost value unless nothing else says it.
+
+That single change reorders the two candidate moves:
+
+- **Tightening the loose clause is not supported here.** It refused 13 more merges and cut merge-level
+  losses from 9 to 4, and the final bank lost the same **1** value either way — for 5 more duplicated
+  facts, 330 more tokens, and 2 cascades that the shipped setting did not have.
+- **Switching the guard off is measurably worse**, not cleaner: 15 declared values dropped, 5 gone by
+  the end, and 7 targets destroyed by cascade. Whatever the loose clause is doing, it is not nothing.
+- **The verbatim option now has the stronger support.** Tier 1 says all 9 destroyed values were already
+  in the chunk text the pipeline held; tier 2 says tightening the threshold recovers five of them at the
+  merge and none of them at the bank. A copy does not need the threshold to be right.
+
+**The instrument that under-counted, and the second time two of mine disagreed.** The fold first
+reported 6 declared losses where the merge audit reported 9. The fold had enumerated the target's
+*specific tokens* and then asked whether each was declared; multi-word probes — `line 63`, `line 77`,
+`pass complete in 6.2 s` — are declared values and not specific tokens, so the fold could not see them.
+The enumeration is now the target's own tokens plus every probe its authoring chunk declares, and both
+instruments read 9 on the shipped arm. The cheaper instrument was wrong again, and it was wrong in the
+direction that flattered the guard.
+
+**Boundaries on this section.** The model's drafts are exactly the ones the run recorded; a live run
+under a tightened guard would have been shown a different bank and would have drafted differently, so
+these are bounds on the rule, not simulations of runs under it. The ledgers were read, not rewritten.
+Nothing in `src/` changed for either tier, and both tiers are reported rather than gated.

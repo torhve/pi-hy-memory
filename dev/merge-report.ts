@@ -145,14 +145,14 @@ export function textOf(entry: { task: string; statement: string; keys?: string[]
 	return `${entry.task} ${entry.statement} ${(entry.keys ?? []).join(" ")}`;
 }
 
-function loadLedger(runId: string): LedgerRecord[] {
+export function loadLedger(runId: string): LedgerRecord[] {
 	return readFileSync(`${RUNS_ROOT}/${runId}/ledger.jsonl`, "utf8")
 		.split("\n")
 		.filter((line) => line.trim())
 		.map((line) => JSON.parse(line) as LedgerRecord);
 }
 
-function resolveCorpus(runId: string, explicit: string | undefined): { path: string; chunks: CorpusChunk[] } {
+export function resolveCorpus(runId: string, explicit: string | undefined): { path: string; chunks: CorpusChunk[] } {
 	const candidates = explicit
 		? [explicit]
 		: runId.startsWith("restraint3")
