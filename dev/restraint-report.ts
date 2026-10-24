@@ -47,6 +47,12 @@ export interface CorpusChunk {
 	/** tool_output only: the tool fact defensible to bank, and the chatter that is not. */
 	probes?: string[];
 	transient?: string[];
+	/** A rule the user stated beside tool output, which has to survive as a rule. */
+	constraints?: string[];
+	/** A value past the argument window that appears nowhere in what the writer was shown. */
+	hidden?: string[];
+	/** A chunk in another authored session that restates this chunk's subject. */
+	crossSession?: string;
 	/** Authored corpora carry their transcript inline; the scorer reads the tool-result lines out of it. */
 	text?: string;
 }
@@ -126,6 +132,13 @@ export interface ToolRow {
 		statement: string;
 		probe: string | null;
 		chatter: string | null;
+		/** Which declared user rule, if any, this fact carries in the chunk's own words. */
+		constraint: string | null;
+		/** Which token of a hidden value this fact carries, when it carries one at all. */
+		hidden: string | null;
+		/** No declared value, no quoted chatter, and none of it, yet the fact holds a declared chatter
+		 * phrase's content words: the chatter reached the bank reworded around itself. */
+		chatterParaphrase: boolean;
 		repeat: boolean;
 		authoredHere: boolean;
 		keys: string[];
@@ -163,6 +176,27 @@ export interface ToolRow {
 	/** Exactly one fact banked from the chunk, and it carries a declared value: nothing repeated,
 	 * no chatter, no narration. The narrowest reading of "kept the tool fact and nothing else". */
 	singleCleanFact: boolean;
+	/** The user rules this chunk declares beside tool output, and what the bank did with each one:
+	 * carried in the chunk's own words, present only as a restatement, or gone. Per rule, not per
+	 * chunk, because one chunk can hold two rules and keep one of them. */
+	constraints: string[];
+	constraintsKept: string[];
+	constraintsRestated: string[];
+	constraintsLost: string[];
+	/** Bank facts whose only tie to a declared label is a user rule: the rule survived and the tool
+	 * fact did not, which the outcome column can only read as `kept-other`. */
+	factsConstraint: number;
+	/** The value the corpus says the writer was never shown, and the facts from this chunk that carry
+	 * one of its tokens anyway. A survivor here was supplied by the model, not read from the session. */
+	hidden: string[];
+	hiddenSurvivals: { statement: string; token: string }[];
+	/** Bank facts carrying no declared value and none of the declared chatter verbatim, but holding a
+	 * declared chatter phrase's content words: the chatter arrived paraphrased, which is the hole
+	 * literal chatter matching left open in the 2026-10-22 label audit. */
+	factsChatterParaphrase: number;
+	/** The chunk in the other authored session that restates this chunk's subject, when the corpus says
+	 * there is one. Which fact superseded which is not the scorer's to decide. */
+	crossSession: string | null;
 	outcome:
 		| "kept-fact"
 		| "kept-both"
@@ -292,6 +326,39 @@ export function sharedTokens(a: string, b: string): string[] {
  */
 function toolLines(chunk: CorpusChunk): string[] {
 	return (chunk.text ?? "").split("\n").filter((line) => /^\[\d+\] \[Tool result/.test(line));
+}
+
+/**
+ * The loose reading beside `carries`: a bank fact restates a phrase when it holds that phrase's content
+ * words, in any order and with any framing around them. Reported beside the literal count and never
+ * instead of it: a rule that survived as a paraphrase is a different outcome from one that survived in
+ * the user's own words, and the 2026-10-22 label audit is what asked for the two to be told apart.
+ */
+export function rewords(phrase: string, text: string): boolean {
+	const words = (t: string): string[] => [
+		...new Set(
+			t
+				.toLowerCase()
+				.split(/[^a-z0-9_]+/)
+				.filter((w) => w.length >= 4 && !STOPWORDS.has(w)),
+		),
+	];
+	const need = words(phrase);
+	if (need.length < 2) return false;
+	const have = new Set(words(text));
+	return need.every((w) => have.has(w));
+}
+
+/**
+ * The parts of a hidden value that could not have been read out of what the writer was shown: a flag name or
+ * a number, kept only when no chunk shows that token. dev/restraint-report.ts passes the whole corpus's
+ * authored text rather than the declaring chunk alone: `--retention-days 45` hides both of its tokens from a
+ * chunk that shows neither, but a session that prints 45 anywhere — in plain sight or as the minute of
+ * `@ 10:45` — makes the number read rather than invented, and only the flag stays unread.
+ */
+export function hiddenSignatures(hidden: string, visibleText: string): string[] {
+	const tokens = [...(hidden.match(/--[a-z0-9-]{2,}/g) ?? []), ...(hidden.match(/\b\d{2,}\b/g) ?? [])];
+	return [...new Set(tokens)].filter((token) => !carries(token, visibleText));
 }
 
 export function scoreRun(chunks: CorpusChunk[], ledger: LedgerRecord[]): RunScore {
@@ -531,10 +598,18 @@ export function scoreRun(chunks: CorpusChunk[], ledger: LedgerRecord[]): RunScor
 		};
 	});
 
+	// A hidden value is measured against everything the corpus shows, not only against the chunk that
+	// declares it: `--retention-days 45` hides a flag and a number, and a number the session prints
+	// somewhere else was read rather than invented. The corpus check insists at least one token of every
+	// hidden value is shown by no chunk, and names the rest as ambiguous.
+	const shownSomewhere = chunks.map((c) => c.text ?? "").join("\n");
+
 	const toolRows: ToolRow[] = toolChunks.map((chunk) => {
 		const ev = evidence.get(base(chunk.chunkId));
 		const probes = chunk.probes ?? [];
 		const chatter = chunk.transient ?? [];
+		const constraints = chunk.constraints ?? [];
+		const hiddenTokens = [...new Set((chunk.hidden ?? []).flatMap((h) => hiddenSignatures(h, shownSomewhere)))];
 		const facts = bank
 			.filter((e) => chainChunks(e).includes(base(chunk.chunkId)))
 			.map((e) => {
@@ -544,6 +619,9 @@ export function scoreRun(chunks: CorpusChunk[], ledger: LedgerRecord[]): RunScor
 					statement: e.statement,
 					probe: probes.find((p) => carries(p, text)) ?? null,
 					chatter: chatter.find((c) => carries(c, text)) ?? null,
+					constraint: constraints.find((c) => carries(c, text)) ?? null,
+					hidden: hiddenTokens.find((t) => carries(t, text)) ?? null,
+					chatterParaphrase: false,
 					repeat: false,
 					// The chain reaches this chunk when a fact authored here was later absorbed into a
 					// fact authored elsewhere, so a fact in this list is not always one this chunk banked.
@@ -573,6 +651,30 @@ export function scoreRun(chunks: CorpusChunk[], ledger: LedgerRecord[]): RunScor
 			facts.some((f) => carries(p, textOf({ task: f.task, statement: f.statement, keys: f.keys }))),
 		);
 		const probesLost = probes.filter((p) => !probesKept.includes(p));
+		const factText = (f: { task: string; statement: string; keys: string[] }): string =>
+			textOf({ task: f.task, statement: f.statement, keys: f.keys });
+		// A user rule counts as kept when a bank fact carries it in the user's own words, restated when
+		// one holds its content words and not its wording, and lost when neither reaches the bank.
+		const constraintsKept = constraints.filter((c) => facts.some((f) => carries(c, factText(f))));
+		const constraintsRestated = constraints.filter(
+			(c) => !constraintsKept.includes(c) && facts.some((f) => rewords(c, factText(f))),
+		);
+		const constraintsLost = constraints.filter(
+			(c) => !constraintsKept.includes(c) && !constraintsRestated.includes(c),
+		);
+		const factsConstraint = authored.filter((f) => f.constraint !== null && f.probe === null).length;
+		// A fact from this chunk carrying a token the chunk never shows was not read out of the session.
+		const hiddenSurvivals = authored
+			.filter((f) => f.hidden !== null)
+			.map((f) => ({ statement: f.statement, token: f.hidden as string }));
+		for (const f of facts) {
+			f.chatterParaphrase =
+				f.probe === null &&
+				f.constraint === null &&
+				f.chatter === null &&
+				chatter.some((c) => rewords(c, factText(f)));
+		}
+		const factsChatterParaphrase = authored.filter((f) => f.chatterParaphrase).length;
 		const actorFramedFacts = authored.filter((f) => f.actorFramed).length;
 		const factsValue = authored.filter((f) => f.probe !== null && !f.repeat).length;
 		const factsRepeat = authored.filter((f) => f.repeat).length;
@@ -616,6 +718,15 @@ export function scoreRun(chunks: CorpusChunk[], ledger: LedgerRecord[]): RunScor
 			probesKept,
 			probesLost,
 			actorFramedFacts,
+			constraints,
+			constraintsKept,
+			constraintsRestated,
+			constraintsLost,
+			factsConstraint,
+			hidden: chunk.hidden ?? [],
+			hiddenSurvivals,
+			factsChatterParaphrase,
+			crossSession: chunk.crossSession ?? null,
 			outcome,
 		};
 	});
@@ -687,6 +798,24 @@ export interface Totals {
 	/** Banked facts whose supersede chain passes through the chunk but were authored in another chunk —
 	 * a later merge absorbed this chunk's fact into a fact written somewhere else. */
 	toolFactsCarriedIn: number;
+	/** tool_output chunks that declare a user rule, and what the bank did with each declared rule: kept
+	 * in the user's own words, present only as its content words, or gone. Per rule, not per chunk. */
+	toolConstraintChunks: number;
+	toolConstraintsDeclared: number;
+	toolConstraintsKept: number;
+	toolConstraintsRestated: number;
+	toolConstraintsLost: number;
+	/** Banked facts whose only tie to a declared label is a user rule: the rule survived and the tool
+	 * fact did not, which the outcome column reads as `kept-other`. */
+	toolFactsConstraint: number;
+	/** Chunks whose declared value sat past the argument window and appeared nowhere else in the session,
+	 * and the banked facts carrying a token of it anyway. The only number in this report that the
+	 * writer's own input cannot explain, and the fabrication probe's positive case. */
+	toolHiddenChunks: number;
+	toolHiddenSurvivalFacts: number;
+	/** Banked chatter that arrived paraphrased rather than quoted — the hole the 2026-10-22 label audit
+	 * found and literal chatter matching could not see. */
+	toolChatterParaphraseFacts: number;
 	/** Declared values counted per value and not per chunk: keeping one declared value while dropping
 	 * another still reads `kept-fact` in the outcome column, so the loss needs its own line. */
 	toolProbesDeclared: number;
@@ -744,6 +873,15 @@ export function totals(score: RunScore): Totals {
 		toolProbesDeclared: score.tools.reduce((n, c) => n + c.probes.length, 0),
 		toolProbesKept: score.tools.reduce((n, c) => n + c.probesKept.length, 0),
 		toolChunksLostValue: score.tools.filter((c) => c.probesLost.length > 0).length,
+		toolConstraintChunks: score.tools.filter((c) => c.constraints.length > 0).length,
+		toolConstraintsDeclared: score.tools.reduce((n, c) => n + c.constraints.length, 0),
+		toolConstraintsKept: score.tools.reduce((n, c) => n + c.constraintsKept.length, 0),
+		toolConstraintsRestated: score.tools.reduce((n, c) => n + c.constraintsRestated.length, 0),
+		toolConstraintsLost: score.tools.reduce((n, c) => n + c.constraintsLost.length, 0),
+		toolFactsConstraint: score.tools.reduce((n, c) => n + c.factsConstraint, 0),
+		toolHiddenChunks: score.tools.filter((c) => c.hidden.length > 0).length,
+		toolHiddenSurvivalFacts: score.tools.reduce((n, c) => n + c.hiddenSurvivals.length, 0),
+		toolChatterParaphraseFacts: score.tools.reduce((n, c) => n + c.factsChatterParaphrase, 0),
 		toolActorFramedAuthored: score.tools.reduce((n, c) => n + c.actorFramedFacts, 0),
 		toolFactsAuthored: score.tools.reduce((n, c) => n + (c.facts.length - c.factsCarriedIn), 0),
 		bankActorFramedFacts: score.bankActorFramedFacts,
@@ -881,6 +1019,15 @@ function main(): void {
 				`  declared values counted per value and not per chunk: ${t.toolProbesKept}/${t.toolProbesDeclared} survived the bank; chunks that lost at least one declared value: ${t.toolChunksLostValue}/${t.toolChunks}`,
 			);
 			console.log(
+				`  declared rule text beside tool output: ${t.toolConstraintsKept}/${t.toolConstraintsDeclared} kept verbatim in a bank fact, ${t.toolConstraintsRestated} present only as a rearrangement of its content words, ${t.toolConstraintsLost} reaching no bank fact at all, over ${t.toolConstraintChunks}/${t.toolChunks} chunks. A keep here means the rule's wording sits in a banked fact, not that the rule was obeyed; and a bank fact whose only tie to the chunk is such a rule — ${t.toolFactsConstraint} of them — is the case where the rule text survived and the tool fact did not, which the outcome column can only read as kept-other.`,
+			);
+			console.log(
+				`  hidden-value carry — tokens no chunk in the corpus shows: ${t.toolHiddenChunks}/${t.toolChunks} chunks hold a value past the argument window, and ${t.toolHiddenSurvivalFacts} banked facts carry one of its unread tokens. The reading is supplied-not-read for those tokens only: a flag name or a number that any chunk prints is dropped from the count, the corpus check rejects a hidden value whose every token is visible somewhere, and a value carried from a later chunk is not this chunk's.`,
+			);
+			console.log(
+				`  possible chatter paraphrase: ${t.toolChatterParaphraseFacts} banked facts hold a declared chatter phrase's content words without quoting it. Word matching, not understanding: a synonym substitution slips past this and a shared technical noun can over-count it, and it is the hole the 2026-10-22 label audit found that literal chatter matching could not see.`,
+			);
+			console.log(
 				`  actor-frame wording — a statement opening with a person or with the agent's own voice: ${t.toolActorFramedAuthored}/${t.toolFactsAuthored} facts authored in these chunks, ${t.bankActorFramedFacts}/${t.bankFacts} across the whole active bank. Wording-shaped floor, reported, never scored: it reads how a statement opens, so a person-framed clause buried mid-sentence passes it.`,
 			);
 			console.log("\nwhat each tool_output chunk kept:");
@@ -894,8 +1041,18 @@ function main(): void {
 								: "tool fact"
 							: f.chatter
 								? "chatter"
-								: "neither";
-					const marker = f.actorFramed ? "  [person or agent as subject]" : "";
+								: f.chatterParaphrase
+									? "chatter~"
+									: f.constraint
+										? "rule"
+										: "neither";
+					const marker = [
+						f.actorFramed ? "[person or agent as subject]" : "",
+						f.hidden ? "[carries a value the session never showed]" : "",
+						f.chatterParaphrase ? "[holds a declared chatter phrase's content words]" : "",
+					]
+						.filter(Boolean)
+						.join("  ");
 					console.log(
 						`  ${c.chunkId.padEnd(20)} ${tag.padEnd(9)} ${f.task} | ${f.statement.slice(0, 120)}${marker}`,
 					);
@@ -904,6 +1061,34 @@ function main(): void {
 					console.log(
 						`  ${c.chunkId.padEnd(20)} ${"lost values".padEnd(9)} ${c.probesLost.join(", ")}   declared values this chunk banked and the bank did not keep`,
 					);
+				if (c.constraints.length > 0)
+					console.log(
+						`  ${c.chunkId.padEnd(20)} ${"rules".padEnd(9)} kept in the user's own words ${c.constraintsKept.length}/${c.constraints.length}${
+							c.constraintsRestated.length > 0
+								? `   wording-only restatement: ${c.constraintsRestated.length}`
+								: ""
+						}${
+							c.constraintsLost.length > 0
+								? `   no bank fact carries them: ${c.constraintsLost.join(", ")}`
+								: ""
+						}`,
+					);
+				for (const s of c.hiddenSurvivals)
+					console.log(
+						`  ${c.chunkId.padEnd(20)} ${"supplied".padEnd(9)} ${s.token.padEnd(18)} ${s.statement.slice(0, 110)}   the chunk never shows this token, so this fact did not read it`,
+					);
+				if (c.crossSession !== null) {
+					const other = score.tools.find((t) => t.chunkId === c.crossSession);
+					console.log(
+						`  ${c.chunkId.padEnd(20)} ${"cross-sess".padEnd(9)} ${c.crossSession}   another session restates this subject${
+							other
+								? ` with its own value ${other.probes.join(", ")}: this chunk kept ${
+										c.probesKept.join(", ") || "nothing"
+									}, that one kept ${other.probesKept.join(", ") || "nothing"}`
+								: ""
+						}. Which fact superseded which is the session-scope instrument's reading, not this one's.`,
+					);
+				}
 			}
 		}
 

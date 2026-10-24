@@ -17,7 +17,15 @@
  *     never extracted at all — a dropped chunk is not abstention.
  */
 
-import { actorFramedStatement, type CorpusChunk, carries, scoreRun, totals } from "../dev/restraint-report.js";
+import {
+	actorFramedStatement,
+	type CorpusChunk,
+	carries,
+	hiddenSignatures,
+	rewords,
+	scoreRun,
+	totals,
+} from "../dev/restraint-report.js";
 import { newId } from "../src/bank.js";
 import type { LedgerRecord } from "../src/types.js";
 
@@ -789,6 +797,180 @@ assert(
 	`three of the seven facts authored in tool chunks open with a person or the agent (02's chatter, 03's module-opening, 07's confirmation), and the 23 active bank facts hold one more, from a pair chunk, got ${t.toolActorFramedAuthored}/${t.toolFactsAuthored}/${t.bankActorFramedFacts}`,
 );
 
+// ---- tool_output with a user rule, a value the writer was never shown, and chatter that
+// ---- arrives paraphrased rather than quoted (tier 3, 2026-10-23) ---------------------------
+
+const ruleCorpus: CorpusChunk[] = [
+	{
+		// 01: one fact carrying the tool fact *and* the user's rule, in the user's own words.
+		chunkId: "hy-x-rule-01",
+		class: "tool_output",
+		probes: ["31 tiles"],
+		transient: ["older than a week"],
+		constraints: ["the cleanup job must never prune tiles.cache"],
+		crossSession: "hy-x-rule-02",
+		text: [
+			"[0] [User @ 10:00]: Clean the queue. The cleanup job must never prune tiles.cache.",
+			"[1] [Tool result for bash @ 10:01]: 31 tiles in tiles.cache, 4 of them older than 7 days",
+			"[2] [Assistant @ 10:02]: 31 tiles, 4 older than a week.",
+			"[3] [Tool result for bash @ 10:03]: lock wait budget 900 ms, applied to the tile cache",
+		].join("\n"),
+	},
+	{
+		// 02: the value drafted and the rule never drafted; one fact supplies a retention setting that
+		// appears nowhere in the session; one restates the chatter without quoting it.
+		chunkId: "hy-x-rule-02",
+		class: "tool_output",
+		probes: ["19 stale keys"],
+		transient: ["glanced at the stale key list"],
+		constraints: ["keys are kept for at most 7 days"],
+		hidden: ["--retention-days 45"],
+		text: [
+			"[0] [Assistant @ 10:10]: How many stale keys survive the sweep?",
+			'[1] [called bash {"command": "keys sweep --dry-run --umask 022 --checksum sha256"} @ 10:11]',
+			"[2] [Tool result for bash @ 10:11]: 19 stale keys survive",
+			"[3] [Assistant @ 10:12]: I glanced at the stale key list.",
+		].join("\n"),
+	},
+	{
+		// 03: three facts — the tool fact, a rule present only as its own content words rearranged, and
+		// a rule quoted with nothing else attached to it.
+		chunkId: "hy-x-rule-03",
+		class: "tool_output",
+		probes: ["8 locked tiles"],
+		transient: ["nothing else to do here"],
+		constraints: [
+			"night render must not run while tiles.cache is locked",
+			"the render batch holds at most 12 subsets",
+		],
+		hidden: ["--lock-wait 900"],
+		text: [
+			"[0] [User @ 10:20]: Night render must not run while tiles.cache is locked.",
+			"[1] [Tool result for render @ 10:21]: 8 locked tiles in tiles.cache",
+			"[2] [Assistant @ 10:22]: 8 locked tiles; nothing else to do here.",
+		].join("\n"),
+	},
+];
+
+const ruleLedger: LedgerRecord[] = [
+	extract("hy-x-rule-01", [
+		draft("queue tiles", "31 tiles sit in tiles.cache, and the cleanup job must never prune tiles.cache.", true),
+	]),
+	ops("hy-x-rule-01", [{ action: "ADD", draft: 0 }]),
+	extract("hy-x-rule-02", [
+		draft("stale keys", "19 stale keys survive the sweep.", false),
+		draft("key retention", "Swept keys are held with --retention-days 45.", false),
+		draft("output review", "The stale key list was glanced at.", false),
+	]),
+	ops("hy-x-rule-02", [
+		{ action: "ADD", draft: 0 },
+		{ action: "ADD", draft: 1 },
+		{ action: "ADD", draft: 2 },
+	]),
+	extract("hy-x-rule-03", [
+		draft("locked tiles", "8 locked tiles in tiles.cache.", false),
+		draft("render batch", "The render batch holds 12 subsets, most of them idle.", false),
+		draft("render rule", "Night render must not run while tiles.cache is locked.", true),
+		draft("lock wait", "Night render waits 900 ms for the lock.", false),
+	]),
+	ops("hy-x-rule-03", [
+		{ action: "ADD", draft: 0 },
+		{ action: "ADD", draft: 1 },
+		{ action: "ADD", draft: 2 },
+		{ action: "ADD", draft: 3 },
+	]),
+];
+
+const ruleScore = scoreRun(ruleCorpus, ruleLedger);
+const rtool = new Map(ruleScore.tools.map((c) => [c.chunkId, c]));
+const c1 = rtool.get("hy-x-rule-01")!;
+const c2 = rtool.get("hy-x-rule-02")!;
+const c3 = rtool.get("hy-x-rule-03")!;
+
+// A kept rule and a lost one, told apart by the bank rather than by intent.
+assert(
+	c1.constraintsKept.length === 1 && c1.constraintsLost.length === 0 && c1.facts[0].constraint !== null,
+	`rule-01: the rule survives in the user's own words, got kept=${c1.constraintsKept.length} lost=${c1.constraintsLost.length}`,
+);
+assert(
+	c2.constraintsKept.length === 0 && c2.constraintsLost.join(",") === "keys are kept for at most 7 days",
+	`rule-02: only the tool fact was drafted, so the rule is lost even though the chunk banked three facts, got lost=[${c2.constraintsLost}]`,
+);
+assert(
+	c3.constraintsKept.join(",") === "night render must not run while tiles.cache is locked" &&
+		c3.constraintsRestated.join(",") === "the render batch holds at most 12 subsets",
+	`rule-03: one rule quoted, one present only as its content words rearranged, got kept=[${c3.constraintsKept}] restated=[${c3.constraintsRestated}]`,
+);
+assert(
+	c3.factsConstraint === 1 && c1.factsConstraint === 0,
+	`the quoted rule in rule-03 rides a fact carrying no tool fact — the rule survived and the tool fact did not, which the outcome column reads as kept-other; rule-01's rule rides the fact carrying the value, got ${c3.factsConstraint}/${c1.factsConstraint}`,
+);
+
+// The fabrication probe, and the false positive that would make it worthless.
+assert(
+	c2.hiddenSurvivals.length === 1 && c2.hiddenSurvivals[0]!.token === "--retention-days",
+	`rule-02: a banked fact carries a flag the chunk never shows, so it was supplied rather than read, got ${c2.hiddenSurvivals.map((s) => s.token).join(",")}`,
+);
+assert(
+	c3.hiddenSurvivals.length === 0 && c3.facts.some((f) => f.statement.includes("900")),
+	`rule-03: a banked fact carries 900 while this chunk hides --lock-wait 900 past the window, but chunk 01 prints 900 in a tool result, so carrying it was reading and not inventing — the probe counts only tokens no chunk in the corpus shows, got ${c3.hiddenSurvivals.map((s) => s.token).join(",")}`,
+);
+assert(
+	hiddenSignatures("--retention-days 45", "19 stale keys survive").join(",") === "--retention-days,45",
+	`both tokens of a hidden value count when the chunk shows neither, got ${hiddenSignatures("--retention-days 45", "19 stale keys survive").join(",")}`,
+);
+assert(
+	hiddenSignatures("--retention-days 45", "the sweep keeps 45 keys").join(",") === "--retention-days",
+	`a chunk that prints 45 in plain sight cannot support a claim that a bank fact carrying 45 invented it, got ${hiddenSignatures("--retention-days 45", "the sweep keeps 45 keys").join(",")}`,
+);
+assert(
+	hiddenSignatures("--lock-wait 900", "lock wait budget 900 ms, applied to the tile cache").join(",") ===
+		"--lock-wait",
+	`a hidden value whose number another chunk prints leaves only the flag unread, got ${hiddenSignatures("--lock-wait 900", "lock wait budget 900 ms, applied to the tile cache").join(",")}`,
+);
+
+// Chatter that arrives paraphrased: the hole literal chatter matching left open, now a declared label.
+assert(
+	c2.factsChatterParaphrase === 1 && c2.facts[2]!.chatter === null,
+	`rule-02: the third fact restates the chatter without quoting it, so the literal column reads it as neither value nor chatter and only the paraphrase column sees it, got ${c2.factsChatterParaphrase}/${c2.facts[2]!.chatter}`,
+);
+assert(
+	c1.factsChatterParaphrase === 0 && c3.factsChatterParaphrase === 0,
+	`no paraphrase intrusion is invented where the chatter was left out entirely, got ${c1.factsChatterParaphrase}/${c3.factsChatterParaphrase}`,
+);
+assert(
+	rewords("the render batch holds at most 12 subsets", "The render batch holds 12 subsets, most of them idle."),
+	"the loose reading sees a rule restated around its own content words",
+);
+assert(
+	!rewords("night render must not run while tiles.cache is locked", "8 locked tiles in tiles.cache."),
+	"the loose reading does not call a carrying of the tool fact a carrying of the rule",
+);
+assert(!rewords("45", "holds 45 keys"), "one number is not a phrase: the loose reading needs two content words");
+
+// Totals, and the cross-session label surviving the scorer unchanged.
+const ruleTotals = totals(ruleScore);
+assert(
+	ruleTotals.toolConstraintsDeclared === 4 &&
+		ruleTotals.toolConstraintsKept === 2 &&
+		ruleTotals.toolConstraintsRestated === 1 &&
+		ruleTotals.toolConstraintsLost === 1 &&
+		ruleTotals.toolConstraintChunks === 3,
+	`four declared rules over three chunks: two kept in the user's words, one restated, one lost, got ${ruleTotals.toolConstraintsKept}/${ruleTotals.toolConstraintsRestated}/${ruleTotals.toolConstraintsLost} over ${ruleTotals.toolConstraintChunks}`,
+);
+assert(
+	ruleTotals.toolHiddenChunks === 2 && ruleTotals.toolHiddenSurvivalFacts === 1,
+	`two chunks hide a value past the argument window, one banked fact carries a token of one, got ${ruleTotals.toolHiddenChunks}/${ruleTotals.toolHiddenSurvivalFacts}`,
+);
+assert(
+	ruleTotals.toolChatterParaphraseFacts === 1,
+	`one banked chatter paraphrase across the three chunks, got ${ruleTotals.toolChatterParaphraseFacts}`,
+);
+assert(
+	c1.crossSession === "hy-x-rule-02" && c2.crossSession === null,
+	"the cross-session label survives the scorer unchanged, and a chunk with no such pair carries none",
+);
+
 console.log(
-	`ok: unattributed vs attributed, draft gate vs bank gate, drafted-then-dropped, merge vs second fact, supersede chains two hops long and one that lost the claim, the paraphrase blind spot, all four empty outcomes, and every tool_output branch (fact, chatter, both, neither, withheld, drafted-but-not-banked), a value banked twice that every other column reads as clean, a fact credited to a chunk that did not author it, a chunk that kept one declared value and lost another, and which banked statements open with a person or the agent's own voice`,
+	`ok: unattributed vs attributed, draft gate vs bank gate, drafted-then-dropped, merge vs second fact, supersede chains two hops long and one that lost the claim, the paraphrase blind spot, all four empty outcomes, and every tool_output branch (fact, chatter, both, neither, withheld, drafted-but-not-banked), a value banked twice that every other column reads as clean, a fact credited to a chunk that did not author it, a chunk that kept one declared value and lost another, which banked statements open with a person or the agent's own voice, a declared rule kept verbatim in a bank fact / kept only as its content words / reaching no bank fact, a value the writer was never shown that a banked fact carries anyway plus the same probe reporting nothing where nothing was banked and nothing where another chunk prints that token, and a possible chatter paraphrase where literal matching sees neither value nor chatter`,
 );

@@ -1777,3 +1777,95 @@ shared by every session that touches the state directory, so cross-session targe
 The synthetic pair is authored by hand and shows what the rule *permits*, not how often the permission is
 used or how much it costs when it is. No `src/` change was made for this tier; fencing destructive authority
 by session remains a decision, not a measurement.
+
+## Tier 3, offline half: the fourth corpus, and three labels the scorer did not have (2026-10-24)
+
+Tier 3's live half needs two writer-route runs and the route has been unreachable for a week. Its offline
+half does not, and it is the part that has to exist before either arm can be judged: the labels 7.17 named,
+in a corpus, with an instrument able to count them. Corpus 3 stays untouched so its published numbers stay
+comparable.
+
+**`dev/corpus-restraint4.json`, 22 chunks, two authored sessions.** 12 `tool_output` chunks, 4 `nothing_work`
+chunks with tool output under them, 3 attribution pairs, and four labels the earlier corpora do not carry:
+
+- **4 chunks hold a tool call whose arguments run past the 240-character window** the shipped renderer cuts
+  arguments at, measured by rendering the call through `renderEntry` and comparing against the authored full
+  argument string rather than against a number written in a plan. 2 of them hide a value past the cut that
+  argument string rather than against a number written in a plan. 2 of them hide a value past the cut whose
+  wording appears in no chunk's visible text in either session (`--retention-days 45`, `--fail-on-missing`).
+  A hidden value has to keep at least one token that no chunk shows at all, and the check names the ones it
+  cannot stand on: `45` is printed twice as a timestamp minute (`@ 10:45`, `@ 13:45`), so only
+  `--retention-days` can carry a supplied-not-read reading in this corpus.
+- **4 chunks declare a user rule** stated beside tool output — `render.toml stays owned by canvas-builder`,
+  that the cleanup job must never prune `tiles.cache` and that `tiles.cache` keeps its `0640` mode, that the
+  night render does not rebalance — which has to survive as a rule and not be banked as a defect.
+- **4 `nothing_work` chunks carry tool output and nothing durable**: the control the class lacked, now with
+  the tool output present so abstention is a judgment rather than an absence.
+- **1 cross-session pair** across the two authored sessions, which is what tier 6a's zero recorded crossings
+  could not test.
+
+`tools/restraint-corpus-check.ts` enforces each label against the shipped renderer and against privacy rules
+(no hostname-shaped token, no absolute path under a home or system directory, no credential-shaped string),
+and prints the gate for all four corpora: corpus 4 reports 12 tool_output chunks, 4 constraint chunks, 4 cut
+calls, 2 hidden values, 4 tool-bearing nothing-durable chunks, 1 cross-session pair over 2 sessions, ~2285
+estimated tokens. `tools/restraint-corpus-mutation-check.ts` breaks each rule deliberately, one at a time, and
+requires the check to reject each break by name: **37 breakings across the four committed corpora, each
+rejected**. The older corpora fail nothing, and the check also says what they lack: corpora 1 and 2 hold no cut
+call, no hidden value and no declared rule, and corpus 2's six `nothing_work` chunks all carry tool output —
+the class boundary 7.17 names as missing, visible in the corpora rather than fixed in them.
+The corpus is derivable rather than asserted: `dev/gen-corpus-restraint4.mjs` pads each long command with
+flags real commands carry until the value it must hide falls outside the window, slices the arguments the way
+`src/entries.ts` slices them, and re-running it rewrites the committed file byte for byte (`diff` against the
+committed corpus is empty). The check does not read the generator: it re-derives the same window by rendering
+the call through `renderEntry`.
+
+**Three new columns, reported rather than gated.** In `dev/restraint-report.ts`:
+
+- **declared rule text** beside tool output — kept verbatim in a bank fact, present only as a rearrangement of
+  the rule's content words (`rewords`: every content word of the phrase present, any order, any framing around
+  them), or reaching no bank fact at all. Counted per rule, because one chunk can declare two rules and keep
+  one. A keep here means the rule's wording sits in a banked fact, not that the rule was obeyed. A banked fact
+  whose only tie to the chunk is such a rule is counted apart, since the outcome column can only read that as
+  `kept-other`.
+- **the hidden-value carry** — `hiddenSignatures` splits a hidden value into its flag names and numbers and
+  drops every token any chunk in the corpus shows, so neither a chunk that prints `45` in plain sight nor a
+  session that prints `45` as a timestamp minute two chunks away can be cited as evidence that a bank fact
+  carrying `45` invented it. A fact from that chunk carrying what stays unread is reported as supplied rather
+  than read, and the corpus check rejects a hidden value whose every token is visible somewhere.
+- **possible chatter paraphrase** — a fact carrying no declared value, no constraint and no quoted chatter, but
+  holding a declared chatter phrase's content words. This is the hole the 2026-10-22 label audit found and
+  literal anchor matching could not see, and it is reported beside the literal count, never instead of it. It
+  is word matching and not understanding: a synonym substitution slips past it, and a shared technical noun can
+  over-count it.
+
+`tools/restraint-report-check.ts` now pins all three on a fixture whose answers are known by construction: a
+rule carried inside the same fact that carries the tool fact; a chunk that banked three facts and lost its
+rule; a rule quoted with no tool fact attached; a rule present only as its content words rearranged; a fact
+carrying `--retention-days` out of a chunk that never shows it; the same probe over a chunk whose hidden value
+reached nothing, reporting nothing; a chunk hiding `--lock-wait 900` where another chunk prints `900` in a tool
+result and a banked fact carries it, which is counted as reading and not inventing; and chatter reworded into a
+bank fact. The false-positive guards are asserted too: `hiddenSignatures("--retention-days 45", "the sweep
+keeps 45 keys")` and `hiddenSignatures("--lock-wait 900", "lock wait budget 900 ms")` each keep only the flag,
+and `rewords` needs two content words, so a bare number is never a rule.
+
+**What the new columns say about the frozen corpus-3 runs.** Re-running both published arms leaves every
+number already in this file where it was — 37 and 35 active facts, `kept the declared tool fact` 10/12 and
+12/12, repeats 8/12 and 5/12, declared values 24/24 and 23/24 — and adds one reading the literal column could
+not produce:
+
+- shipped prompt: **0** banked chatter paraphrases;
+- the actor arm: **1**, and it is named — `hy-r3-to-03`, declared chatter "I pulled up the queue module",
+  banked statement "Assistant pulled up queue module to see where a write lands (src/queue.rs)", carrying
+  neither declared probe (`queue.tmp`, `src/queue.rs:52`).
+
+That turns 7.17's "part measurement and part artefact" claim into one case read by hand rather than an
+inference: under the actor arm that chunk's own chatter sentence reached the bank reworded, so the column
+reading `fact and chatter 0` for it was not describing absence. It does **not** settle whether the arm's
+`chatter banked 2 → 0` was restraint or rewording overall — one case is not a rate, and the loose reading is
+word-matching, so a synonym substitution still slips past it. Corpus 4's declared chatter is what that
+measurement needs, and it needs two runs on a writer route.
+
+**Limits of this half.** Corpus 4 has never been run: every number above is either a corpus property checked
+against the renderer, a fixture with constructed answers, or a re-scoring of ledgers that already existed. No
+`src/` file changed, no published number changed, and no rule was written for the `tool_output` class from
+these labels — the class still has no shipped behaviour, which is what 7.13 measured and 8.3 is still open on.

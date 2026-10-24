@@ -132,6 +132,37 @@ comparison is left standing as what it was: a measurement of corpus 3.
 - a paraphrase-tolerant label for chatter, so "read manual for a few minutes" against the declared
   "reading the manual for a few minutes" is not silently counted as a disappearance.
 
+**Built (2026-10-24, no model call).** `dev/corpus-restraint4.json` exists with all four labels and
+nothing measured on it yet: 22 chunks across two authored sessions — 12 `tool_output`, 4 `nothing_work`
+carrying tool output under them, 3 attribution pairs — of which 4 hold a call whose arguments run past the
+240-character window and 2 hide a value that appears in no chunk's visible text in either session, 4
+declare a user rule, and 1 restates a subject the other session established. `tools/restraint-corpus-check.ts`
+enforces each label against the shipped renderer — the argument window is measured by rendering the call
+with `renderEntry`, not by trusting the number written in this plan — and
+`tools/restraint-corpus-mutation-check.ts` breaks every rule on purpose across all four committed corpora
+(37 breakings, each rejected by the rule it names). The same check reports, for the corpora that predate
+the distinction, that corpus 2's six `nothing_work` chunks all carry tool output: the class boundary 7.17
+says is missing is visible in the older corpora rather than fixed in them.
+
+The scorer carries the labels. A declared rule is counted as kept verbatim in a bank fact, kept only as a
+rearrangement of its content words, or reaching no bank fact — a keep means the wording sits in a banked fact,
+not that the rule was obeyed. A banked fact carrying a token of a hidden value that no chunk in the corpus
+shows is the hidden-value carry's positive case, and every token any chunk does show is dropped from it, so
+neither a chunk printing 45 nor a timestamp minute `10:45` two chunks away counts as evidence that a bank fact
+carrying 45 invented it; the corpus check rejects a hidden value whose every token is visible somewhere. Banked
+chatter that arrived reworded is counted apart from chatter quoted.
+The loose reading is reported beside the
+literal one and never instead of it, and the fixture pins a case where the two disagree.
+
+Re-running the two frozen corpus-3 ledgers through the extended scorer leaves every published number where
+it was — 37 and 35 active facts, 10/12 and 12/12 tool facts kept — and adds the one reading the literal
+column could not produce: 0 banked chatter paraphrases under the shipped prompt, 1 under the actor arm.
+The case is `hy-r3-to-03`, declared chatter "I pulled up the queue module", banked statement "Assistant
+pulled up queue module to see where a write lands (src/queue.rs)", carrying neither declared probe
+(`queue.tmp`, `src/queue.rs:52`). That measures 7.17's "part artefact" claim as one named case, not as a
+rate, and it does not by itself say whether the arm's "chatter banked 2 → 0" was a gain or a rewording:
+corpus 4 is what that measurement needs.
+
 Then re-measure both arms against corpus 4 with the existing scorer, and `dev/merge-report.ts` on top:
 `restraint4-base` and `restraint4-actor`. Estimated ~15–20 min each on the current writer route —
 **provisional**, taken from corpus-3 runs, and to be replaced by the measured wall time once the first

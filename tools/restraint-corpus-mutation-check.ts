@@ -21,7 +21,12 @@ import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-const CORPORA = ["dev/corpus-restraint.json", "dev/corpus-restraint2.json", "dev/corpus-restraint3.json"];
+const CORPORA = [
+	"dev/corpus-restraint.json",
+	"dev/corpus-restraint2.json",
+	"dev/corpus-restraint3.json",
+	"dev/corpus-restraint4.json",
+];
 const CHECK = "tools/restraint-corpus-check.ts";
 
 interface MutableChunk {
@@ -36,6 +41,10 @@ interface MutableChunk {
 	why?: string;
 	probes?: string[];
 	transient?: string[];
+	constraints?: string[];
+	hidden?: string[];
+	argsFull?: string;
+	crossSession?: string;
 }
 
 interface MutableDoc {
@@ -68,6 +77,28 @@ function appendToLastLine(target: MutableChunk, extra: string): void {
 			break;
 		}
 	}
+	target.text = lines.join("\n");
+}
+
+/**
+ * Rewrite one line of a chunk, found by a fragment it must contain, keeping the `[N]` label intact so
+ * the positional refs stay in order and only the rule under test breaks. It fails loudly when the
+ * fragment is gone or the rewrite changes nothing, which is how a mutation notices the corpus moved.
+ */
+function rewriteLine(doc: MutableDoc, id: string, needle: string, make: (line: string) => string): void {
+	const target = chunk(doc, id);
+	const lines = target.text.split("\n");
+	let hit = false;
+	for (let i = 0; i < lines.length; i++) {
+		const line = lines[i]!;
+		if (!line.includes(needle)) continue;
+		const rewritten = make(line);
+		assert(rewritten !== line, `mutation ${id}: the line containing "${needle}" came back unchanged`);
+		lines[i] = rewritten;
+		hit = true;
+		break;
+	}
+	assert(hit, `mutation target ${id} has no line containing "${needle}"`);
 	target.text = lines.join("\n");
 }
 
@@ -248,6 +279,167 @@ const mutations: Mutation[] = [
 		apply: (doc) => {
 			const keep = chunk(doc, "hy-r3-r3d-k");
 			appendToLastLine(keep, `(as ${keep.marker} put it)`);
+		},
+	},
+	// ---- the fourth corpus: window, constraints, hidden values, authored sessions -----
+
+	{
+		corpus: "dev/corpus-restraint4.json",
+		name: "r4: a cut call whose full argument list the corpus never names",
+		expect: "names no argsFull",
+		apply: (doc) => {
+			delete chunk(doc, "hy-4f0a0001-to-02").argsFull;
+		},
+	},
+	{
+		corpus: "dev/corpus-restraint4.json",
+		name: "r4: a call shown 12 characters shorter than the shipped window shows",
+		expect: "characters of arguments; the shipped window shows",
+		apply: (doc) => {
+			rewriteLine(doc, "hy-4f0a0001-to-02", "[called bash ", (line) => {
+				const at = line.indexOf("[called bash ");
+				const head = line.slice(0, at + "[called bash ".length);
+				const visible = line.slice(at + "[called bash ".length, -1);
+				// 12 characters removed from a 240-character cut: still unparseable, no longer the window.
+				return `${head}${visible.slice(0, 228)}]`;
+			});
+		},
+	},
+	{
+		corpus: "dev/corpus-restraint4.json",
+		name: "r4: a hidden value that sits inside the window rather than past it",
+		expect: 'hidden value "--purge-stale" is not past the 240-character argument window',
+		apply: (doc) => {
+			chunk(doc, "hy-4f0a0001-to-03").hidden = ["--purge-stale"];
+		},
+	},
+	{
+		corpus: "dev/corpus-restraint4.json",
+		name: "r4: a hidden value printed in plain sight in another chunk",
+		expect: 'shows the hidden value "--retention-days 45"',
+		apply: (doc) => {
+			appendToLastLine(chunk(doc, "hy-4f0a0002-nw-01"), "the summary mentioned --retention-days 45");
+		},
+	},
+	{
+		corpus: "dev/corpus-restraint4.json",
+		name: "r4: a hidden value whose every token is shown by some chunk",
+		expect: "names no token the writer is ever denied",
+		apply: (doc) => {
+			// The phrase stays non-contiguous, so the leak rule cannot be what catches this one: only
+			// the token rule knows that a bank fact carrying either token could have read it somewhere.
+			appendToLastLine(chunk(doc, "hy-4f0a0002-nw-04"), "the sweep wrote --retention-days and 45 of them down");
+		},
+	},
+	{
+		corpus: "dev/corpus-restraint4.json",
+		name: "r4: a constraint the chunk does not actually contain",
+		expect: 'constraint "do not rebalance the night render" is not in the chunk',
+		apply: (doc) => {
+			const c = chunk(doc, "hy-4f0a0001-to-04");
+			c.text = c.text.split("do not rebalance the night render").join("leave the pool alone");
+		},
+	},
+	{
+		corpus: "dev/corpus-restraint4.json",
+		name: "r4: a constraint that is the tool fact declared a second time",
+		expect: 'constraint "6 nodes idle" is declared twice, once as the probe',
+		apply: (doc) => {
+			chunk(doc, "hy-4f0a0001-to-04").constraints = ["6 nodes idle"];
+		},
+	},
+	{
+		corpus: "dev/corpus-restraint4.json",
+		name: "r4: a user constraint with no tool output beside it",
+		expect: "declares a user constraint with no tool output beside it",
+		apply: (doc) => {
+			rewriteLine(doc, "hy-4f0a0001-to-09", "$ stat -c", (line) =>
+				line.replace(
+					"[Tool result for bash @ 10:56]: $ stat -c '%U %G %n' render.toml",
+					"[Assistant @ 10:56]: I will read the owner off the file entry.",
+				),
+			);
+			rewriteLine(doc, "hy-4f0a0001-to-09", "canvas-builder canvas-builder", (line) =>
+				line.replace(
+					"[Tool result for bash @ 10:57]: canvas-builder canvas-builder render.toml",
+					"[User @ 10:57]: canvas-builder owns render.toml, group canvas-builder.",
+				),
+			);
+		},
+	},
+	{
+		corpus: "dev/corpus-restraint4.json",
+		name: "r4: a constraint leaked into an unrelated chunk",
+		expect: 'leak: constraint "do not rebalance the night render" of hy-4f0a0001-to-04 appears in hy-4f0a0002-nw-02',
+		apply: (doc) => {
+			appendToLastLine(chunk(doc, "hy-4f0a0002-nw-02"), "and do not rebalance the night render");
+		},
+	},
+	{
+		corpus: "dev/corpus-restraint4.json",
+		name: "r4: the cross-session pair aimed at its own session",
+		expect: "not in a different authored session",
+		apply: (doc) => {
+			chunk(doc, "hy-4f0a0002-to-11").crossSession = "hy-4f0a0002-to-12";
+		},
+	},
+	{
+		corpus: "dev/corpus-restraint4.json",
+		name: "r4: the cross-session pair names a chunk that is not in the corpus",
+		expect: "which is not in the corpus",
+		apply: (doc) => {
+			chunk(doc, "hy-4f0a0002-to-11").crossSession = "hy-4f0a0001-to-99";
+		},
+	},
+	{
+		corpus: "dev/corpus-restraint4.json",
+		name: "r4: a chunk id that names no session in a corpus claiming a session span",
+		expect: "gives every chunk a session-shaped id",
+		apply: (doc) => {
+			chunk(doc, "hy-4f0a0002-to-12").chunkId = "hy-r4-plain-12";
+		},
+	},
+	{
+		corpus: "dev/corpus-restraint4.json",
+		name: "r4: gate promises one more authored session than the corpus has",
+		expect: "gate: 2 authored sessions, needs 3",
+		apply: (doc) => {
+			doc.gate.session_span = 3;
+		},
+	},
+	{
+		corpus: "dev/corpus-restraint4.json",
+		name: "r4: gate promises one more hidden value than the corpus hides",
+		expect: "gate: 2 chunks hide a value past the cut, needs 3",
+		apply: (doc) => {
+			doc.gate.hidden_value_chunk = 3;
+		},
+	},
+	{
+		corpus: "dev/corpus-restraint4.json",
+		name: "r4: a nothing_work chunk given a probe to bank",
+		expect: "names a probe to bank, which its own class denies",
+		apply: (doc) => {
+			chunk(doc, "hy-4f0a0002-nw-01").probes = ["queue: 0 pending"];
+		},
+	},
+	{
+		corpus: "dev/corpus-restraint4.json",
+		name: "r4: the abstention control loses the tool output it was written to test",
+		expect: "gate: 3 nothing-durable chunks contain tool output, needs 4",
+		apply: (doc) => {
+			rewriteLine(doc, "hy-4f0a0002-nw-02", "$ tail -n 5", (line) =>
+				line.replace(
+					"[Tool result for bash @ 12:13]: $ tail -n 5 build/report.txt",
+					"[Assistant @ 12:13]: Reading the tail of the report.",
+				),
+			);
+			rewriteLine(doc, "hy-4f0a0002-nw-02", "3 warn, 12 info, build finished", (line) =>
+				line.replace(
+					"[Tool result for bash @ 12:14]: 3 warn, 12 info, build finished",
+					"[User @ 12:14]: 3 warn, 12 info, build finished.",
+				),
+			);
 		},
 	},
 ];

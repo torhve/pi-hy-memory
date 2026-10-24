@@ -393,6 +393,19 @@ gate.
       need to exist in the corpus before either arm can be promoted: tool chunks where the user states a
       constraint that should survive as a constraint, and tool chunks with declared chatter and no durable
       content at all — the control 7.13 says the class lacks. Then re-measure both arms against it.
+      **Partly built (2026-10-24, offline, no model call).** All three labels now exist:
+      `dev/corpus-restraint4.json` carries 4 chunks declaring a user rule and 4 `nothing_work` chunks holding
+      tool output with nothing durable under it, and `dev/restraint-report.ts` counts a declared rule as kept
+      verbatim in a bank fact / kept only as its content words rearranged / reaching no bank fact — a keep says
+      the rule's wording sits in a banked fact, not that the rule was followed — counts possible chatter
+      paraphrase beside the literal count, and counts banked facts carrying a token of a hidden value that no
+      chunk in the corpus shows, dropping any token some chunk prints so a `45` sitting in a timestamp cannot
+      count as a supplied value. Applied to the frozen corpus-3 ledgers the paraphrase column names the artefact
+      7.17 predicted — 0 under the shipped prompt, 1 under the actor arm (`hy-r3-to-03`, chatter "I pulled up the
+      queue module" banked as "Assistant pulled up queue module to see where a write lands") — and leaves every
+      published number where it was. Still open: re-measuring both arms, which needs the corpus run rather than
+      re-scored, and a label for *survived as a rule* that is a judgement about the fact rather than a wording
+      match.
       7.14's open mechanism question was answered the same day by `dev/merge-report.ts`: same-value drafts
       are never merged (39 cases, 0 merges), so the repeats are a code-side dedup question rather than a
       merge question, and the arm's two SKIPs were the bank gate dropping a draft, not deduplicating one.
@@ -441,6 +454,14 @@ choosing. Tiers are ordered by what can be measured with artifacts already on di
       user-stated constraints that must survive as constraints, chatter with nothing durable under it,
       and a paraphrase-tolerant chatter label. Re-run both restraint3 arms. Promotion gate: the arm
       keeps its wording gain *and* stops costing a declared value.
+      **Offline half done (2026-10-24).** Corpus 4 is written and contract-checked — 12 `tool_output`, 4
+      constraint chunks, 4 calls past the 240-character window with 2 values hidden past the cut and nowhere
+      else in either session, 4 tool-bearing nothing-durable chunks, 1 cross-session pair over 2 authored
+      sessions — and `tools/restraint-corpus-mutation-check.ts` rejects 36 deliberate breakings across the four
+      committed corpora. The scorer counts the three labels and `tools/restraint-report-check.ts` pins them,
+      including the guard that a chunk printing `45` in plain sight is not evidence that a bank fact carrying
+      `45` invented it. Remaining: `restraint4-base` and `restraint4-actor` on a writer route, `dev/merge-report.ts`
+      on top of them, and the promotion gate below, which needs both arms and not one.
 - [ ] 8.4 Clipping survival, tier 4. The DESIGN.md row is corrected first, by function name rather
       than line number: tool call arguments in `textOfParts()` cut at 240 chars with no marker, bodies
       and tool results through `clip()` at `maxEntryChars` (3000 default) *with* `…` — both in
