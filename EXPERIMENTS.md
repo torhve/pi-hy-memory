@@ -1814,8 +1814,9 @@ Both crossings are the same write in two different arms: `hy-4f0a0002-to-12 UPDA
 fence would have refused 2 of the applied ops rather than 0, and retrieval fencing would remove 234 candidates and
 leave 16 chunks with no merge candidate at all rather than 9. What the crossings destroyed was a transient
 ("user question on run necessity"), and `dev/merge-report.ts` records no corpus-declared value dropped by either
-arm's UPDATEs — so this is the re-entry trigger the decision named, not a demonstrated loss. The decision is
-undecided again; see TODO 8.6.
+arm's UPDATEs — so this is the re-entry trigger the decision named, not a demonstrated loss. Ratified the same
+day: the decision holds, no fence ships, and the bar for reconsidering it is a crossing seen in an organic run —
+recorded in TODO 8.6, and printed by the report itself whenever it appears.
 
 The fold is rebuilt before each chunk rather than once per ledger, and `analyseLedger` throws if either set of
 destructive ops — applied, or refused and recorded as an ADD — fails to split cleanly across the four classes,
@@ -2250,5 +2251,5 @@ named exactly this as the trigger to re-open the question. Refused proposals aim
 5 → 8, merge-eligible cross-session candidates 28 → 47, and the reconcile stage's menu grew from 3075 candidates to
 3267 with 234 from another session. What the two crossings destroyed was a transient ("user question on run
 necessity") and `dev/merge-report.ts` records 0 declared values dropped by either arm's UPDATEs, so nothing
-must-survive was lost. But the fence question now has a real ledger behind it rather than a fixture, and it is
-undecided again.
+must-survive was lost. But the fence question now has a real ledger behind it rather than a fixture, and it was
+re-confirmed the same day — no fence, with a bar named below and printed by the report itself.

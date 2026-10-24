@@ -495,7 +495,7 @@ choosing. Tiers are ordered by what can be measured with artifacts already on di
       under a written support contract (values present in source text, resolvable `sourceEntryId`
       citations, zero supported claims expected on not-durable chunks). Semantic judging needs the
       judge endpoint, which was unreachable across the recent runs.
-- [ ] 8.6 **Re-opened 2026-10-24 — was decided as no `src/` change.** Session-scoped destructive authority, tier 6a. A
+- [x] 8.6 **Decided 2026-10-24: no `src/` change — and the decision survived its own trigger firing the same day.** Session-scoped destructive authority, tier 6a. A
       synthetic bank scenario — entry authored in session A, `DELETE`/`UPDATE` proposed from session B — plus
       a count of how often that already
       happens across the existing ledgers — which is only possible where a ledger spans more than one
@@ -522,8 +522,8 @@ choosing. Tiers are ordered by what can be measured with artifacts already on di
       destructive ops with 2 crossing a boundary, 342 refused proposals with 8 aimed at another session's entry, and
       47 of 234 cross-session candidates merge-eligible. A merge-gate fence would now refuse 2 applied ops, not 0;
       a retrieval fence would remove 234 candidates and leave 16 chunks with no candidate. What was destroyed is a
-      transient and no corpus-declared value was dropped, so this is the trigger, not a demonstrated loss. Open
-      question: whether two crossings in an authored corpus are enough to fence. Bar set 2026-10-24: a crossing
+      transient and no corpus-declared value was dropped, so this is the trigger, not a demonstrated loss. Ratified
+      the same day: hold, no fence. Bar for reconsidering: a crossing
       seen in an organic run — ideally one destroying a declared or user-visible fact — before a merge-gate fence
       ships. A retrieval fence is ruled out by measurement rather than taste: it removes 234 candidates and leaves
       16 chunks with no merge candidate at all, and the only organic two-session run showed five cross-session
