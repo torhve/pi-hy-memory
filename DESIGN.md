@@ -33,10 +33,14 @@ which prompts the model has actually seen and which failures it was rewarded on.
 - **The failure surfaces it was rewarded on** are omission, lost specificity, semantic
   inversion, stale-state confusion, secondary-fact loss and over-storage. Two are already
   our own rules: an UPDATE must restate everything still true (secondary-fact loss), and the
-  op vocabulary is ADD / UPDATE / DELETE (+ SKIP) as in Mem0 (over-storage).
+  op vocabulary is ADD / UPDATE / DELETE (+ SKIP), which is what their *experience* reconciler
+  offers; their *fact* reconciler offers INSERT and SUPERSEDE only, and tells the model that
+  storing the fact is not its decision (see *The harness as shipped*).
 - **Selectivity is behavioural, not self-reported.** Trap probes (facts that must *not* enter
   the bank) plus a token-based bank-growth penalty teach it; the trained schema has no
-  confidence field and no self-graded durability label.
+  confidence field and no self-graded durability label. The shipped harness asks for a
+  confidence score in its *experience* layer only; its fact layer — the one our bank resembles
+  — has none.
 - **Less context makes facts more specific.** Their annotation study, on identical chunks,
   found two-chunk context produced 25 % more proper nouns and 59 % more numbers per extracted
   fact than full history: with everything in view, attention spreads and facts go generic.
@@ -49,6 +53,121 @@ learned to emit. Both were wrong at some point; the measurements are recorded be
 So this design keeps everything `pi-observational-memory` gets right — the append-only
 ledger, coverage watermarks, the model-free compaction fold, the recall tool — and replaces
 its three-model pipeline with **two single-shot JSON calls** plus deterministic code.
+
+## The harness as shipped (dated snapshot, 2026-10-23)
+
+The section above reads the paper, which describes what the model was *trained* on. The harness
+it is actually served behind is Python, and Python can be read, so `hy_memory/coding/` was read
+at file level at `main` = `6b0bd866798049940c752c402512bb0e16c98a2b`: `extractor.py`,
+`preproc.py`, `writer.py`, `reconciler_coding.py`, `fact_reconciler_coding.py`, `store.py`,
+`types.py`, plus `docs/scene-coding.md`, the README's layer tables and the module's own tests.
+Two limits, stated before any of it is used:
+
+- it is the harness **as shipped today**, not the prompt set the model was rewarded on. Where it
+  agrees with a measurement of ours, that corroborates design intent, not training distribution;
+- `main` moved twice in the fortnight before that read — the coding module renamed
+  `chain_store.py` → `evolution_store.py` and unified the `_coding` variants — so everything
+  below is as-read on that date, not a spec.
+
+**One write, two layers, and only one of them is what our bank is.** Their table:
+
+| layer | per session | threshold | fields |
+|---|---|---|---|
+| facts (`WorkingFact`) | **exactly 1** | **none** | `statement`, `subject`, `files`, `details` (verbatim source) |
+| experiences (`CodingMemory`) | 0–N | **must pass a value threshold** | `task`, `search_keys`, `solution`, `boundary_envs`, `confidence` |
+
+So the durability bar is supposed to live in the *schema*, not in the writer's answer: the
+episodic record is unconditional and exactly one per session; only the procedural layer is
+selective, and that is where `confidence` lives. Their own coding prompt contradicts that
+threshold — see two paragraphs down — which is why the bar's real location is still an open
+question rather than a settled fact about their design. Our single-layer bank of atomic claims
+asks one JSON answer to serve both jobs, and measures the failure in the place they never look.
+Their extractor also keeps a
+compat path for a model that still answers with several facts: it **keeps the first and drops the
+rest with a warning** (`legacy 'facts' array with 3 entries … keeping the first, dropping 2`).
+
+**Their coding prompt never offers an empty answer.** `EXTRACT_PROMPT_CODING` ends with
+"MANDATORY: You MUST output at least ONE experience. Do NOT return an empty list." The working
+variant of the same prompt does offer one, and its history is written into a test docstring: the
+unconditional mandate "was the direct cause of fabricated experiences", so it was replaced by
+"DEFAULT TO EXTRACTING" plus **one named exception** (the stall case), with the reason spelled
+out — a distilled "how to ask for the missing parameter" is retrieved and followed, so "the stall
+reproduces itself for the rest of the session". Our extract prompt sits on the permissive side
+(`{"drafts":[]}`) and we measured 0 of 8 drafts withheld and `SKIP` never reached for. That is
+now a measured disagreement rather than an assumption, and it is the strongest reason our draft
+gate keeps coming out empty.
+
+**Restraint there is budget reallocation, not abstention.** `EXTRACT_PROMPT_CODING` opens with a
+constraint that says it overrides later phrasing in its own prompt: the grammatical subject of a
+statement is the code or the decision, never "the user" and never "the agent"; no bookkeeping
+closers ("the session was completed", "the error was noted"); error strings, failing commands and
+numbers retained verbatim; a partial negative keeps the roots, filters and depth that produced it
+and is never promoted to global absence; a blocked attempt keeps its blocker. Then: "This does not
+ask for a longer record; spend the same budget on higher-value tokens — drop restated goals,
+narration of what the assistant 'then decided to', pasted code you are only echoing." Our
+tool_output failure — actor-frame chatter banked beside a declared value — is the class that
+prompt forbids by name, and our own prompt has never named it.
+
+**The extractor is never shown the bank, and the cost is stated in code.** A comment above the
+extract call explains why: extraction reads this segment, and how it relates to the store is the
+reconciler's job, because a prior task list in front of the extractor pulls a genuinely different
+task onto an existing wording and the reconciler then merges it — "a wording mismatch costs at
+most one extra record; a wording dragged off-target is a wrong write". Our 7.10 bank-index arm
+reached the same conclusion from the measurement side. Two designs, same answer, one of them
+before measuring.
+
+**They keep a summary surface and a verbatim surface, and never mix them.** The retrieval vector
+is `subject: statement` (`store.py::_upsert_fact_vec`), and a superseded row is soft-deleted and
+**withdrawn from the vector store**, so obsolete wording cannot regain recall power. `details` is a
+**deterministic copy of the trace**, never a model transcription — their comment is flat: do not
+trust the model's transcription of it, take the text from the messages that were never compressed
+(`extractor.py::_verbatim_details`, taken from the pre-compression messages). `details` is
+deliberately *not* embedded and
+*not* injected on the read side: "statement and subject do the finding, details supplies the value
+once found". That is the structural answer to the problem our repeats are circling: in our bank a
+value survives only by being restated, so a chunk that banks it twice is not obviously wrong.
+Their version chain does the same job for code, with zero LLM calls, on the read side, **off by
+default** to save prompt tokens (`MEMORY_CODING_CHAIN_BLOCK_ENABLED=false`), and it is described
+as "a decorator, not a retriever": the vector layer decides what is returned; the chain attaches
+the real diffs under it.
+
+**Window and byte policy, with numbers.** Tool-call args compacted at 600 chars; a tool result
+capped at 2048 bytes as head 1024 + tail 512 with an explicit `[...N bytes omitted by
+truncate...]` marker; assistant text over 6000 chars kept as head 3000 + tail 3000, because "the
+last part of an assistant message is often the part that carries the deliverable"; history clipped
+by whole user-turns (default 5), never mid-turn. One of their tests asserts that a long
+PowerShell command keeps `-Depth 3` and `-ErrorAction SilentlyContinue` inside the prompt — a
+regression test for the evidence window itself, because the flags that matter are often late in
+the line. We compact tool-call args at 240 chars and clip tool results by characters with no
+omission marker at all (`src/entries.ts`), which is the same failure they wrote a test against.
+
+**Destructive authority is scoped; reading is not.** A supersede requires candidates from the same
+`agent_id` / `session_id` / `workspace`; a candidate outside that scope is dropped before the
+model sees it; a legacy row with no `session_id` stays searchable but cannot authorise an
+overwrite. Their fact reconcile is two actions only — `INSERT` and `SUPERSEDE` — and says outright:
+"Every new session fact below WILL be stored; that is not your decision. Your only job is to
+detect task continuation." Our `ADD` / `UPDATE` / `DELETE` / `SKIP` sits at a point in the pipeline
+where they never ask the model to make that choice.
+
+**A hard key they ship switched off.** Supersede is gated on `normalize_subject()` equality, but
+the gate defaults to **off**, with the tradeoff written down: free-text subjects vary in wording,
+and a hard key then blocks real updates and downstream readers act on stale values. They chose to
+let the merge through. Our `subject-guard` rejects a wrong-subject `UPDATE`, which is the opposite
+bet, and it is now a named divergence rather than an unexamined default.
+
+### Where we diverge, and how settled each divergence is
+
+| divergence | state |
+|---|---|
+| one layer of atomic claims instead of a session-level fact plus procedural experiences | **open**, and the largest. Every published baseline is a bank state of atomic claims; changing the unit invalidates all of them, and their compat path shows they did not expect models to stop emitting several facts |
+| the extract prompt offering `{"drafts":[]}` while their coding prompt forbids an empty list | **open**, measured 0/8 withheld; their own history says a mandate here manufactures records |
+| no verbatim payload field, no summary/verbatim split | **open**, and the one that changes what our repeat finding means |
+| actor-frame statements, budget-reallocation wording, evidence-fidelity contract | **measured now**: `dev/prompts-actorframe.ts` as `restraint3-actor`, scored with the shipped scorer |
+| tool args clipped at 240 chars, tool results clipped by characters with no omission marker | **open**, cheap to test, upstream has a regression test for exactly this |
+| destructive authority scoped to one session | **open**; our candidates are never scoped by session |
+| `subject-guard` on, theirs off | **decided**, with a dissent now on the record |
+| `keys` and `refs` | **ours deliberately**: `keys` borrows `search_keys`, `refs` is what the id-echo measurement bought |
+| extract never sees the bank | **decided twice** — once by measurement (7.10), once by reading their code |
 
 ## What was measured, and what it forces
 
@@ -312,10 +431,15 @@ Chunk is serialized with positional refs. Response is assistant content:
 ```
 
 Code rejects a draft when: statement < 24 chars after sanitizing, no `refs` inside the
-chunk's ref range, or the statement duplicates one already accepted. The schema is the
-model's own: `task`, `statement`, `keys`, `refs`, nothing else. A `confidence` field and the
-`relevance` tier derived from it used to sit here, and both are now gone — the writer was
-never trained to emit either (see *Ranking*).
+chunk's ref range, or the statement duplicates one already accepted.
+
+The draft schema is ours, not the harness's. Upstream's fact layer asks for `subject`,
+`statement`, `files` and `details`; its experience layer asks for `task`, `search_keys`,
+`solution`, `boundary_envs` and `confidence`. Neither asks for `keys` spelled the way we spell
+it, and neither asks the writer to cite lines at all — `refs` is our addition, bought with the
+id-echo measurement above, and `keys` borrows `search_keys`. A `confidence` field and the
+`relevance` tier derived from it used to sit here, and both are now gone: the fact layer the
+writer is shaped by asks for neither (see *Ranking*).
 
 **2. Reconcile.** Only the retrieved candidates are shown, never the whole bank:
 

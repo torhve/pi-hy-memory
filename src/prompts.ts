@@ -1,12 +1,14 @@
 /**
  * The two prompts are the whole model-facing surface of this extension.
  *
- * They are written in the shapes Hy-Memory-30B-A3B was trained on: a JSON
- * memory object returned as assistant content, and a bank-update decision over
- * existing entries plus new drafts (ADD / UPDATE / DELETE, the vocabulary used
- * by the upstream Hy-Memory coding harness). Nothing asks the model to call a
- * tool, iterate over turns, or signal completion — the three things it measurably
- * fails at.
+ * They are written in the shapes Hy-Memory-30B-A3B was trained on: a JSON memory object
+ * returned as assistant content, and a bank-update decision over existing entries plus new
+ * drafts. The op vocabulary here — ADD / UPDATE / DELETE / SKIP — is the one the upstream
+ * harness uses for its *experience* layer; its fact layer offers INSERT and SUPERSEDE and
+ * tells the model that storing the fact is not its decision, so this prompt is a deliberate
+ * simplification of two upstream calls into one (see *The harness as shipped* in DESIGN.md).
+ * Nothing asks the model to call a tool, iterate over turns, or signal completion — the three
+ * things it measurably fails at.
  */
 
 export const EXTRACT_SYSTEM = `You are the memory writer for a coding agent. You are given one chunk of a session transcript. Extract durable memory candidates from it.
