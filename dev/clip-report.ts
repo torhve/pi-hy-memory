@@ -5,10 +5,12 @@
  * captured sessions.
  *
  * src/entries.ts clips two things. Message and tool-result bodies go through clip() at maxEntryChars
- * (default 3000) and keep a visible `…`. Tool call arguments are cut at ARGS_WINDOW (240) — and since
- * 2026-10-24 they carry the same marker, so a cut call reads as a long call rather than as JSON that
- * never closes. These captures were rendered before that marker shipped, so `cappedMarked` is the count
- * of cuts that already carried it: the number says how the captures were made, not what ships today.
+ * (default 3000) and keep a visible `…`. Tool call arguments are cut at a window — 240 characters when these
+ * captures were taken, 600 since the 2026-10-24 arm — and a cut call now carries clip()'s marker, so it reads
+ * as a long call rather than as JSON that never closes. These captures were rendered before that marker
+ * shipped and at the window in force when they were taken, so `cappedMarked` is the count of cuts that already
+ * carried it and `ARGS_CAP` below is that historical window, not the shipped one: the numbers say how the
+ * captures were made, not what ships today.
  *
  * The measurement asks how often that second cut fires in real sessions and where it lands. Captures are
  * the chunk texts the writer was actually given, so a call whose arguments stop being parseable JSON is a
@@ -22,7 +24,9 @@ import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { ARGS_WINDOW } from "../src/entries.js";
 
-const ARGS_CAP = ARGS_WINDOW;
+/** The window these captures were rendered at: 240, the window in force before the 2026-10-24 arm. */
+const ARGS_CAP = 240;
+const SHIPPED_WINDOW = ARGS_WINDOW;
 const BODY_CAP = 3000;
 
 export interface ClipStats {

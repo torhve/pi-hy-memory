@@ -139,9 +139,13 @@ by whole user-turns (default 5), never mid-turn. One of their tests asserts that
 PowerShell command keeps `-Depth 3` and `-ErrorAction SilentlyContinue` inside the prompt — a
 regression test for the evidence window itself, because the flags that matter are often late in
 the line. We compact tool-call args at 240 chars (`ARGS_WINDOW` in `src/entries.ts`); since 2026-10-24 a
-cut call carries clip()'s `…` rather than arriving as JSON that never closes, and the window itself is
-still the unmeasured half — 240 reached the code in the first commit with no rationale anywhere, so it
-moves only when the 240-vs-600 arm says it should.
+the line. We compact tool-call args at 600 chars (`ARGS_WINDOW` in `src/entries.ts`); since 2026-10-24 a
+cut call carries clip()'s `…` rather than arriving as JSON that never closes. The window was measured before
+it moved: `dev/clip-window-report.ts` renders the same chunks at 240 and at 600 and the two arms banked 1 of 7
+declared values against 7 of 7, with a control value inside both windows kept in both, and no arm invented an
+unread token. The price is measured too — `dev/arg-window-cost.ts` counts a 600 window at +17 % of the argument
+tokens already shown across ~105,500 real calls, with 16 % of calls still cut — and 240, which reached the code
+in the first commit with no rationale anywhere, was replaced on that evidence.
 
 **Destructive authority is scoped; reading is not.** A supersede requires candidates from the same
 `agent_id` / `session_id` / `workspace`; a candidate outside that scope is dropped before the
@@ -165,8 +169,8 @@ bet, and it is now a named divergence rather than an unexamined default.
 | the extract prompt offering `{"drafts":[]}` while their coding prompt forbids an empty list | **open**, measured 0/8 withheld; their own history says a mandate here manufactures records |
 | no verbatim payload field, no summary/verbatim split | **open**, and the one that changes what our repeat finding means |
 | actor-frame statements, budget-reallocation wording, evidence-fidelity contract | **measured now**: `dev/prompts-actorframe.ts` as `restraint3-actor`, scored with the shipped scorer |
-| tool call *arguments* cut at `ARGS_WINDOW` (240) chars, now **with** clip()'s `…` (`src/entries.ts:31-38`, marker added 2026-10-24); message and tool-result bodies are cut at `maxEntryChars` (default 3000) with the same marker (`src/entries.ts:44-47`, `:62`, `:138`) | **half closed**: the marker shipped, the window did not move. 589 of 1,955 rendered calls in 51 captured sessions were cut at 240 (`dev/clip-report.ts`, captured while the cut was silent); failure mode pinned by `tools/clip-check.ts`; the 240-vs-600 arm decides the window |
-| destructive authority scoped to one session | **decided 2026-10-24, no fence shipped**; the only fences here are subject wording and "target was retrieved for this draft" — measured in `dev/session-scope-report.ts` and `tools/session-scope-check.ts`, re-entry trigger recorded |
+| tool call *arguments* cut at `ARGS_WINDOW` (600 chars since 2026-10-24, 240 before), now **with** clip()'s `…` (`src/entries.ts`, marker added 2026-10-24, window raised the same day); message and tool-result bodies are cut at `maxEntryChars` (default 3000) with the same marker (`src/entries.ts:44-47`, `:62`, `:138`) | **decided 2026-10-24: window raised to 600, marker shipped**. 589 of 1,955 rendered calls in 51 captured sessions were cut at 240 (`dev/clip-report.ts`, captured while the cut was silent); failure mode pinned by `tools/clip-check.ts`; the 240-vs-600 arm ran (`dev/clip-window-report.ts`, `tools/clip-window-check.ts`) its two banks kept 1/7 declared values against 7/7 with the control chunk kept in both and no invented values either way; the price is priced on un-clipped entries (`dev/arg-window-cost.ts`) — +17 % argument tokens, and 16 % of real calls still cut, so a value past 600 is still invisible. Re-entry trigger: a value that matters past 600, measured the same way |
+| destructive authority scoped to one session | **decided 2026-10-24, no fence shipped, re-opened the same day**; the only fences here remain subject wording and "target was retrieved for this draft" — measured in `dev/session-scope-report.ts` and `tools/session-scope-check.ts`. The decision's re-entry trigger fired on the day it was written: the corpus-4 arms re-run at the 600-character window applied 2 `UPDATE`s across a session boundary where the count had been 0 of 392, destroying a transient and no declared value |
 | `subject-guard` on, theirs off | **decided**, with a dissent now on the record |
 | `keys` and `refs` | **ours deliberately**: `keys` borrows `search_keys`, `refs` is what the id-echo measurement bought |
 | extract never sees the bank | **decided twice** — once by measurement (7.10), once by reading their code |

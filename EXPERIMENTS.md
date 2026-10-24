@@ -1756,7 +1756,8 @@ and drafts and has no session to scope by, and an UPDATE is accepted only if the
 (`hy-01a15629-002` UPDATE) targets an entry written by `hy-01a15629-001` — its own session. So the tier's
 direct evidence is one observed opportunity, not taken.
 
-**In these two runs, every crossing sits among the refused proposals.** Corpus 4 was written with a
+**In these two runs, every crossing sits among the refused proposals** (as of this count; superseded by
+the 2026-10-24 re-count below). Corpus 4 was written with a
 cross-session restatement in it on purpose, and the two runs show what the model made of it: five times a draft
 in one authored session proposed superseding a live entry the other session had written —
 `hy-4f0a0002-to-11` against `hy-4f0a0001-to-07` and `hy-4f0a0002-to-12` against `hy-4f0a0001-to-03` in the
@@ -1777,7 +1778,9 @@ measured consequences. Requiring the acting session to own the target of an `UPD
 refused **0 of the 392 applied ops**: the four-class split is exhaustive — 226 same-session, 0 crossing, 166 in
 ledgers whose chunk ids carry no session at all, 0 aimed at an entry no longer active — and the 5 attempts the
 model made had already been refused and written as ADDs. Every bank in `out/` is identical under that fence, so
-its value would be entirely preventive and nothing on disk measures it. Fencing *retrieval* instead — offering a
+its value would be entirely preventive and nothing on disk measures it — both halves of that sentence were written
+against the 2026-10-23 count; the re-count below has two applied crossings and a fence that would have
+refused them. Fencing *retrieval* instead — offering a
 draft only entries from its own session — removes 125 candidates, and across the 186 chunks that carry a session
 that is 9 chunks left with no merge candidate at all and 12 more losing more than half. In the only organic
 two-session run, `hy-01a1510e-077` was shown five candidates and all five had been written by the other session,
@@ -1788,6 +1791,31 @@ produces. All 28 merge-eligible cross-session candidates are in that authored co
 cross-session candidates include none.
 These counts describe this working tree's `out/` as of this commit, not a permanent property of the repo: a run
 directory only counts if it has a `ledger.jsonl`, and 6 of the 36 directories do not.
+
+**Re-counted 2026-10-24, and the trigger fired.** The corpus-4 arms re-run at the 600-character argument window
+added two ledgers, and the counts above are superseded by these:
+
+| measure | 2026-10-23 | 2026-10-24 |
+|---|---|---|
+| ledgers read / carrying a session / with none | 30 / 21 / 9 | 34 / 25 / 9 |
+| ledgers spanning more than one session | 3 | 5 |
+| destructive ops applied | 392 | 403 |
+| **applied ops crossing a session boundary** | **0** | **2** |
+| how they split | 226 own, 0 crossing, 166 unscoped, 0 inactive | 235 own, 2 crossing, 166 unscoped, 0 inactive |
+| refused proposals, recorded as ADD | 329 | 342 — subject guard 163, target not retrieved 94, superseded earlier 85 |
+| refused proposals aimed at another session's entry | 5 | 8 |
+| merge candidates offered | 3075 | 3267 — 2137 own, 234 another session, 896 unscoped |
+| chunks with another session's fact on the menu | 28 of 361 | 52 of 413 |
+| cross-session candidates merge-eligible | 28 of 125 | 47 of 234 |
+
+Both crossings are the same write in two different arms: `hy-4f0a0002-to-12 UPDATE` superseding an entry session
+`4f0a0001` wrote in `hy-4f0a0001-to-03`, applied after passing `sameSubject`, in `restraint4-base-600` and in
+`restraint4-actor-600`. So the two claims that carried the 2026-10-24 decision are now both false: a merge-gate
+fence would have refused 2 of the applied ops rather than 0, and retrieval fencing would remove 234 candidates and
+leave 16 chunks with no merge candidate at all rather than 9. What the crossings destroyed was a transient
+("user question on run necessity"), and `dev/merge-report.ts` records no corpus-declared value dropped by either
+arm's UPDATEs — so this is the re-entry trigger the decision named, not a demonstrated loss. The decision is
+undecided again; see TODO 8.6.
 
 The fold is rebuilt before each chunk rather than once per ledger, and `analyseLedger` throws if either set of
 destructive ops — applied, or refused and recorded as an ADD — fails to split cleanly across the four classes,
@@ -1920,6 +1948,9 @@ shipped behaviour, which is what 7.13 measured and 8.3 is still open on.
 
 ## Tier 3, live half: both corpus-4 arms ran, and the actor arm's gain did not follow (2026-10-24)
 
+> Every number in this section was rendered at the 240-character argument window. Both arms re-ran the same day at
+> the window that now ships; that re-run, including the two cross-session destructions it produced, is in
+> "Corpus 4 re-run at the window that now ships" below, and it is the current reading of this corpus.
 The writer route came back on the day the corpus landed, and both arms ran against
 `dev/corpus-restraint4.json` on it — the same 30B model corpus 3's published numbers came from, resolved by
 name. 22 of 22 chunks banked in each arm. Summing the per-chunk model time in each ledger gives **340.6 s**
@@ -2003,6 +2034,9 @@ for this tier either.
 
 ## Tier 4, run half: what the silent 240-character cut cost the two corpus-4 arms (2026-10-24)
 
+> Read with the same caveat as the Tier 3 section above: these arms were rendered at 240 characters. The re-run at
+> the shipped 600-character window is the section "Corpus 4 re-run at the window that now ships", and its
+> hidden-value carry is 0 facts and 0 drafts there too.
 Tier 4's fixture half (2026-10-23) established the rule and the shape of the loss: `clip()` marks its cuts
 with `…`, while tool call arguments in `textOfParts()` are cut with `JSON.stringify(…).slice(0, 240)` and no
 marker at all, so a cut call reaches the writer as malformed JSON with no sign that text was removed. The run
@@ -2065,5 +2099,156 @@ What the marker touched, and what it did not:
 whether the writer acts on `…` — re-running a call to see the rest, or leaving the value out — is a run with
 real sessions through the renderer as it now is, not something the archived texts can show. The window stays
 240 until an arm renders the same chunk both ways and scores the banks, which needs a way to set the window
-from outside `src/entries.ts`; that knob does not exist yet, and the corpus that would price it needs its
-hidden values between 240 and 600 rather than past both.
+from outside `src/entries.ts`. That knob was built the same day, and the arm ran: the next section is its
+result.
+
+### The window, priced on both sides (2026-10-24)
+
+**Question.** Does the 240-character argument window cost decision-relevant values, and what would a wider one
+cost to render? The two halves are measured separately, because they need different sources: what a wider window
+*buys* needs the same chunk rendered at both windows and run, and what it *costs* needs argument lists that were
+never clipped.
+
+**The knob.** `serializeEntries` now takes `maxArgChars`, and `renderEntry` takes the argument window as an
+argument, both defaulting to `ARGS_WINDOW`. No shipped caller sets it — `src/index.ts`, `src/flush.ts` and
+`src/pipeline.ts` call `serializeEntries` with `maxTokens` and `maxEntryChars` only, which `tools/clip-check.ts`
+and `tools/clip-window-check.ts` both assert, so the shipped path is the narrow one by default.
+
+**The harness** (`dev/clip-window-report.ts`) authors four chunks as entries and renders them twice through the
+shipped renderer, at 240 and at 600. Three chunks hide a decision-relevant value in the tail of a long call —
+`--drain-timeout 90s`, `--cache-shard 7`, `--subset-allowlist fonts-latin` — each placed so it starts at
+character 249 of a 321-to-339-character call: invisible at 240, readable at 600. One chunk carries a control
+value (`--tile-size 64`) that sits inside both windows. The harness refuses a spec that is not a comparison:
+a value inside the narrow window (the narrow arm reads it), a value past both (both arms blind), a control the
+narrow arm cannot read. It also prints the arms' texts: every line except the argument line is identical, and
+each hidden value appears in exactly one arm's text.
+
+```
+npx tsx dev/clip-window-report.ts --render
+=> rendered 4 chunks at 240 and 600 characters: 3 values inside neither / the wide arm alone, 1 control inside both; arms differ only in arguments
+```
+
+`tools/clip-window-check.ts` pins those same answers against the committed spec, plus the three wrongly
+positioned specs and the no-shipped-caller rule.
+
+**The two banks.** Both arms ran on the writer route (`hy-memory-30b-a3b`, `--pool 12000`,
+`--candidate-render-mode perDraft`), one session, four chunks each:
+
+```
+POC_ORIGIN=… POC_MODEL=hy-memory-30b-a3b npx tsx dev/run.ts --run clipwindow-240 --corpus out/clipwindow/corpus-240.json --pool 12000 --candidate-render-mode perDraft
+POC_ORIGIN=… POC_MODEL=hy-memory-30b-a3b npx tsx dev/run.ts --run clipwindow-600 --corpus out/clipwindow/corpus-600.json --pool 12000 --candidate-render-mode perDraft
+npx tsx dev/restraint-report.ts --corpus out/clipwindow/corpus-240.json --run clipwindow-240
+npx tsx dev/restraint-report.ts --corpus out/clipwindow/corpus-600.json --run clipwindow-600
+```
+
+| | 240 window | 600 window |
+| --- | --- | --- |
+| declared values surviving the bank | 1/7 | 7/7 |
+| chunks losing at least one declared value | 3/4 | 0/4 |
+| kept the declared tool fact | 1/4 | 4/4 |
+| control chunk (value inside both windows) | kept | kept |
+| active facts / bank tokens | 9 / 441 | 11 / 435 |
+| narration facts banked beside a value | 7 of 9 | 3 of 11 |
+| hidden-value carry (a token no chunk shows) | 0 facts, 0 drafts | 0 facts, 0 drafts |
+| refusals or downgrades | none | none |
+
+The control chunk is what makes this a comparison rather than a coincidence: its value sits inside both windows
+and it is kept in both arms. The three values that differ are the three that sit between 240 and 600 characters.
+And the narrow cut did not produce invention: no draft and no banked fact in the 240 arm carries a token the
+corpus never shows, which is silent loss rather than a guess at what the tail said.
+
+The two banks are worth reading together: the narrow one holds fewer facts in *more* tokens (9 facts, 441
+tokens, 7 of them statements about who ran or looked at something) while the wide one holds more facts in fewer
+(11 facts, 435 tokens, 3 of that kind). The tokens the narrow window did not spend on the flags it could not
+read went to narration instead. Model wall was 188.5 s and 70.2 s for the two arms, which says nothing about the
+windows — the first arm absorbed the route's cold start.
+
+**The cost side** (`dev/arg-window-cost.ts`), counted on pi's session files — entries that were never clipped,
+so the full `arguments` object is there — and printing lengths and counts only, never command text or paths:
+
+```
+npx tsx dev/arg-window-cost.ts
+=> session files read: 1073, files carrying at least one tool call: 976; calls shown to the writer: 105,510
+   argument length over all calls: 53,119,105 chars, longest call 74,222; whole at 240: 67,746, cut at 240: 37,764 (36%)
+   a 600-character window would add 8,885,961 characters — 2,221,490 tokens, 17% of the tokens every call's arguments already cost
+   calls a 600-character window would still cut: 17,390 (16%) — a wider window removes a smaller tail, it does not end the cut
+   calls the wider window shows whole that the narrow one cut: 20,374 (54% of what 240 removed)
+```
+
+The file set is live — pi writes session files as sessions run — so these are a reading of that day's history,
+not a fixed constant; the ratios are what the decision leaned on.
+
+`tools/arg-window-cost-check.ts` pins the arithmetic against constructed calls of known length (200 contributes
+nothing, 363 contributes 123, 900 contributes exactly 360 and is counted as still cut) and pins that a value
+planted in a call's arguments appears nowhere in what the instrument reports.
+
+**What this does not settle.** Four chunks, one session, one model, one run per arm, three values between the
+windows — the benefit side is a demonstration that the window is where the loss happens, not a rate. The cost
+side is 17% more argument tokens across ~105,500 calls, but that is the *whole* history of those sessions: a
+chunk shows only its own window of turns, so what an extract call actually pays is that cost divided by the
+chunking, which is not measured here. A 600-character window still cuts 16% of calls, so a value past 600 is
+still invisible and raising the window to 600 does not end the class of loss. Wider arguments also mean more of
+whatever they contain reaches the writer and the bank: this measures lengths, not what is in them. The corpus-4
+numbers published earlier were rendered at 240, so a window change invalidates their re-derivation unless both
+arms are re-run (340.6 s and 358.1 s of model wall over the two arms).
+
+**Decided 2026-10-24, on this measurement: `ARGS_WINDOW` is 600.** What moving it took, all of it taken the
+same day: `tools/clip-check.ts` re-pinned so a call past 600 is cut and marked while a call whose flag sits past
+240 is now shown whole — and the same entry rendered at 240 hides it, which is the regression this arm priced;
+`dev/clip-window-report.ts` and `tools/clip-window-check.ts` re-rooted so the two arms are the window 600
+replaced against the shipped one rather than two fixed numbers; corpus 4 regenerated so its two hidden values
+sit past 600 rather than past 240, which the corpus check re-measures from the renderer; and both corpus-4 arms
+re-run against the regenerated corpus, because the numbers published above were rendered at 240 and re-scoring
+those ledgers against a corpus cut at 600 would claim the writer read arguments it never saw.
+
+#### Corpus 4 re-run at the window that now ships (2026-10-24)
+
+Both arms ran again against the regenerated corpus, same writer route, same `--pool 12000`, same
+`--candidate-render-mode perDraft`. The labels did not move; the cut lines and the two hidden values did, so the
+scorer reads a corpus whose values sit past 600.
+
+| | `restraint4-base` (240) | `restraint4-base-600` | `restraint4-actor` (240) | `restraint4-actor-600` |
+| --- | --- | --- | --- | --- |
+| chunks | 22/22 | 22/22 | 22/22 | 22/22 |
+| model wall | 340.8 s | 688.9 s | 358.2 s | 344.9 s |
+| active facts / bank tokens | 48 / 1268 | 47 / 1401 | 47 / 1221 | 48 / 1364 |
+| ops | ADD 48, SKIP 1, UPDATE 4 | ADD 47, SKIP 1, UPDATE 5 | ADD 47, SKIP 2, UPDATE 5 | ADD 48, UPDATE 6 |
+| refusals / downgrades | 7 / 1 | 9 / 1 | 6 / 0 | 4 / 0 |
+| kept the declared tool fact | 8/12 | 8/12 | 8/12 | 6/12 |
+| fact and chatter together | 3 | 3 | 5 | 5 |
+| declared values surviving | 16/17 | 16/17 | 16/17 | 16/17 |
+| chunks losing a value | 1/12 | 1/12 | 1/12 | 1/12 |
+| UPDATEs that dropped a value | 0/4 | 0/5 | 1/5 | 0/6 |
+| same value banked twice from one chunk | 5/12 | 6/12 | 6/12 | 5/12 |
+| hidden-value carry (unread token) | 0 facts, 0 drafts | 0 facts, 0 drafts | 0 facts, 0 drafts | 0 facts, 0 drafts |
+| chatter paraphrase suspects | 1 | 2 | 1 | 2 |
+
+Three things to take from it, and one to take away.
+
+The wider window did not raise value retention on the labeled chunks. The shipped-prompt arm kept the same 8 of 12
+declared tool facts at both windows; the actor arm kept 6 of 12 at 600 where it kept 8 of 12 at 240, with its
+fact-plus-chatter count unchanged at 5. A 2-of-12 swing between two single runs of a sampled 30B model is inside
+run-to-run noise, which is exactly why this is not read as the window costing facts — it is read as the window not
+buying them here, on a corpus whose declared values mostly sit inside 240 characters anyway. Corpus 4 was authored
+before the window question existed: of its 12 tool chunks, the values it declares are in output text, and only two
+chunks hide anything past the cut at all.
+
+The hidden-value story repeats at the new boundary. Two chunks hold a value past 600, and no banked fact and no
+draft carries a token of it — the same supplied-not-read, not-invented result the 240 arms gave. Widening the window
+moved those two values out of reach rather than into it, which is the cost-free half of the change.
+
+The bank got larger in both arms: 1268 → 1401 and 1221 → 1364 tokens for roughly the same fact count. More argument
+text reaching the writer means more argument text drafted into facts; the earlier claim that the narrow window's
+unread characters went to narration (the clip-window arm: 9 facts in 441 tokens against 11 in 435) did not repeat
+here, where the wider arm simply added tokens rather than trading them.
+
+**The thing to take away: the tier-6a re-entry trigger fired.** `dev/session-scope-report.ts` over all ledgers now
+counts 403 applied destructive ops with **2 crossing a session boundary** — one in each new arm, both
+`hy-4f0a0002-to-12 UPDATE` superseding an entry written by session `4f0a0001` in `hy-4f0a0001-to-03`. Before this
+run the count of applied cross-session destructions was zero over 392 ops, and the decision recorded on 2026-10-24
+named exactly this as the trigger to re-open the question. Refused proposals aimed at another session's entry rose
+5 → 8, merge-eligible cross-session candidates 28 → 47, and the reconcile stage's menu grew from 3075 candidates to
+3267 with 234 from another session. What the two crossings destroyed was a transient ("user question on run
+necessity") and `dev/merge-report.ts` records 0 declared values dropped by either arm's UPDATEs, so nothing
+must-survive was lost. But the fence question now has a real ledger behind it rather than a fixture, and it is
+undecided again.

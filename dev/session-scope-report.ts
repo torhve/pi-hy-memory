@@ -400,6 +400,14 @@ function main(): void {
 			`boundary + ${totalUnscoped} in ledgers with no session id + ${totalInactive} aimed at an entry ` +
 			"that was no longer active",
 	);
+	const crossingRuns = scopes.filter((s) => s.crossSession.length > 0);
+	if (crossingRuns.length > 0) {
+		console.log(
+			`RE-ENTRY TRIGGER (tier 6a, TODO 8.6): ${totalCross} applied destructive op(s) crossed a session ` +
+				`boundary, in ${crossingRuns.length} ledger(s): ` +
+				crossingRuns.map((s) => `${s.run} (${s.crossSession.length})`).join(", "),
+		);
+	}
 	console.log(
 		`destructive proposals the bank refused and recorded as ADD instead: ${totalProposed}; aimed at an entry ` +
 			`another session wrote: ${totalProposedCross}`,

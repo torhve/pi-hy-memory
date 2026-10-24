@@ -35,6 +35,27 @@ const FLAGS = [
 	"--strict",
 	"--jobs 8",
 	"--verbose-level 2",
+	"--no-clobber",
+	"--retain 3",
+	"--report-only",
+	"--fsync always",
+	"--sort-key mtime",
+	"--locale C",
+	"--dry-run-limit 500",
+	"--cache-dir store/cache",
+	"--index store/tiles.idx",
+	"--retry 2",
+	"--page-size 200",
+	"--max-open-fds 64",
+	"--journal store/journal.log",
+	"--trace off",
+	"--profile default",
+	"--workers eager",
+	"--backup none",
+	"--temp-dir tmp/run",
+	"--lock-mode blocking",
+	"--stats json",
+	"--ordering stable",
 ];
 
 function cutCall(name, head, hide, desc, at, time) {
@@ -454,7 +475,7 @@ const doc = {
 		why:
 			"TODO 8.3: the labels tool_output was missing. Constraint chunks carry a user-stated constraint that " +
 			"must survive as a constraint; nothing_work chunks contain tool output and declare only chatter, which " +
-			"is the abstention control corpus 3 lacked; hidden names a value the 240-character argument window " +
+			"is the abstention control corpus 3 lacked; hidden names a value the argument window " +
 			"removed from the writer's view, so a banked fact carrying it was supplied rather than read.",
 	},
 	gate: {

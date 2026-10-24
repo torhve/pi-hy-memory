@@ -475,15 +475,27 @@ choosing. Tiers are ordered by what can be measured with artifacts already on di
       mode as shipped (240 characters plus the marker, flag past the window, arguments still not closing as
       JSON), `dev/clip-report.ts` counts marker presence in the captures (0 of 589, because they were
       rendered before it), and `tools/restraint-corpus-check.ts` measures the window *and* whether the
-      renderer marks a cut instead of assuming either. **Remaining**: the 240-against-600 arm, which needs a
-      way to set the window from outside `src/entries.ts` and a corpus whose hidden values sit between 240 and
-      600 rather than past both. The fixture with the decision-relevant flag late in long arguments, asserting
-      extraction survives, no merge drops it, and the value is in the final bank, is still unwritten.
+      rendered before it), and `tools/restraint-corpus-check.ts` measures the window *and* whether the
+      renderer marks a cut instead of assuming either. **Window arm run 2026-10-24**: `serializeEntries` takes
+      `maxArgChars` (default `ARGS_WINDOW`, no shipped caller sets it — pinned), `dev/clip-window-report.ts`
+      renders one 4-chunk spec at 240 and 600 with three values placed strictly between the windows and one
+      control inside both, refusing a spec that is not a comparison, and `tools/clip-window-check.ts` pins the
+      answers. Both arms ran on the writer route: the narrow bank kept 1 of 7 declared values and lost a value in
+      3 of 4 chunks, the wide bank kept 7 of 7 in 0 of 4, and the control chunk was kept in both. No draft or
+      fact in the narrow arm carried an unread token, so the cut lost values rather than inviting guesses.
+      `dev/arg-window-cost.ts` prices the wider window on un-clipped session entries: 36% of ~105,500 calls are
+      cut at 240, a 600 window adds 17% of the argument tokens already spent, shows 54% of those cut calls whole, and leaves 16% still cut — so a
+      wider window shrinks the tail it removes instead of ending it. **Decided 2026-10-24: `ARGS_WINDOW` is
+      600.** Consequences of moving it, all taken: `tools/clip-check.ts` re-pinned (a call past 600 is cut and
+      marked, a call whose flag sits past 240 is now shown whole and at 240 was not), `dev/clip-window-report.ts`
+      and `tools/clip-window-check.ts` re-rooted so the arm compares the window 600 replaced against the shipped
+      one, corpus 4 regenerated with its hidden values now past 600, and both corpus-4 arms re-running so the
+      published numbers are rendered by the window that ships. Re-entry trigger: a value that matters past 600.
 - [ ] 8.5 Their mandate against our empty list, tier 5 — blocked, deliberately. Score fabrication only
       under a written support contract (values present in source text, resolvable `sourceEntryId`
       citations, zero supported claims expected on not-durable chunks). Semantic judging needs the
       judge endpoint, which was unreachable across the recent runs.
-- [x] 8.6 **Decided 2026-10-24: no `src/` change.** Session-scoped destructive authority, tier 6a. A
+- [ ] 8.6 **Re-opened 2026-10-24 — was decided as no `src/` change.** Session-scoped destructive authority, tier 6a. A
       synthetic bank scenario — entry authored in session A, `DELETE`/`UPDATE` proposed from session B — plus
       a count of how often that already
       happens across the existing ledgers — which is only possible where a ledger spans more than one
@@ -504,6 +516,19 @@ choosing. Tiers are ordered by what can be measured with artifacts already on di
       `src/` change, and `tools/session-scope-check.ts` pins the unscoped behaviour instead. Re-entry trigger: a
       ledger with an applied cross-session `UPDATE`/`DELETE`, or a run where cross-session candidates turn out
       merge-eligible outside a corpus authored to plant them.
+      **Trigger fired the same day.** The corpus-4 arms re-run at the 600-character window produced two applied
+      cross-session `UPDATE`s — `hy-4f0a0002-to-12` superseding an entry session `4f0a0001` wrote in
+      `hy-4f0a0001-to-03`, in both `restraint4-base-600` and `restraint4-actor-600` — so the re-count is 403 applied
+      destructive ops with 2 crossing a boundary, 342 refused proposals with 8 aimed at another session's entry, and
+      47 of 234 cross-session candidates merge-eligible. A merge-gate fence would now refuse 2 applied ops, not 0;
+      a retrieval fence would remove 234 candidates and leave 16 chunks with no candidate. What was destroyed is a
+      transient and no corpus-declared value was dropped, so this is the trigger, not a demonstrated loss. Open
+      question: whether two crossings in an authored corpus are enough to fence. Bar set 2026-10-24: a crossing
+      seen in an organic run — ideally one destroying a declared or user-visible fact — before a merge-gate fence
+      ships. A retrieval fence is ruled out by measurement rather than taste: it removes 234 candidates and leaves
+      16 chunks with no merge candidate at all, and the only organic two-session run showed five cross-session
+      candidates none of which was merge-eligible. `dev/session-scope-report.ts` now prints the trigger itself
+      rather than leaving it to be read off a table, so the next crossing surfaces on any run of the report.
 - [ ] 8.7 Atomic claims vs one fact per session plus experiences, tier 6b — **parked**, recorded as
       parked. Re-entry trigger: any storage redesign, a verbatim payload field adopted, or a move
       toward one-fact-per-session. The 39 same-value cases never merged and the refusals leaving 2+

@@ -24,11 +24,18 @@ function clock(timestamp: string | number | undefined): string {
 
 /**
  * Tool call arguments reach the writer as at most this many characters of JSON. A call past it is cut and
- * carries clip()'s marker, so the writer can tell a long call from a broken one. The window itself is
- * measured in DESIGN.md and is deliberately still 240 until the 240-vs-600 arm says otherwise.
+ * carries clip()'s marker, so the writer can tell a long call from a broken one. `serializeEntries` takes
+ * `maxArgChars` to override it for measurement; nothing in the shipped extension does.
+ *
+ * 600, measured 2026-10-24: the same chunks rendered at 240 and at 600 banked 1 of 7 decision-relevant values
+ * against 7 of 7, with a control value inside both windows kept in both arms (`dev/clip-window-report.ts`,
+ * `tools/clip-window-check.ts`). 240 had no recorded rationale; upstream left its own 80 for the same reason —
+ * a window that cuts flags is a window that loses decisions. The price is measured too: a 600 window shows 17 %
+ * more argument tokens than a 240 one across 105,392 real calls, and still cuts 16 % of them
+ * (`dev/arg-window-cost.ts`), so a value past 600 is still invisible.
  */
-export const ARGS_WINDOW = 240;
-function textOfParts(content: unknown): string {
+export const ARGS_WINDOW = 600;
+function textOfParts(content: unknown, argChars = ARGS_WINDOW): string {
 	if (typeof content === "string") return content;
 	if (!Array.isArray(content)) return "";
 	const out: string[] = [];
@@ -41,7 +48,7 @@ function textOfParts(content: unknown): string {
 			const full = JSON.stringify(p.arguments ?? p.args ?? {});
 			// A cut call carries clip()'s marker, so the writer can tell a long call from a broken one:
 			// silently sliced JSON arrives as malformed JSON and nothing else.
-			const args = full.length > ARGS_WINDOW ? `${full.slice(0, ARGS_WINDOW)}…` : full;
+			const args = full.length > argChars ? `${full.slice(0, argChars)}…` : full;
 			out.push(`[called ${name} ${args}]`);
 		} else if (p.type === "image") out.push("[image]");
 	}
@@ -55,13 +62,13 @@ function clip(text: string, maxChars: number): string {
 }
 
 /** One session entry -> one labelled chunk line, or undefined when it carries no facts. */
-export function renderEntry(entry: SessionEntry, maxChars: number): string | undefined {
+export function renderEntry(entry: SessionEntry, maxChars: number, argChars = ARGS_WINDOW): string | undefined {
 	const at = clock((entry as { timestamp?: string }).timestamp);
 	if (entry.type === "message") {
 		const message = entry.message as Record<string, unknown>;
 		const role = typeof message.role === "string" ? message.role : "message";
 		if (role === "system" || role === "developer") return undefined;
-		const body = textOfParts(message.content);
+		const body = textOfParts(message.content, argChars);
 		if (!body) return undefined;
 		if (role === "toolResult") {
 			const name = typeof message.toolName === "string" ? message.toolName : "tool";
@@ -140,13 +147,14 @@ function roleOf(entry: SessionEntry): string {
  */
 export function serializeEntries(
 	entries: SessionEntry[],
-	options: { maxTokens: number; maxEntryChars?: number },
+	options: { maxTokens: number; maxEntryChars?: number; maxArgChars?: number },
 ): ChunkBuild {
 	const maxChars = options.maxEntryChars ?? 3000;
+	const argChars = options.maxArgChars ?? ARGS_WINDOW;
 	const rendered: { id: string; line: string; tokens: number; role: string }[] = [];
 	for (const entry of entries) {
 		if (!entry?.id) continue;
-		const line = renderEntry(entry, maxChars);
+		const line = renderEntry(entry, maxChars, argChars);
 		if (!line) continue;
 		rendered.push({ id: entry.id, line, tokens: estimateTokens(line), role: roleOf(entry) });
 	}

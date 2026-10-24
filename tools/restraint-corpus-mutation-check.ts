@@ -20,6 +20,7 @@ import { spawnSync } from "node:child_process";
 import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { ARGS_WINDOW } from "../src/entries.js";
 
 const CORPORA = [
 	"dev/corpus-restraint.json",
@@ -302,7 +303,7 @@ const mutations: Mutation[] = [
 				const visible = line.slice(at + "[called bash ".length, -1);
 				// 12 characters removed from the cut the shipped window leaves: still unparseable, and no
 				// longer the window the corpus rule measures against.
-				return `${head}${visible.slice(0, 228)}]`;
+				return `${head}${visible.slice(0, ARGS_WINDOW - 12)}]`;
 			});
 		},
 	},
@@ -317,7 +318,7 @@ const mutations: Mutation[] = [
 	{
 		corpus: "dev/corpus-restraint4.json",
 		name: "r4: a hidden value that sits inside the window rather than past it",
-		expect: 'hidden value "--purge-stale" is not past the 240-character argument window',
+		expect: `hidden value "--purge-stale" is not past the ${ARGS_WINDOW}-character argument window`,
 		apply: (doc) => {
 			chunk(doc, "hy-4f0a0001-to-03").hidden = ["--purge-stale"];
 		},
