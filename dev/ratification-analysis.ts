@@ -279,4 +279,4 @@ function main(): void {
 	}
 }
 
-if (process.argv[1] && process.argv[1].endsWith("ratification-analysis.ts")) main();
+if (process.argv[1]?.endsWith("ratification-analysis.ts")) main();

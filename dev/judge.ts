@@ -111,7 +111,7 @@ function judgeOps(
 ): JudgedOp[] {
 	const extract = records.find((r) => r.type === "hy.extract" && r.chunkId === chunkId);
 	const opsRec = records.find((r) => r.type === "hy.ops" && r.chunkId === chunkId);
-	if (!opsRec || opsRec.type !== "hy.ops") return [];
+	if (opsRec?.type !== "hy.ops") return [];
 	const drafts = draftsByChunk.get(chunkId) ?? (extract?.type === "hy.extract" ? extract.drafts : []);
 	const before = bankBefore(records, chunkId);
 	const out: JudgedOp[] = [];

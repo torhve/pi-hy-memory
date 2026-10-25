@@ -26,7 +26,7 @@ import { ARGS_WINDOW } from "../src/entries.js";
 
 /** The window these captures were rendered at: 240, the window in force before the 2026-10-24 arm. */
 const ARGS_CAP = 240;
-const SHIPPED_WINDOW = ARGS_WINDOW;
+const _SHIPPED_WINDOW = ARGS_WINDOW;
 const BODY_CAP = 3000;
 
 export interface ClipStats {

@@ -211,7 +211,7 @@ export function analyseLedger(run: string, records: LedgerRecord[]): RunScope {
 			if (op.action !== "UPDATE" && op.action !== "DELETE") continue;
 			scope.destructiveOps++;
 			const target = byId.get(op.target);
-			if (!target || target.status !== "active") {
+			if (target?.status !== "active") {
 				// foldLedger and applyOps both act only on an active target: an op aimed at something already
 				// superseded destroyed nothing, and is evidence in neither direction.
 				scope.targetInactive++;
@@ -251,7 +251,7 @@ export function analyseLedger(run: string, records: LedgerRecord[]): RunScope {
 			// A refusal record is written by the bank, not the model, and the optional field is the bank's own
 			// shape: a record that names no entry id aimed at nothing, so it cannot have crossed anything.
 			const target = downgraded.target === undefined ? undefined : byId.get(downgraded.target);
-			if (!target || target.status !== "active") {
+			if (target?.status !== "active") {
 				scope.proposedTargetInactive++;
 				continue;
 			}

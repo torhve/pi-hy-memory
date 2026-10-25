@@ -56,7 +56,7 @@ function main(): void {
 	const corpusPath = flag("--corpus", "dev/corpus-extended.json");
 	const limit = Number(flag("--candidate-limit", "12"));
 	const corpus = JSON.parse(readFileSync(corpusPath, "utf8")) as { chunks: { path: string; category?: string }[] };
-	const captureIds = new Set(corpus.chunks.map((c) => c.path.split("/").pop()!.replace(".json", "")));
+	const captureIds = new Set(corpus.chunks.map((c) => c.path.split("/").pop()?.replace(".json", "")));
 
 	const records = readFileSync(join("out", runId, "ledger.jsonl"), "utf8")
 		.trim()

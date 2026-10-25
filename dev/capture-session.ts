@@ -56,7 +56,7 @@ function configMaxEntryChars(): number {
 /** Find the session file for a session id under the pi sessions directory. */
 function findSessionFile(sessionId: string): string {
 	const env = process.env.PI_SESSION_FILE;
-	if (env && env.endsWith(`_${sessionId}.jsonl`)) return env;
+	if (env?.endsWith(`_${sessionId}.jsonl`)) return env;
 	const root = join(homedir(), ".pi", "agent", "sessions");
 	const hits: string[] = [];
 	for (const dir of readdirSync(root)) {
