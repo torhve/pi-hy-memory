@@ -2692,6 +2692,61 @@ while one chunk banks its value twice now has a number attached to it. A live ar
 would be what a default-on decision needs; the offline fold is enough to price the idea and not
 enough to set a default.
 
+## TODO 6.20c: the constraint slice priced on statement shape (2026-10-25)
+
+6.20b ended with a candidate: choose the summary's reserved constraint slice by what the statement
+says — a rule rather than a measurement — instead of by the citation the mark records.
+`dev/constraint-slice-report.ts` prices that without touching the shipped selector: it runs
+`selectForSummary` on a shadow bank whose `fromUser` has been moved onto rule-shaped statements, so
+both arms are the same code with one input changed. Session `01a…1510e`, 820 current facts.
+
+| the slice selects from | marked (shipped) | rule-shaped, narrow | rule-shaped, broad |
+|------------------------|-----------------:|--------------------:|-------------------:|
+| current facts | 3 | 64 | 149 |
+| …that carry no mark today | — | 64 | 149 |
+| entries written, still current | 3 of 11 | 64 of 161 | — |
+| …that reached current through a merge | 1 | 11 | — |
+
+At the shipped summary budget (8 000 tokens, 88 facts shown) the swap displaces 10 facts and admits
+8, and fills the reserved slice with 6 rule-shaped facts where the mark fills it with 3. So the
+payoff is about a tenth of the summary's composition, not a constraint-rich summary: the slice is
+10 % of the fact budget, and what it does not take is refilled by the foundations slice and the
+spill either way. The displacement is the mark moving in both slices at once (see below), which is
+why the arms are not a clean slice-only comparison.
+
+**Two things the price says no to.**
+
+*Precision, measured with a proxy rather than claimed.* 26 of the 64 narrow matches carry error,
+code or plan wording and are flagged as not-rules by a proxy in the report. That is a floor, not a
+precision measurement: it sees `Test failed: the top row must be the active channel` (the writer
+banks an error quote verbatim and "must be" appears inside one) and `Next action: keep the retry
+count at 5`, but it cannot see a statement describing regular behaviour — "the status line always
+shows writes" matches the narrow test and reads as a rule. The broad test is a bound only (149,
+because "only" and "use the" appear inside measurements), so neither bound is a selector.
+
+*The two arms differ in more than the slice.* `foundations` excludes facts that carry the mark, so
+setting the mark on rule-shaped statements also moves those facts out of the foundations slice. The
+10 displaced and 8 admitted facts above are both effects together, not a slice-only difference. At a
+tight budget the combined effect is stark: a 200-token fixture shows the rule-shaped arm losing
+`Never rotate the audit store…` — it left the foundations slice and the reserved slice was too thin
+to hold it — and admitting a marked fact that is not a rule. A slice change here is a
+summary-structure change.
+
+**Durability, which 6.20c asked about, splits into two answers.** Shape is recomputed from the
+statement, so unlike the mark it survives a merge: 11 of the 64 current rule-shaped facts reached
+current through a merge and are still selected. But being rule-shaped does not keep a fact current —
+64 of 161 written rule-shaped entries are current, against 3 of 11 marked ones — because merges and
+the bank ceiling remove facts whatever their wording. What the shape test fixes is the *selection*,
+not the loss.
+
+**Decision: this shape heuristic is priced and not adopted.** Two conditions before any shape-based
+slice ships: the true-rule rate measured rather than proxied — hand-label a sample of the narrow
+matches, since the proxy cannot see behavioural statements (recorded as 6.20d) — and a selection
+that fills the constraint slice without moving facts out of foundations. Until both hold, the
+shipped slice stays as it is and `fromUser` stays provenance. `tools/constraint-slice-report-check.ts`
+pins the shape verdicts including the proxy's blind spot, the equal summary length, the two-fact
+swap, the tight-budget loss and the survival counts.
+
 ## TODO 6.20b: what a user's turn actually contains (2026-10-25)
 
 6.20 found 3 user-grounded facts in a bank of 820 and left a suspicion: refs skip the user's line,

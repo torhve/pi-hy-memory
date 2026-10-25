@@ -278,14 +278,29 @@ gate.
       the summary's reserved constraint slice selects on the mark and can fill from 3 facts of 820
       current (`DESIGN.md`'s earlier 2 of 408 was a smaller fold), so raising
       `summaryConstraintShare` buys nothing.
-- [ ] 6.20c The decision 6.20b produced: choose the constraint slice on the *statement* rather than
-      the citation — a fact that states a rule rather than a measurement — since the directive's
-      wording does reach the bank unmarked. Priced before changing anything: how many current facts
-      a rule-shaped test selects in the frozen session, and what it displaces from the summary under
-      the existing `summaryConstraintShare`, whether rule-shaped facts survive merges better than
-      marked ones, and what they displace from the foundations and current-state slices. Do not
-      repurpose `fromUser` as a rule-shape flag: it is provenance, and 6.20b showed it decays at
-      merges and at the ceiling rather than lying.
+- [x] 6.20c The decision 6.20b produced — choose the constraint slice on the *statement* rather
+      than the citation — **priced 2026-10-25 and not adopted.** `dev/constraint-slice-report.ts`
+      runs the shipped `selectForSummary` on a shadow bank whose mark has been moved onto
+      rule-shaped statements, so both arms are one code path with one input changed. In the frozen
+      session a rule-shaped statement selects 64 current facts where the mark selects 3 (broad test:
+      149), and at the shipped 8 000-token summary budget the swap displaces 10 of 88 shown facts
+      and fills the reserved slice with 6 facts instead of 3 — a tenth of the composition, because
+      what the slice does not take is refilled by foundations and spill either way. Two refusals:
+      precision is only proxied (26 of 64 narrow matches carry error, code or plan wording; the
+      proxy cannot see a statement describing regular behaviour, so the true-rule rate is unknown),
+      and `foundations` excludes marked facts, so moving the mark changes the partition too — the
+      displaced and admitted facts are both effects, not a slice-only difference, and at a tight
+      budget an old rule fact leaves the summary rather than entering it. Shape does survive a merge
+      where the mark does not (11 of the 64 reached current through a merge), but being rule-shaped
+      does not keep a fact current: 64 of 161 written rule-shaped entries are current, against 3 of
+      11 marked ones. `fromUser` stays provenance. See "TODO 6.20c: the constraint slice priced on
+      statement shape" in `EXPERIMENTS.md`.
+- [ ] 6.20d The measurement 6.20c could not make: the true-rule rate of a shape test. Hand-label a
+      sample of the 64 narrow matches (say 20) as rule, procedure, status, or error quote, since a
+      proxy for error and code wording cannot see a statement that merely describes regular
+      behaviour. If the rate is high enough to ship, the next question is a selection that fills the
+      constraint slice without moving facts out of the foundations slice — not a repurposed
+      `fromUser`.
 - [x] 6.21 Retrieval refusals do not scale with the view size. Measured 2026-10-25 with
       `dev/retrieval-refusal-report.ts` over the frozen snapshot (159 writes, 1 798 drafts,
       shipped `candidateLimit: 24`, per-draft render): **386 refusals on record** — 170 "target not

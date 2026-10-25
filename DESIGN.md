@@ -668,8 +668,11 @@ order, each newest-first, never duplicated:
    6.20b, `dev/user-turn-report.ts`): the 820-current-fact snapshot can fill it from 3, because in
    the captured chunks a user turn is usually a go-ahead or an ask rather than an instruction, and
    of 11 marked entries 8 left — 4 to a merge that restated the fact, 4 to the bank ceiling. The
-   selection that would fill is on the statement being a rule, not on the citation — recorded as
-   TODO 6.20c, unchanged in code. (The 408 figure above is an older, smaller fold.)
+   selection that could fill it is on the statement being a rule, not on the citation — priced in
+   TODO 6.20c (`dev/constraint-slice-report.ts`) and not adopted: of the 64 current facts its narrow
+   wording test selects, 26 are flagged by a not-a-rule proxy — a floor, not a measured precision —
+   and because `foundations` excludes marked facts, moving the mark re-partitions the whole summary.
+   Code unchanged; `fromUser` stays provenance. (The 408 figure above is an older, smaller fold.)
 2. **Foundations** — active facts older than `foundationAfterChunks` (default 8) that were
    never superseded (35 %). Old survivors are not proof of durability, but they are the best
    deterministic proxy available: 303 of the 408 were never superseded, so this slice is
