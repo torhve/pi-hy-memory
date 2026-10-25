@@ -2633,3 +2633,61 @@ the shipped limit: the fold differs from what the live call actually saw, and th
 not smoothed over. The reconstruction is offline: every classification rests on a rebuilt view rather
 than the byte-exact call, so the reachability split says which way a wider view would have moved the
 answer, not what the writer was provably shown.
+
+## TODO 7.14's residue: the duplicate one chunk writes twice (2026-10-25)
+
+7.14 settled what reconcile does *not* do: two drafts carrying the same declared value are never
+merged, 39 cases across six runs, 0 merges. The duplicate therefore survives both gates and the only
+thing that can remove it is code at the write boundary. `dev/dedup-report.ts` prices that code before
+any of it ships — 14 recorded arms (the corpus-restraint 1–4 runs and the two corpus-5 gate arms),
+each ledger re-applied write by write with `applyOps`, no model call.
+
+The rule: inside one chunk's op list, a draft is a duplicate when an ADD already kept in the same
+batch passes the subject test against it and already carries every value the draft names. Three ways
+to apply it:
+
+|                       | as shipped | loose drop | conservative drop | conservative retire |
+|-----------------------|-----------:|-----------:|------------------:|--------------------:|
+| duplicate ADDs acted on         |      — | 125 | 31 | 31 |
+| tokens freed                    |      — | ~2 611 | ~609 | ~609 current |
+| drops that named no value       |      — | 34 | 0 | 0 |
+| drops that were the user's words|      — | 79 | 0 | 0 |
+| drops holding an unnamed number |      — | 17 | 0 | 0 |
+| later merges orphaned           |      — | 26 | 6 | 6 |
+| …of those restating a held value|      — | 12 | 4 | 4 |
+| specific values dark            |     15 | 15 | 15 | 15 |
+| corpus-declared values dark     |      1 | 1 | 1 | 1 |
+
+Three things this measures and does not blur.
+
+**A footprint is not an actionable draft.** As shipped, 249 `(chunk, value)` pairs sit in two or more
+current facts written by one chunk. Only 31 of the drafts behind them are actionable under the
+conservative rule; the rule declines 47 pairs that share a value but not a subject and 46 that share
+a subject but not every value. Whatever the dedup removes, it removes a tenth of the duplication.
+
+**The bare rule is not safe, and the report says so by counting what it removed.** Of the 125 ADDs
+the loose rule drops, 34 named no specific value at all — those are stated rules, and their twin is a
+measurement of something else that happens to mention the same file. 79 were grounded in a user turn:
+"never resize the nightly pool before Friday" is a duplicate of the tool output only in the sense
+that both mention the pool. 17 held a number or a file name that `valueTokens` never named, so the
+safety argument — the survivor already carries every value — did not actually cover them. Adding
+three refusals (no value named, grounded in the user, holding something the extractor never named)
+leaves 31 and zero exposure.
+
+**Retiring beats dropping, and neither can ship without a record.** Retiring the duplicate — write it,
+then supersede it with a pointer to its survivor — frees exactly the same current space as dropping it
+and keeps the wording reachable by `hy_recall`, which is 6.18's rule that pressure retires rather than
+deletes. The cost is the same either way: 6 later UPDATEs aimed at a row that is gone, `applyOps`
+applying each as an ADD that supersedes nothing, 4 of them restating a value the bank still holds —
+the duplicate rebuilt one write later. And the fold cannot replay a retirement: folding a ledger that
+recorded none hands the duplicate back as current, which is the hy.evict finding (6.19) arriving at a
+different door. `tools/dedup-report-check.ts` pins that trap on a fixture, along with each refusal.
+
+Nothing shipped, on two grounds. 31 facts out of a bank of hundreds, paid for with 4 regenerated
+duplicates and a new ledger record type, is not a good trade measured this way. And the duplication
+this rule cannot reach is the part worth fixing: a chunk that drafts the user's constraint and the
+tool output that states the same number as two separate facts is a draft-gate problem, and dropping
+one of them is the wrong direction — 8.9's claim that a single-carrier corpus cannot price a gate
+while one chunk banks its value twice now has a number attached to it. A live arm with retire on
+would be what a default-on decision needs; the offline fold is enough to price the idea and not
+enough to set a default.

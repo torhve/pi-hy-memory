@@ -533,6 +533,22 @@ gate.
       are never merged (39 cases, 0 merges), so the repeats are a code-side dedup question rather than a
       merge question, and the arm's two SKIPs were the bank gate dropping a draft, not deduplicating one.
       The labels this needs are written out as `plan-divergence.md` tier 3, carried here as 8.3.
+- [x] 7.14's residue, priced 2026-10-25: same-write dedup, and **nothing shipped**.
+      `dev/dedup-report.ts` re-applies 14 recorded ledgers write by write with a deterministic
+      same-batch rule — a draft is a duplicate when an ADD already kept in that batch passes the
+      subject test against it and already carries every value the draft names — and compares banks.
+      The bare rule removes 125 ADDs (~2 611 tokens) and darkens no value, but 34 of those drafts
+      named no value at all (stated rules), 79 were the user's own words, and 17 held a number or
+      file name the value extractor never named, so the safety argument did not cover them; 26 later
+      merges aimed at a removed row, 12 rebuilding the duplicate as an orphan ADD. Requiring a named
+      value and refusing user-grounded drafts and unnamed values leaves 31 (~609 tokens), zero
+      exposure, 6 orphaned merges (4 restating a held value). Retiring instead of dropping frees the
+      same current space and keeps the wording recallable, and is the only form worth shipping — but
+      the fold cannot replay a retirement, so it would need the write to record it (6.19's lesson,
+      pinned by `tools/dedup-report-check.ts`). As shipped the 14 ledgers leave 249 `(chunk, value)`
+      footprints and the rule can act on 31 drafts: the rest is a draft-gate problem, not a
+      write-boundary one. Numbers in "TODO 7.14's residue: the duplicate one chunk writes twice" in
+      `EXPERIMENTS.md`. Open if anyone wants a default: one live arm with retire on.
 - [ ] 7.18 The decision 7.14 produced, which is a choice and not another measurement. Three priced ways to
       stop merges from retiring facts the corpus says must survive, all of them measured on
       `dev/guard-fold-report.ts` over 10 ledgers (172 UPDATE proposals, self-check reproducing the recorded
