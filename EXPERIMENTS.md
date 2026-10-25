@@ -2692,6 +2692,55 @@ while one chunk banks its value twice now has a number attached to it. A live ar
 would be what a default-on decision needs; the offline fold is enough to price the idea and not
 enough to set a default.
 
+## TODO 6.20d: what a shape test actually selects, labelled by one reader (2026-10-25)
+
+6.20c refused a rule-shaped constraint slice because its precision was only proxied. 6.20d makes
+that measurement as far as it can be made offline: `dev/constraint-slice-report.ts --list` prints
+every current fact the narrow test selects in the frozen session — 64 of 820, with the proxy's
+verdict beside each — and a reader labels them. No regex decides the answer.
+
+**This is one annotator reading 64 strings**, with this rubric and no second pass: *wholly a rule*,
+*mentions a rule or requirement inside other text*, *describes something*. It is not validated
+against anyone else. The list itself is reproducible — same snapshot, same 64 lines — so the labels
+can be taken again; they are not stored in the repo, only the counts below.
+
+| a narrow match is | count | share of 64 |
+|-----------------|------:|------------:|
+| wholly a rule or prohibition, usable as it stands | 5 | 8 % |
+| a status, plan or finding that *mentions* a rule or requirement in a clause | 20 | 31 % |
+| a description of code, behaviour or a test result, with no obligation in it | 39 | 61 % |
+
+The 20 are an upper bound on candidates, not a yield: putting them in the slice would need clause
+extraction and would still move facts out of the foundations slice. What the shape test gives a
+summary selector today is 5 standalone constraints out of 820 facts, against the mark's 3, with 39
+descriptions riding along.
+
+The proxy in the report, scored against those labels, with "carries a rule" as the positive class
+(25 = 5 wholly + 20 mentions) and the proxy's flag meaning "looks not-a-rule" (26 flags):
+
+| | label: carries a rule | label: description |
+|---|---:|---:|
+| proxy flags it | 11 | 15 |
+| proxy leaves it | 14 | 24 |
+
+Agreement 39 of 64. It drops 11 of the 25 rule-carrying facts because requirement and behavioural
+wording ("must be said over", "never imports") is not error or code text, and of the 38 it leaves as
+rule-shaped, 24 carry no obligation at all — 63 % of what it accepts. It errs in both directions, by
+about the same amount, which is what a wording test with no model behind it looks like.
+
+Two incidental findings from reading the list. Two current facts carry the same rule text, the same
+duplicate-within-a-batch class 7.14 measured. And mentions sit *inside* status lines, so a selector
+that required a whole statement to be a rule finds 5 and discards the 20 — it would have to read a
+clause, not a statement.
+
+**Decision, scoped:** neither the narrow test nor the proxy is adopted as an automatic summary
+constraint selector, and this is not the place to re-cut the regex — 5 usable constraints over 820
+facts is not a slice worth 10 % of the summary. That says post-hoc shape inference is unattractive
+*for the summary slice*; it does not prove a write-time rule marker or prompt-level marking is
+required or would work, and neither is priced here. A shape test stays open only for uses that
+accept clause extraction or partial snippets, or a manual/protocol path, none of which the frozen
+session shows a need for.
+
 ## TODO 6.20c: the constraint slice priced on statement shape (2026-10-25)
 
 6.20b ended with a candidate: choose the summary's reserved constraint slice by what the statement
@@ -2740,9 +2789,9 @@ the bank ceiling remove facts whatever their wording. What the shape test fixes 
 not the loss.
 
 **Decision: this shape heuristic is priced and not adopted.** Two conditions before any shape-based
-slice ships: the true-rule rate measured rather than proxied — hand-label a sample of the narrow
-matches, since the proxy cannot see behavioural statements (recorded as 6.20d) — and a selection
-that fills the constraint slice without moving facts out of foundations. Until both hold, the
+slice ships: the rate measured rather than proxied — the narrow matches labelled by a reader
+(6.20d, done: 5 usable constraints of 64) — and a selection that fills the constraint slice without
+moving facts out of foundations. Until both hold, the
 shipped slice stays as it is and `fromUser` stays provenance. `tools/constraint-slice-report-check.ts`
 pins the shape verdicts including the proxy's blind spot, the equal summary length, the two-fact
 swap, the tight-budget loss and the survival counts.

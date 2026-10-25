@@ -11,7 +11,7 @@
 import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { readSession, ruleShape } from "../dev/constraint-slice-report.js";
+import { listNarrow, readSession, ruleShape } from "../dev/constraint-slice-report.js";
 import { entryFromDraft } from "../src/bank.js";
 import type { BankEntry } from "../src/types.js";
 
@@ -162,6 +162,20 @@ check(
 check(
 	"and the rule-shaped arm loses the old rule fact it marked",
 	tight.displacedSamples.join("\n").includes("Never rotate the audit store"),
+	true,
+);
+
+// --list is what makes the true-rule rate labelled rather than regexed (TODO 6.20d): it offers
+// exactly the narrow matches, with the proxy's verdict beside each.
+const lines = listNarrow(SESSION, dir);
+check(
+	"the list offers every narrow match, proxy verdict beside each",
+	[lines.length, lines.filter((l) => l.startsWith("proxy")).length],
+	[4, 1],
+);
+check(
+	"a match the proxy cannot see is still offered for labelling",
+	lines.some((l) => l.includes("always shows writes")),
 	true,
 );
 

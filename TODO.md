@@ -286,8 +286,8 @@ gate.
       149), and at the shipped 8 000-token summary budget the swap displaces 10 of 88 shown facts
       and fills the reserved slice with 6 facts instead of 3 — a tenth of the composition, because
       what the slice does not take is refilled by foundations and spill either way. Two refusals:
-      precision is only proxied (26 of 64 narrow matches carry error, code or plan wording; the
-      proxy cannot see a statement describing regular behaviour, so the true-rule rate is unknown),
+      precision is only proxied (26 of 64 narrow matches carry error, code or plan wording, and 6.20d
+      labelled the 64: 5 usable constraints, 39 descriptions),
       and `foundations` excludes marked facts, so moving the mark changes the partition too — the
       displaced and admitted facts are both effects, not a slice-only difference, and at a tight
       budget an old rule fact leaves the summary rather than entering it. Shape does survive a merge
@@ -295,12 +295,18 @@ gate.
       does not keep a fact current: 64 of 161 written rule-shaped entries are current, against 3 of
       11 marked ones. `fromUser` stays provenance. See "TODO 6.20c: the constraint slice priced on
       statement shape" in `EXPERIMENTS.md`.
-- [ ] 6.20d The measurement 6.20c could not make: the true-rule rate of a shape test. Hand-label a
-      sample of the 64 narrow matches (say 20) as rule, procedure, status, or error quote, since a
-      proxy for error and code wording cannot see a statement that merely describes regular
-      behaviour. If the rate is high enough to ship, the next question is a selection that fills the
-      constraint slice without moving facts out of the foundations slice — not a repurposed
-      `fromUser`.
+- [x] 6.20d The measurement 6.20c could not make — what a shape test actually selects — **labelled
+      by one reader 2026-10-25** over all 64 narrow matches (`dev/constraint-slice-report.ts
+      --list`, rubric: wholly a rule / mentions a rule in a clause / describes something; no second
+      pass, labels not stored, counts reproducible from the same snapshot): 5 are usable as they
+      stand (8 %), 20 mention a rule inside status or plan text and would need clause extraction
+      (31 %), 39 carry no obligation (61 %). Scored against the report's proxy with "carries a rule"
+      as the positive class, agreement is 39 of 64: the proxy drops 11 of the 25 rule-carrying facts
+      and 63 % of what it accepts as rule-shaped carries no obligation. So the shape test offers a
+      summary selector 5 constraints over 820 facts against the mark's 3, and it is not adopted for
+      automatic summary selection. Post-hoc shape inference is unattractive *for this slice*; a
+      write-time rule marker is a plausible route and is not priced here. See "TODO 6.20d: what a
+      shape test actually selects, labelled by one reader" in `EXPERIMENTS.md`.
 - [x] 6.21 Retrieval refusals do not scale with the view size. Measured 2026-10-25 with
       `dev/retrieval-refusal-report.ts` over the frozen snapshot (159 writes, 1 798 drafts,
       shipped `candidateLimit: 24`, per-draft render): **386 refusals on record** — 170 "target not

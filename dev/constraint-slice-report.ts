@@ -23,7 +23,7 @@ import { selectForSummary } from "../src/render.js";
 import type { BankEntry, LedgerRecord } from "../src/types.js";
 import { parseJsonl } from "./live-bank-report.js";
 
-type Args = { dir: string; maxTokens: number; samples: boolean };
+type Args = { dir: string; maxTokens: number; samples: boolean; list: boolean };
 
 /** The same three files `dev/live-bank-report.ts` reads, from a snapshot directory by default. */
 function parseCli(argv: string[]): Args {
@@ -36,6 +36,7 @@ function parseCli(argv: string[]): Args {
 		dir: arg("snapshot") ?? arg("dir") ?? "out/live-snapshot",
 		maxTokens: Number(arg("max-tokens") ?? 1500),
 		samples: args.includes("--samples"),
+		list: args.includes("--list"),
 	};
 }
 
@@ -105,11 +106,25 @@ export type SliceRead = {
 	addedSamples: string[];
 };
 
+/**
+ * The narrow matches, one per line, with the proxy's verdict beside each. `--list` exists so the
+ * true-rule rate can be *labelled by a reader* rather than guessed by a regex (TODO 6.20d): the
+ * proxy sees error and code wording and nothing else.
+ */
+export function listNarrow(sessionId: string, dir: string): string[] {
+	const bank = JSON.parse(readFileSync(join(dir, `${sessionId}.bank.json`), "utf8")) as BankEntry[];
+	return bank
+		.filter((entry) => entry.status === "active" && ruleShape(entry.statement).narrow)
+		.map((entry) => `${ruleShape(entry.statement).notRuleProxy ? "proxy" : "     "} ${entry.statement}`)
+		.sort();
+}
+
 function describe(entry: BankEntry): string {
 	return `[${entry.id}] (${entry.task}) ${entry.statement.slice(0, 110)}`;
 }
 
 export function readSession(sessionId: string, dir: string, maxTokens: number, samples: boolean): SliceRead {
+	// (readSession keeps its signature; --list is handled by listNarrow below.)
 	const bank = JSON.parse(readFileSync(join(dir, `${sessionId}.bank.json`), "utf8")) as BankEntry[];
 	const active = bank.filter((entry) => entry.status === "active");
 	const shape = (entry: BankEntry) => ruleShape(entry.statement);
@@ -179,6 +194,11 @@ function main(): void {
 	for (const id of sessionIds(dir)) {
 		const read = readSession(id, dir, opts.maxTokens, opts.samples);
 		reads.push(read);
+		if (opts.list) {
+			const lines = listNarrow(id, dir);
+			console.log(`   narrow matches to label (${lines.length}):`);
+			for (const line of lines) console.log(`   ${line}`);
+		}
 		const ledger = ledgerBySession.get(id);
 		console.log(`== ${id} — bank ${read.bankActive} current, ${ledger?.writes ?? "?"} writes`);
 		console.log(
