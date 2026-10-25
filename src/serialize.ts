@@ -39,6 +39,30 @@ export function serializeChunk(userContent: string): SerializedChunk {
 }
 
 /** `[3] [User @ 09:17]: …` -> "user" at index 3. Undefined for lines without a prefix. */
+/**
+ * Turn the legacy `[da8e7079] [Assistant @ 16:59]:` line labels into the `[0] [Assistant …]`
+ * form the shipped path shows, and return the ids in the order the labels gave them.
+ *
+ * Captured and authored corpora were rendered while ids still sat in the text. `parseDrafts`
+ * demands the indices, so a replay that hands that text over teaches the writer to answer in ids
+ * — and the chunk then dies on a malformation production cannot produce (`hy-reload-006`,
+ * TODO 6.14). A bracket is only a label when a role label follows it on the same line, so a
+ * bracketed commit sha at the head of a tool result stays exactly as written.
+ */
+export function normalizeLegacyLabels(text: string): { text: string; refs: string[] } {
+	const refs: string[] = [];
+	const out = text.replace(
+		/\[([0-9a-f]{6,12})\](?=\s*\[(?:User|Assistant|Tool|System|Earlier|Custom|Model))/gi,
+		(_match, id: string) => {
+			const existing = refs.indexOf(id);
+			if (existing >= 0) return `[${existing}]`;
+			refs.push(id);
+			return `[${refs.length - 1}]`;
+		},
+	);
+	return { text: out, refs };
+}
+
 export function rolesFromText(text: string): string[] | undefined {
 	const roles: string[] = [];
 	for (const line of text.split("\n")) {

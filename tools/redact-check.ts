@@ -55,6 +55,22 @@ if (stripped.includes(src) || !stripped.includes("here")) {
 	console.log(`FAIL (source id strip): ${stripped}`);
 }
 
+// A copied chunk line drags its internal id label along, in front of the role label. A bracketed
+// commit sha inside a fact is content, and dropping it would erase a value from the bank.
+const copied = sanitizeStatement(
+	"[da8e7079] [Assistant @ 16:59]: the nightly pool stays at 12000 tokens per pass",
+	new Set(),
+);
+if (copied.includes("da8e7079") || !copied.includes("nightly pool")) {
+	failures++;
+	console.log(`FAIL (copied id label): ${copied}`);
+}
+const withSha = sanitizeStatement("the fix landed in [a1b2c3d4] and the suite is green after it", new Set());
+if (!withSha.includes("[a1b2c3d4]")) {
+	failures++;
+	console.log(`FAIL (commit sha dropped as an id): ${withSha}`);
+}
+
 console.log(
 	failures === 0
 		? `ok: ${MUST_REDACT.length} redacted, ${MUST_NOT_TOUCH.length} preserved`

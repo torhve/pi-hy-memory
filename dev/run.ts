@@ -33,7 +33,7 @@ import { writeChunk } from "../src/pipeline.js";
 import { candidatesPerDraft, selectShownPerDraft } from "../src/protocol.js";
 import { renderMemory } from "../src/render.js";
 import type { SerializedChunk } from "../src/serialize.js";
-import { rolesFromText } from "../src/serialize.js";
+import { normalizeLegacyLabels, rolesFromText } from "../src/serialize.js";
 import type { BankEntry, Draft, LedgerRecord } from "../src/types.js";
 import { ACTOR_FRAME_EXTRACT_SYSTEM } from "./prompts-actorframe.js";
 import { rawWriter } from "./raw-writer.js";
@@ -240,6 +240,8 @@ async function main(): Promise<void> {
 		renderMode: string;
 		candidateLimit: number;
 		mergeValueGate?: boolean;
+		/** Chunks this run gave up on after all attempts: absent from the ledger, so say so. */
+		droppedChunks: string[];
 		chunks: Row[];
 	} = {
 		runId,
@@ -248,6 +250,7 @@ async function main(): Promise<void> {
 		renderMode,
 		candidateLimit,
 		mergeValueGate,
+		droppedChunks: [],
 		chunks: [],
 	};
 	// Chunks finished in an earlier attempt keep their full metrics rows when
@@ -295,13 +298,21 @@ async function main(): Promise<void> {
 			console.log(`skip ${chunkId} (already in ledger)`);
 			continue;
 		}
-		// Roles come back from the rendered prefixes, so `fromUser` (the summary's
-		// constraint slice) behaves in replay exactly as it does in production.
+		// Captured text still carries the old `[id]` line labels. The shipped path shows the
+		// writer `[n]` indices and keeps ids out of band, so replay normalizes them first:
+		// otherwise the writer answers in ids and the chunk dies on a malformation production
+		// never produces (TODO 6.14). Roles come back from the rendered prefixes, so `fromUser`
+		// (the summary's constraint slice) behaves here exactly as it does in production.
+		const labelled = normalizeLegacyLabels(String(capture.text));
+		const text = labelled.text;
+		// Labels define the refs when the corpus carried labels; otherwise the capture's own refs
+		// stand. `entryCount` follows whichever won, so a draft can never cite past the end.
+		const refs: string[] = labelled.refs.length > 0 ? labelled.refs : capture.refs;
 		const chunk: SerializedChunk = {
-			text: capture.text,
-			refs: capture.refs,
-			entryCount: capture.entryCount,
-			roles: rolesFromText(capture.text),
+			text,
+			refs,
+			entryCount: refs.length > 0 ? refs.length : capture.entryCount,
+			roles: rolesFromText(text),
 		};
 		const resumeRecord = extractOf.get(chunkId);
 		const before = bankStats(bank);
@@ -330,7 +341,7 @@ async function main(): Promise<void> {
 								drafts: resumeFrom.drafts as Draft[],
 								rejected: [],
 								usage: resumeFrom.usage,
-								refs: capture.refs,
+								refs,
 								coversUpToId: resumeFrom.coversUpToId,
 							}
 						: undefined,
@@ -352,7 +363,8 @@ async function main(): Promise<void> {
 				const cause = (error as Error)?.cause ? `: ${String((error as Error).cause)}` : "";
 				const message = `${String((error as Error)?.message ?? error)}${cause}`;
 				if (attempt >= attempts) {
-					console.error(`${chunkId}: FAILED ${message}`);
+					console.error(`${chunkId}: FAILED ${message} — chunk dropped, coverage does not advance`);
+					metrics.droppedChunks.push(chunkId);
 					write = undefined;
 					break;
 				}

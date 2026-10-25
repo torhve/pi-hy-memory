@@ -86,6 +86,12 @@ function stage<T>(name: "extract" | "reconcile", chunkId: string, fn: () => T): 
 	}
 }
 
+/** Repairs `repairJson` made, plus the ones parsing itself had to make. */
+function mergeRepairs(repairs: string[] | undefined, extra: string[] | undefined): string[] | undefined {
+	const all = [...(repairs ?? []), ...(extra ?? [])];
+	return all.length > 0 ? all : undefined;
+}
+
 export async function writeChunk(
 	primary: Writer,
 	bank: BankEntry[],
@@ -175,6 +181,9 @@ export async function writeChunk(
 	let extractRetried = false;
 	let reconcileRetried = false;
 	let rejected: { reason: string; draft: unknown }[];
+	let idRefs: number | undefined;
+	/** Set when a draft's refs named entry ids rather than the `[n]` indices the chunk shows. */
+	let draftsRepairs: string[] | undefined;
 	let extractUsage: CallUsage;
 	if (options.resume) {
 		// The extract ran in an earlier attempt; its model was recorded then.
@@ -215,7 +224,8 @@ export async function writeChunk(
 		failover = extract.failed;
 		if (options.rawDir) writeFileSync(`${options.rawDir}/${chunkId}.extract.txt`, extract.content);
 		try {
-			({ drafts, rejected } = stage("extract", chunkId, () => parseDrafts(extract.content, chunk.refs)));
+			({ drafts, rejected, idRefs } = stage("extract", chunkId, () => parseDrafts(extract.content, chunk.refs)));
+			draftsRepairs = idRefs ? ["ref-by-entry-id"] : undefined;
 		} catch (error) {
 			if (failureClass(error) !== "output") throw error;
 			extractRetried = true;
@@ -228,10 +238,13 @@ export async function writeChunk(
 				{ preferFallback: options.preferFallback },
 			);
 			extractUsage = addUsage(extract.usage, retry.usage);
-			({ drafts, rejected } = stage("extract", chunkId, () => parseDrafts(retry.content, chunk.refs)));
+			({ drafts, rejected, idRefs } = stage("extract", chunkId, () => parseDrafts(retry.content, chunk.refs)));
+			draftsRepairs = idRefs ? ["ref-by-entry-id"] : undefined;
 			extractEndpoint = retry.endpoint;
 		}
-		extractRepaired = takeJsonRepair();
+		// Both kinds are counted for the audit: quoting bare tokens, and mapping a ref the writer
+		// named by entry id. Neither is silently forgiven.
+		extractRepaired = mergeRepairs(takeJsonRepair(), draftsRepairs);
 		// Provenance the writer never sees: a draft grounded in a user turn is the class
 		// the summary reserves budget for.
 		drafts = drafts.map((draft) => ({

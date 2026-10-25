@@ -21,6 +21,71 @@ const MAX_TASK_CHARS = 120;
  *    extended corpus, which then failed three times because the retry reused the same
  *    persisted drafts).
  */
+/**
+ * Quote bare tokens inside JSON arrays: `"refs":[0,66594cfa]` -> `"refs":[0,"66594cfa"]`.
+ *
+ * Measured on `hy-reload-006`, where the writer answered with entry ids rather than the `[n]`
+ * indices the chunk shows, and emitted them unquoted. The strict parse failed, the retry at
+ * temperature 0 produced the same bytes, and the chunk was lost over the syntax — not over
+ * truncation, which is what TODO 6.14 had assumed.
+ *
+ * The walk tracks whether it is inside a string, so prose that merely looks like a list
+ * (`refs:[0,x]` written inside a statement) is left exactly as the model wrote it. Numbers,
+ * `true`, `false` and `null` stay unquoted; only object/array *values* inside `[...]` are touched.
+ */
+function quoteBareArrayTokens(text: string): { text: string; repaired: boolean } {
+	let out = "";
+	let inString = false;
+	let escaped = false;
+	let repaired = false;
+	const containers: string[] = [];
+	for (let i = 0; i < text.length; i++) {
+		const ch = text[i];
+		if (inString) {
+			out += ch;
+			if (escaped) escaped = false;
+			else if (ch === "\\") escaped = true;
+			else if (ch === '"') inString = false;
+			continue;
+		}
+		if (ch === '"') {
+			inString = true;
+			out += ch;
+			continue;
+		}
+		if (ch === "[" || ch === "{") {
+			containers.push(ch);
+			out += ch;
+			continue;
+		}
+		if (ch === "]" || ch === "}") {
+			containers.pop();
+			out += ch;
+			continue;
+		}
+		const inArray = containers.length > 0 && containers[containers.length - 1] === "[";
+		if (inArray && ch !== "," && ch !== " " && ch !== "\n" && ch !== "\t" && ch !== "\r") {
+			let end = i;
+			while (end < text.length && !",]}".includes(text[end])) end++;
+			const token = text.slice(i, end).trim();
+			// A valid array value stays as written: a number (including a negative or a
+			// fraction), a boolean, or null. Everything else was never valid JSON there — a bare
+			// identifier, or a hex entry id that merely starts with a digit.
+			const valid = /^-?\d+(?:\.\d+)?$/.test(token) || token === "true" || token === "false" || token === "null";
+			if (token.length > 0 && !valid) {
+				repaired = true;
+				out += `"${token.replace(/"/g, "")}"`;
+			} else {
+				out += text.slice(i, end);
+			}
+			i = end - 1;
+			continue;
+		}
+		out += ch;
+	}
+	return { text: out, repaired };
+}
+
 function repairJson(text: string): { text: string; repairs: string[] } {
 	const repairs: string[] = [];
 	// A backslash that does not start a legal escape becomes a literal backslash.
@@ -33,7 +98,9 @@ function repairJson(text: string): { text: string; repairs: string[] } {
 		if (!repairs.includes("quote-after-number")) repairs.push("quote-after-number");
 		return head;
 	});
-	return { text: numeric, repairs };
+	const arrays = quoteBareArrayTokens(numeric);
+	if (arrays.repaired && !repairs.includes("array-bare-token")) repairs.push("array-bare-token");
+	return { text: arrays.text, repairs };
 }
 
 /**
@@ -75,7 +142,7 @@ function scanJson(raw: string): unknown {
 }
 
 /**
- * Strict parse first. Anything else is the model's malformation, and two of those have
+ * Strict parse first. Anything else is the model's malformation, and three of those have
  * been measured — see `repairJson`. The repair has to run before the scan, not after:
  * a stray quote makes the balanced-brace scanner swallow the rest of the object, which
  * is why the reported error was "unbalanced" rather than a parse position.
@@ -133,6 +200,10 @@ const SECRET_PATTERNS: RegExp[] = [
 
 export function sanitizeStatement(value: string, sourceIds: Set<string>): string {
 	let text = value.replace(/\[Source entry id:\s*[a-f0-9]{6,12}\]/gi, "").replace(/\[\d{1,4}\]/g, " ");
+	// A copied chunk line drags its label with it: `[da8e7079] [Assistant @ 16:59]: …`. The id is
+	// dropped only when a role label follows it, so a bracketed commit sha standing alone in a
+	// statement is not mistaken for an internal id and quietly deleted from a fact.
+	text = text.replace(/\[[0-9a-f]{6,12}\](?=\s*\[(?:User|Assistant|Tool|System|Earlier|Custom|Model))/gi, "");
 	for (const id of sourceIds) text = text.split(id).join("");
 	for (const pattern of SECRET_PATTERNS) {
 		text = text.replace(pattern, (match) => `${match.slice(0, 3)}…redacted…`);
@@ -148,6 +219,36 @@ function normalizeKey(value: string): string {
 		.slice(0, 48);
 }
 
+const HEX_ID = /^[0-9a-f]{6,12}$/i;
+
+/**
+ * Resolve one ref. An index arrives as a number or a digit string; the shape the writer has been
+ * measured emitting instead is the entry id itself — bare in the JSON until `repairJson` quotes
+ * it, and either exact or truncated. An id resolves only when it names one source entry: an
+ * ambiguous prefix is refused rather than guessed.
+ */
+function resolveSourceRef(
+	raw: unknown,
+	sourceIds: string[],
+	indexById: Map<string, number>,
+): { index: number; byId: boolean } | undefined {
+	if (typeof raw === "number") {
+		return Number.isInteger(raw) && raw >= 0 && raw < sourceIds.length ? { index: raw, byId: false } : undefined;
+	}
+	if (typeof raw !== "string") return undefined;
+	const text = raw.trim();
+	if (/^\d+$/.test(text)) {
+		const n = Number(text);
+		return n >= 0 && n < sourceIds.length ? { index: n, byId: false } : undefined;
+	}
+	if (!HEX_ID.test(text)) return undefined;
+	const lower = text.toLowerCase();
+	const exact = indexById.get(lower);
+	if (exact !== undefined) return { index: exact, byId: true };
+	const hits = sourceIds.filter((id) => id.toLowerCase().startsWith(lower));
+	return hits.length === 1 ? { index: sourceIds.indexOf(hits[0]), byId: true } : undefined;
+}
+
 export function parseDrafts(raw: string, sourceIds: string[]): ExtractResult {
 	const data = parseJsonObject(raw) as any;
 	const list = Array.isArray(data?.drafts) ? data.drafts : [];
@@ -155,6 +256,8 @@ export function parseDrafts(raw: string, sourceIds: string[]): ExtractResult {
 	const drafts: Draft[] = [];
 	const rejected: { reason: string; draft: unknown }[] = [];
 	const seen = new Set<string>();
+	const indexById = new Map(sourceIds.map((id, i) => [String(id).toLowerCase(), i]));
+	let idRefs = 0;
 
 	for (const item of list) {
 		if (!item || typeof item !== "object") {
@@ -166,15 +269,26 @@ export function parseDrafts(raw: string, sourceIds: string[]): ExtractResult {
 			rejected.push({ reason: "statement too short or empty", draft: item });
 			continue;
 		}
-		const refs: number[] = Array.isArray(item.refs)
-			? item.refs
-					.map((n: unknown) => Number(n))
-					.filter((n: number) => Number.isInteger(n) && n >= 0 && n < sourceIds.length)
-			: [];
+		const refs: number[] = [];
+		let namedById = 0;
+		let unresolvableById = 0;
+		for (const raw of Array.isArray(item.refs) ? item.refs : []) {
+			const resolved = resolveSourceRef(raw, sourceIds, indexById);
+			if (!resolved) {
+				if (typeof raw === "string" && HEX_ID.test(raw.trim())) unresolvableById++;
+				continue;
+			}
+			if (resolved.byId) namedById++;
+			refs.push(resolved.index);
+		}
 		if (refs.length === 0) {
-			rejected.push({ reason: "no valid source refs", draft: item });
+			rejected.push({
+				reason: unresolvableById > 0 ? "ref names an entry id, not an index" : "no valid source refs",
+				draft: item,
+			});
 			continue;
 		}
+		idRefs += namedById;
 		const task =
 			sanitizeStatement(String(item.task ?? ""), idSet).slice(0, MAX_TASK_CHARS) ||
 			statement.slice(0, MAX_TASK_CHARS);
@@ -192,7 +306,7 @@ export function parseDrafts(raw: string, sourceIds: string[]): ExtractResult {
 		seen.add(dedupeKey);
 		drafts.push({ task, statement, keys, refs: [...new Set(refs)] });
 	}
-	return { drafts, rejected };
+	return { drafts, rejected, idRefs };
 }
 
 export function parseOps(

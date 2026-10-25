@@ -150,10 +150,28 @@ gate.
       decision lines) and scored it: 58 of 58 proposed and banked. Dilution (`dev/corpus-enumerables-noisy.json`)
       55 of 55. Replaying the 6.4 session offline (`out/reload-replay`) carried 61 of 66 including
       `exit code 3`. Extraction is not the defect — see `RESULTS.md`.
-- [ ] 6.14 A chunk lost to a truncated response stays lost: `out/reload-replay` chunk `hy-reload-006` failed
-      twice with the same parse error at position 423 and was dropped. A fresh extract at temperature 0
-      reproduces the same truncation, so the retry only re-pays the extract. Either raise the output budget
-      on retry, or split the chunk, or record the loss as a gap so coverage says so.
+- [x] 6.14 A chunk that stays lost was never truncated. `out/reload-replay` chunk `hy-reload-006` failed
+      twice with the same parse error and was dropped, and the TODO read that as truncation. Reading the
+      surviving raw says otherwise: the writer answered in **entry ids** (`"refs":[0,66594cfa]`, bare,
+      invalid JSON), because the captured chunk still carried legacy `[da8e7079]` line labels — which the
+      shipped path never shows it. 7 of that response's 9 drafts cited only ids. Frequency over everything
+      captured: **1 chunk in 458 extract responses**. Temperature 0 reproduces the same bytes, so the retry
+      re-pays the call and fails identically; raising the output budget would have fixed nothing.
+      Four changes, 2026-10-25: the harness normalizes captured line labels to indices
+      (`labelLinesToIndices`, only labels naming a real ref, so a bracketed commit sha survives);
+      `repairJson` gained `array-bare-token`, string-aware so prose is untouched; `parseDrafts` maps a ref
+      that names exactly one source entry to its index and **counts** it (`ExtractResult.idRefs`, reported
+      as `ref-by-entry-id` in the write's repairs) while an ambiguous or unknown id gets its own reason —
+      forgiving silently would hide a writer that stops understanding indices; and a chunk the harness
+      gives up on is listed in `metrics.json` as `droppedChunks` instead of vanishing. Also fixed a
+      sanitizer gap this exposed: a copied line label reached a statement, and the strip now fires only
+      when a role label follows the id, so a commit sha inside a fact is not deleted as an internal id.
+      Pinned by `tools/source-ref-check.ts`, extended `json-repair-check` and `redact-check`. Read
+      against the real artifacts afterwards — that chunk's text and that raw response — the labels go 6 → 0
+      with 6 refs derived, and the response yields **7 drafts where the chunk used to be lost whole**,
+      8 refs mapped from ids, one repair named.
+      Not done: nothing in the shipped path shows the writer ids, so there is no shipped-path evidence
+      that id-shaped refs occur there — `idRefs` is the counter that would show it.
 - [ ] 6.15 Is one coarse write the reason 6.4 lost a probe? The live run wrote once over ~2 680 tokens
       (5 drafts, 13 facts); the same text replayed in 8 chunks of ~1 200 tokens proposed 61 of 66 probes,
       and organic halves retain 53 % where 12 chunks retain 42 %. Test a live arm with a smaller chunk

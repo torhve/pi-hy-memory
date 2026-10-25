@@ -138,5 +138,58 @@ const ids = ["4f2a9c1b7d33", "9a01c4de22f7", "5882a9281052", "e346eec8cf15"];
 	check("one fact landed", bank.filter((e) => e.status === "active").length, 1);
 }
 
+// --- 3) bare tokens inside an array (the `hy-reload-006` shape) --------------
+{
+	// Measured shape: the writer answered with entry ids instead of the `[n]` indices the chunk
+	// shows, and left them unquoted. Strict parse fails at the first bare token; at temperature 0
+	// the retry produced the same bytes, so the chunk was lost over syntax.
+	const idsWithShort = ["da8e7079", "eb626334bdb5", "0123456789ab"];
+	const bare = `{
+  "drafts":[
+    {"task":"nightly pool","statement":"the nightly pool stays at 12000 tokens per pass","keys":["pool"],"refs":[0,da8e7079]},
+    {"task":"audit store","statement":"the audit store is capped at 64MB and is not to be moved","keys":["audit"],"refs":[1]}
+  ]
+}`;
+	const parsed = parseDrafts(bare, idsWithShort);
+	check("an unquoted array token parses after repair", parsed.drafts.length, 2);
+	check("the repair is named", takeJsonRepair(), ["array-bare-token"]);
+	check(
+		"the repaired statement is intact",
+		parsed.drafts[0].statement.startsWith("the nightly pool stays at 12000"),
+		true,
+	);
+}
+
+{
+	// A list written inside a statement is prose. Quoting it would rewrite a fact's own wording.
+	const prose = `{
+  "drafts":[
+    {"task":"ref syntax","statement":"refs are written as refs:[0,x] in this writer's docs and must stay indices","keys":["refs"],"refs":[2]}
+  ]
+}`;
+	const parsed = parseDrafts(prose, ["aaaa1111", "bbbb2222", "cccc3333"]);
+	check("prose that looks like a list keeps its brackets", parsed.drafts[0].statement.includes("refs:[0,x]"), true);
+	check("and no repair is claimed for it", takeJsonRepair(), undefined);
+}
+
+{
+	// Numbers, booleans and already-quoted strings are valid JSON array values.
+	const fine = `{"drafts":[{"task":"limits","statement":"the ceiling is 24 candidates, true or false as flags","keys":["limit"],"refs":[0,1]}]}`;
+	check("a well-formed array is untouched", parseDrafts(fine, ["aaaa1111", "bbbb2222"]).drafts[0].refs, [0, 1]);
+	check("with no repair recorded", takeJsonRepair(), undefined);
+}
+
+{
+	// A repair never invents missing structure: a truncated completion still raises.
+	const truncated = `{"drafts":[{"task":"half","statement":"this statement is cut off mid sent`;
+	let threw = "";
+	try {
+		parseDrafts(truncated, ["aaaa1111"]);
+	} catch (error) {
+		threw = String((error as Error).message.slice(0, 20));
+	}
+	check("a truncated completion still fails", threw.length > 0, true);
+}
+
 console.log(failures === 0 ? "ok: json repair" : `${failures} failure(s)`);
 process.exit(failures === 0 ? 0 : 1);

@@ -57,6 +57,12 @@ export type ReconcileOp =
 export type ExtractResult = {
 	drafts: Draft[];
 	rejected: { reason: string; draft: unknown }[];
+	/**
+	 * Refs the writer named by entry id rather than by the `[n]` index the chunk shows, and which
+	 * resolved to exactly one source entry. Counted, never silent: a writer that stops
+	 * understanding indices should show up here rather than be forgiven into invisibility.
+	 */
+	idRefs?: number;
 };
 
 export type ReconcileResult = {

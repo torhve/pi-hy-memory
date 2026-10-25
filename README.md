@@ -362,7 +362,8 @@ to break silently:
 | `compaction-hook-check` | the hook uses pi's `firstKeptEntryId` and real `tokensBefore`, and a `hy.gap` record reaches the mirrored ledger when the clamp gives way |
 | `ops-guard-check`, `subject-guard-check` | wrong-target and wrong-subject UPDATEs |
 | `redact-check` | credential redaction without damaging identifiers |
-| `json-repair-check` | the two measured malformations (illegal escape, stray quote after a number) parse, content survives, valid output is untouched, and an unparseable reply is re-asked exactly once |
+| `json-repair-check` | the three measured malformations (illegal escape, stray quote after a number, a bare token inside an array) parse, content survives, valid output is untouched, and an unparseable reply is re-asked exactly once |
+| `source-ref-check` | refs arrive as the `[n]` indices the chunk shows: an id naming one source entry becomes its index and is counted, a truncated id resolves only while it names one entry, an ambiguous or unknown id gets its own rejection reason, prose that looks like a list keeps its brackets, and a captured chunk's line labels become indices while a bracketed commit sha stays as written |
 | `budget-check`, `reload-budget-check` | pool eviction order, reload semantics, summary budget |
 | `stats-counter-check` | the counters describe the session, not the process: a reload continues writes, drafts, adds, merges and refusals from its ledger, a ledger written before `downgradedCount` reports a floor and admits it, a gap counts as a compaction only when it is one, and a session with no ledger starts at zero and says it is fresh |
 | `evict-record-check` | the `hy.evict` record the ceiling writes: it names exactly the ids that write dropped and its arithmetic closes, folding ignores it so a replay restores those facts and shifts no `chunkSeq`, a reload at the same cap drops exactly the ids the record names, an unknown ledger record breaks nothing, and the record survives the reload read path |
@@ -405,9 +406,9 @@ is required to use the extension.
 |---|---|
 | `src/types.ts` | bank entry, ledger record, draft, op |
 | `src/chunks.ts` | chunk ids (monotonic, derived entry ids) |
-| `src/serialize.ts` | pi entry text → chunk with positional `[n]` refs; internal ids hidden |
+| `src/serialize.ts` | pi entry text → chunk with positional `[n]` refs; internal ids hidden. `labelLinesToIndices` rewrites a captured chunk's legacy `[da8e7079]` line labels into the same indices, so a replay never shows the writer an id it was never meant to see |
 | `src/prompts.ts` | extract prompt (fixed) + reconcile prompt (size-aware) |
-| `src/protocol.ts` | JSON parse, validation, sanitizing, bank/draft rendering |
+| `src/protocol.ts` | JSON parse (three measured malformations repaired, each named in the audit), validation, sanitizing, bank/draft rendering; a ref naming a source entry id becomes that entry's index and is counted rather than forgiven |
 | `src/values.ts` | what counts as a value rather than wording — numbers, flags, file names, paths, identifiers — and which values an UPDATE draft fails to restate; the one definition the gate and the reports share |
 | `src/bank.ts` | ledger fold, candidate retrieval, op application, budget |
 | `src/pipeline.ts` | the two calls and everything deterministic around them |
@@ -427,7 +428,7 @@ is required to use the extension.
 | `dev/poc.ts` | replay harness over captured chunks (needs `POC_ORIGIN`) |
 | `dev/export-judge.ts` | bank → judge result files |
 | `dev/raw-writer.ts` | the only HTTP client, for the shell harnesses above |
-| `dev/run.ts` | replay a corpus of captures through the shipped write path (`--bank-index` runs the bank-aware extract arm and `--extract-prompt actorframe` the actor-frame prompt arm; both are off by default, so baselines are the flagless path) |
+| `dev/run.ts` | replay a corpus of captures through the shipped write path (`--bank-index` runs the bank-aware extract arm and `--extract-prompt actorframe` the actor-frame prompt arm; both are off by default, so baselines are the flagless path). Captured text is normalized to the indices the shipped path shows, and a chunk it gives up on after all attempts is listed in `metrics.json` as `droppedChunks` instead of vanishing from the ledger |
 | `dev/prompts-actorframe.ts` | the actor-frame extract prompt: the shipped prompt plus the clauses upstream Hy-Memory puts at the top of its own coding extract prompt — who a statement is about, restraint as budget reallocation rather than abstention, evidence fidelity. Experiment-only; `tools/extract-prompt-check.ts` pins that it is additive, reaches only the extract call, and is never set by the shipped extension |
 | `dev/judge.ts` | blind quality judge for one run's writes, rubric in `dev/rubric.md` |
 | `dev/boundary-arms.ts` | move the chunk boundary over identical content, compare runs, emit the pieces for the judge |
