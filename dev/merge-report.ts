@@ -263,7 +263,9 @@ export function analyseRecords(
 					? "subject guard refused it"
 					: /not retrieved/.test(downgraded.reason)
 						? "target was never shown for this draft"
-						: "target already replaced in this batch",
+						: /carries a value the draft does not restate/.test(downgraded.reason)
+							? "value gate refused it"
+							: "recorded for another reason",
 				shared: recorded ? Number(recorded[1]) : (verdict?.shared ?? 0),
 				targetSize: recorded ? Number(recorded[2]) : (verdict?.targetSize ?? 0),
 				targetDeclared,

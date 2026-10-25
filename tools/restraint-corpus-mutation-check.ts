@@ -27,6 +27,7 @@ const CORPORA = [
 	"dev/corpus-restraint2.json",
 	"dev/corpus-restraint3.json",
 	"dev/corpus-restraint4.json",
+	"dev/corpus-restraint5.json",
 ];
 const CHECK = "tools/restraint-corpus-check.ts";
 
@@ -38,6 +39,7 @@ interface MutableChunk {
 	side?: string;
 	anchors?: string[];
 	marker?: string;
+	mergesInto?: string;
 	claim?: string;
 	why?: string;
 	probes?: string[];
@@ -450,6 +452,55 @@ const mutations: Mutation[] = [
 					"[User @ 12:14]: 3 warn, 12 info, build finished.",
 				),
 			);
+		},
+	},
+	// ---- the fifth corpus: one carrier per value, and a merge the guard approves ----------
+
+	{
+		corpus: "dev/corpus-restraint5.json",
+		name: "r5: a second chunk restates a value, so the merge would not actually destroy it",
+		expect: "leak: probe",
+		apply: (doc) => {
+			appendToLastLine(chunk(doc, "hy-5c0b0001-pr-01"), " and the value is drain_timeout");
+		},
+	},
+	{
+		corpus: "dev/corpus-restraint5.json",
+		name: "r5: a pressure chunk with no carrier named",
+		expect: "names no carrier chunk to merge into",
+		apply: (doc) => {
+			delete chunk(doc, "hy-5c0b0001-pr-02").mergesInto;
+		},
+	},
+	{
+		corpus: "dev/corpus-restraint5.json",
+		name: "r5: pressure wording the shipped subject guard refuses, leaving no merge to price",
+		expect: "the shipped subject guard refuses this merge",
+		apply: (doc) => {
+			const p = chunk(doc, "hy-5c0b0001-pr-06");
+			p.text = [
+				"[0] [User @ 13:30]: How long is the changelog? (counting lines only)",
+				"[1] [Tool result for bash @ 13:31]: $ wc -l CHANGELOG.md",
+				"[2] [Tool result for bash @ 13:32]: 316",
+				"[3] [Assistant @ 13:33]: Changelog length only.",
+			].join("\n");
+			p.transient = ["counting lines only"];
+		},
+	},
+	{
+		corpus: "dev/corpus-restraint5.json",
+		name: "r5: a declared value that is not a specific token, invisible to the value test",
+		expect: "not a specific token, so mergeValueGate cannot see it being dropped",
+		apply: (doc) => {
+			chunk(doc, "hy-5c0b0001-cv-01").probes = ["drain_timeout", "quick look"];
+		},
+	},
+	{
+		corpus: "dev/corpus-restraint5.json",
+		name: "r5: the gate count no longer matches the values the corpus declares",
+		expect: "single-carrier values, gate says",
+		apply: (doc) => {
+			doc.gate.sole_carrier_value = 3;
 		},
 	},
 ];

@@ -15,7 +15,9 @@
  *   4. two drafts in one chunk carrying one declared value, both banked     -> 7.14's duplicate;
  *   5. a declared value drafted and then dropped outright                   -> nothing banked;
  *   6. a refusal that left two active facts covering the same declared value -> what a refusal costs;
- *   7. a merge the current guard would not have allowed                     -> reported, not hidden.
+ *   7. a merge the current guard would not have allowed                     -> reported, not hidden;
+ *   8. a refusal recorded by the value gate rather than the subject guard   -> attributed to the gate
+ *      that made it, because the two refusals mean different things to whoever reads the number.
  *
  * Entry ids in the fixture are the real ones: newId(`${chunkId}:${draft}:${action}`) is how
  * src/bank.ts derives them, so the ops point at entries the fold actually creates.
@@ -257,6 +259,15 @@ const records: LedgerRecord[] = [
 				draft: 1,
 				target: entryId("hy-f-to-03", 0, "ADD"),
 			},
+			// The other write-time guard: same subject, but the draft drops a value the target
+			// carries. Its reason names no shared/target counts, so the instrument must attribute
+			// it by its reason string rather than fall through to a bucket that describes a
+			// different failure.
+			{
+				reason: "target carries a value the draft does not restate (9000); recorded as ADD",
+				draft: 0,
+				target: entryId("hy-f-to-04", 0, "UPDATE"),
+			},
 		],
 		usage: { inTokens: 200, outTokens: 20, wallS: 1 },
 	},
@@ -346,6 +357,16 @@ if (refusal) {
 	assert(
 		refusal.carriersAfter === 3,
 		`refusing that merge left three active facts covering 9000, saw ${refusal.carriersAfter}`,
+	);
+}
+
+const valueGateRefusal = run.downgrades.find((row) => row.reason === "value gate refused it");
+assert(valueGateRefusal !== undefined, "a value-gate refusal is attributed to the value gate");
+if (valueGateRefusal) {
+	assert(valueGateRefusal.recomputedMatch === null, "a value-gate refusal has no shared counts to recompute");
+	assert(
+		valueGateRefusal.targetDeclared.includes("9000"),
+		"the value-gate refusal names the value the target carried",
 	);
 }
 

@@ -614,7 +614,17 @@ choosing. Tiers are ordered by what can be measured with artifacts already on di
 - [x] 8.8 No test proposed, on the record: `keys`/`refs` (deliberate) and extract-never-sees-the-bank
       (decided by measurement, then confirmed in upstream's code). A plan that tested these would be
       spending budget on a difference neither side considers open.
-- [ ] 8.9 A corpus where a declared value has exactly one carrier, tier 7. Corpora 3 and 4 bank every
+- [ ] 8.9 A corpus where a declared value has exactly one carrier, tier 7. **Corpus built 2026-10-24**
+      (`dev/corpus-restraint5.json`, re-derived by `dev/gen-corpus-restraint5.mjs`, contract enforced by
+      `tools/restraint-corpus-check.ts` and mutation-tested); the two arms are running. The rest of this
+      item stands as written, with one clause now falsified: the shipped arm did destroy a
+      single-carrier value at a merge (`store/audit.db`, `r5-off`), but the writer had banked that value
+      twice from its own chunk, so both arms ended at 14/16 declared values and no value went dark. The
+      value gate fired once, on a token the corpus does not declare. **Gate does not clear 2026-10-25;
+      `mergeValueGate` stays `false`.** What is left is not another corpus but the dedup class of 7.14: a
+      single-carrier corpus cannot price a gate while one chunk banks its value into two facts. See
+      "TODO 8.9: a corpus where every declared value has exactly one carrier" in `EXPERIMENTS.md`.
+      Corpora 3 and 4 bank every
       declared value in more than one chunk, so retiring one carrier is harmless and the value gate has
       nothing to prevent: its two live refusals on corpus 3 bought duplicates, not values. Author a corpus
       where each declared value is stated in exactly one chunk and printed nowhere else, and make a later

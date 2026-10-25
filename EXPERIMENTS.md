@@ -2455,3 +2455,133 @@ Three things this does not establish.
 
 What it does establish is the cheap part, which was the bug: a value that 1 405 other values share
 the fate of — carried by nothing current — is answerable again, and the answer says so.
+
+## TODO 8.9: a corpus where every declared value has exactly one carrier (2026-10-24)
+
+Corpora 3 and 4 bank every declared value in more than one chunk. A merge that retires one carrier
+therefore leaves the value held somewhere else, which is why corpus 4 never fired `mergeValueGate` and
+corpus 3's two refusals bought duplicates rather than values: the gate has nothing to prevent on a
+corpus where nothing is only said once. TODO 8.9 asked for the opposite shape, and the arms below are
+the only ones that can settle the default.
+
+**The corpus.** `dev/corpus-restraint5.json`, 15 chunks, one authored session (`hy-5c0b0001` — an
+authored id, not a capture), 16 declared values, 6 carrier/pressure pairs, one chunk declaring two user
+rules, two `nothing_work` chunks. Each declared value is written into exactly one chunk and printed
+nowhere else. Each `pressure` chunk states its own single-carrier count and then says, in the assistant
+line, that the carrier's subject was looked at and left alone — the wording that invites an `UPDATE`
+into the carrier while restating none of what the carrier holds.
+
+One session rather than two, because the corpus exists to have exactly one variable in it: a session
+crossing would put the re-entry trigger in the same arm as the value gate.
+
+**Re-derived, not hand-authored.** `dev/gen-corpus-restraint5.mjs` refuses to write the file when the
+chunks break the corpus's own promise (`carries` finds two carriers, or `valueTokens` cannot see a
+declared value, or `sameSubject` would not approve the merge). `tools/restraint-corpus-check.ts` then
+re-measures all four promises from the shipped code and now runs against five corpora;
+`tools/restraint-corpus-mutation-check.ts` grew five r5 mutations with it — duplicate carrier, missing
+carrier reference, pressure wording the guard refuses, a declared value that is prose rather than a
+token, and a gate count that no longer matches — so the new rules can fail. 43 mutations across 5
+corpora are rejected by the rule each one breaks.
+
+### The subject test passes on the renderer's own labels
+
+Measuring the corpus pairs surfaced something that is not about this corpus. `subjectTokens` keeps every
+word of four characters or more that is not in `SUBJECT_STOP`, and the chunk renderer labels its lines
+`[User @ …]`, `[Tool result for bash @ …]`, `[Assistant @ …]` — so `user`, `tool`, `result`, `bash`,
+`assistant` are five subject tokens that **every** labelled chunk shares with **every** other. The
+shipped clause is `shared >= 3 && shared / targetSize >= 0.15`, so on a target of 33 subject tokens or
+fewer those five labels satisfy the test by themselves, with no shared content at all.
+
+| merge proposed | shared | target size | verdict |
+|---|---|---|---|
+| unrelated chunk → a 16-token carrier | 5 | 16 | accepted |
+| the same unrelated wording → a 37-token inventory carrier | 5 | 37 | refused |
+| this corpus's pressure chunk → that inventory carrier | 12 | 37 | accepted |
+
+The third row is the corpus working as designed. The first two are the property: whether the labels
+alone clear the bar depends on how long the target fact is, not on what either side says. Two
+consequences, both for the record:
+
+- A merge approved by the shipped guard is not evidence that the writer's wording matched. On a short
+  bank fact the guard approves almost anything, which is the looseness TODO 7.18's tightened clause was
+  priced against (4 shared tokens and a quarter of the target would put this merge at refused).
+- Corpus 5 measures the guard on **chunk text**, because a corpus check has no bank entry to compare
+  against. Bank entries are longer sentences than the chunks that produced them, so the label effect is
+  weaker in the shipped path than the first row suggests. It is not zero, and nothing here measures
+  exactly where it lands.
+
+### The two arms
+
+Both arms ran the same day on the committed harness — 15/15 chunks banked in each, writer resolved by
+name, `--pool 12000 --candidate-render-mode perDraft`, the settings both published corpus-4 arms used.
+`r5-off` is the shipped path (value gate off, the flagless default); `r5-on` adds `--merge-value-gate`.
+
+| measure | `r5-off` | `r5-on` |
+|---|---|---|
+| chunks / drafts / ops | 15 / 31 / ADD 28, UPDATE 3 | 15 / 30 / ADD 30, UPDATE 0 |
+| active facts / bank tokens at the end | 28 / 490 | 30 / 592 |
+| executed UPDATEs that dropped a value their target carried | 2/3 | 0/0 |
+| corpus-declared value destroyed by an executed merge | 1 (`store/audit.db`) | 0 |
+| refusals recorded | 5 (5 subject guard) | 7 (5 subject guard, 1 target never shown, **1 value gate**) |
+| declared values surviving, counted per value | 14/16 | 14/16 |
+| same declared value banked twice from one chunk | 3 cases → 2 chunks, 2 facts | 7 cases → 5 chunks, 5 facts |
+| kept the declared tool fact | 12/13 (92%) | 12/13 (92%) |
+| kept it and nothing else | 2/13 | 5/13 |
+| facts banked from the two nothing-durable chunks | 4, 0 abstained | 4, 0 abstained |
+| declared rule text kept verbatim | 2/2 | 2/2 |
+| model wall (extract + reconcile) | 336.1 s | 188.2 s |
+
+The wall split is endpoint variance, not an arm effect: the extract prompt is identical in both arms and
+its share of the wall differs by 115 s, more than the whole reconcile difference.
+
+**The shipped arm did produce the merge the corpus was built for.** `hy-5c0b0001-pr-02` merged over
+`hy-5c0b0001-cv-02` at 3/6 shared through the strict clause ("restated half the target's wording"), and
+`store/audit.db` left the entry with it — the value this corpus states in exactly one chunk. The merge
+gate's own column reads it as **0 kept / 1 lost**.
+
+**And the value survived anyway.** The writer banked cv-02's value twice: two drafts, both recorded as
+ADD, two active facts. Retiring one of them left the other. That is the gap between the corpus's promise
+and the bank's shape — one carrier per *chunk* is not one carrier per *fact* — and it is the same class
+TODO 7.14 found on the organic ledgers (39 same-value drafts, 0 merged). It is why the headline is
+14/16 in both arms: nothing here ends dark.
+
+**The value gate fired exactly once, and not on a declared value.** Its refusal is
+`target carries a value the draft does not restate (--nodes)`: a merge the subject guard would have
+allowed (the report recomputes it at 4/13 shared, 0.31 of the target's wording) refused over a command
+line. So the gate does refuse real drafts on a corpus written so that a merge destroys a value; what it
+refused in this run was not a value the corpus declares.
+
+**The arms diverged before the gate had much to do.** With the gate on, no UPDATE executed at all — but
+only one of the seven refusals is the gate's. Five are the unchanged subject guard, refusing targets from
+a bank that had grown because earlier merges were refused, and one is a target that was never shown for
+the draft. The on arm's two extra refusals over the off arm are trajectory, not the gate's verdict. Its
+bank is +2 facts and +102 tokens, which is what a refusal costs: the duplicate stays.
+
+**Two losses belong to neither gate.** `204` and `121` on `cv-06` were never drafted in either arm — the
+extractor banked the `nvcc list --nodes` command and the two user rules and left the two numbers out.
+Both arms lost the same two values and neither loss is a merge.
+
+### The instrument's own bug, found by this run
+
+`dev/merge-report.ts` classified refusals by matching the subject-guard and not-retrieved reason strings
+and sent everything else to a bucket named "target already replaced in this batch". A value-gate refusal
+landed there, so the gate-on arm's published refusal line read `6 subject guard, 1 target never shown, 1
+target already replaced` and hid the one refusal the arm exists to count. It now reads
+`5 subject guard, 1 target never shown, 1 value gate refused it`, and
+`tools/merge-report-check.ts` gained a case that records a value-gate refusal and requires that
+attribution. The reason strings are a published interface (DESIGN says so); the classifier had not kept
+up with the third one.
+
+### What this does and does not decide
+
+TODO 8.9's gate was: the shipped arm loses at least one declared value at a merge, and the gate-on arm
+loses none and grows the bank by its refusals. Half of that is true — the shipped arm destroyed a
+single-carrier value's fact, the on arm destroyed none and grew by 2 facts — but the value the shipped
+arm lost was still active at the end, so the two arms ended with identical declared-value counts. **The
+gate does not clear, and `mergeValueGate` stays `false`.**
+
+The corpus did its job; the thing it exposed is that a single-carrier corpus cannot price the gate while
+the writer banks each value twice from the chunk that states it. The next step is therefore not another
+corpus: it is the dedup question TODO 7.14 named — or a score that counts carriers per *fact* rather than
+per chunk, so a value held twice inside one chunk reads as one carrier. Until then there is no arm that
+can settle the default, and the organic replay (71% refused) remains the widest reading available.

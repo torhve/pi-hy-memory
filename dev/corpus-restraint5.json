@@ -1,0 +1,217 @@
+{
+ "note": "TODO 8.9: a corpus where every declared value has exactly one carrier chunk. Each `pressure` chunk re-says its carrier's subject in wording the shipped `sameSubject` accepts and restates none of the carrier's values, so a merge the guard approves destroys the only copy of that value and only `mergeValueGate` can stop it. `hy-5c0b0001` is an authored session id, not an organic capture.",
+ "gate": {
+  "attribution_pair": 0,
+  "empty_chunk": 0,
+  "nothing_work": 2,
+  "tool_output": 13,
+  "constraint_chunk": 1,
+  "sole_carrier_value": 16,
+  "merge_pressure_pair": 6,
+  "session_span": 1
+ },
+ "chunks": [
+  {
+   "chunkId": "hy-5c0b0001-cv-01",
+   "class": "tool_output",
+   "role": "carrier",
+   "why": "nobody decided anything here; the tool output states the value this corpus declares as its only carrier",
+   "probes": [
+    "drain_timeout",
+    "90s"
+   ],
+   "transient": [
+    "just a quick look at the file"
+   ],
+   "text": "[0] [User @ 09:06]: what is the drain timeout set to? (just a quick look at the file)\n[1] [Tool result for bash @ 09:07]: $ grep -n drain queue.toml\n[2] [Tool result for bash @ 09:08]: queue.toml:41: drain_timeout = 90s\n[3] [Assistant @ 09:09]: queue.toml sets drain_timeout to 90s."
+  },
+  {
+   "chunkId": "hy-5c0b0001-pr-01",
+   "class": "tool_output",
+   "role": "pressure",
+   "why": "the only thing said is that the subject was looked at and left alone, which is the wording that invites a merge into the carrier while dropping its value",
+   "probes": [
+    "143"
+   ],
+   "mergesInto": "hy-5c0b0001-cv-01",
+   "transient": [
+    "only counting the drain mentions"
+   ],
+   "text": "[0] [User @ 10:06]: how many drain mentions are in there? (only counting the drain mentions)\n[1] [Tool result for bash @ 10:07]: $ grep -c drain queue.toml\n[2] [Tool result for bash @ 10:08]: 143\n[3] [Assistant @ 10:09]: The drain timeout is fine the way it is, I am leaving it alone."
+  },
+  {
+   "chunkId": "hy-5c0b0001-cv-02",
+   "class": "tool_output",
+   "role": "carrier",
+   "why": "nobody decided anything here; the tool output states the value this corpus declares as its only carrier",
+   "probes": [
+    "store/audit.db",
+    "32768"
+   ],
+   "transient": [
+    "only checking the file size"
+   ],
+   "text": "[0] [User @ 09:07]: how big is the audit store? (only checking the file size)\n[1] [Tool result for bash @ 09:08]: $ ls -l store/audit.db\n[2] [Tool result for bash @ 09:09]: -rw-r--r-- 1 staff 32768 Oct 24 09:12 store/audit.db\n[3] [Assistant @ 09:10]: Audit rows live in store/audit.db and the file is capped at 32768 bytes."
+  },
+  {
+   "chunkId": "hy-5c0b0001-pr-02",
+   "class": "tool_output",
+   "role": "pressure",
+   "why": "the only thing said is that the subject was looked at and left alone, which is the wording that invites a merge into the carrier while dropping its value",
+   "probes": [
+    "19"
+   ],
+   "mergesInto": "hy-5c0b0001-cv-02",
+   "transient": [
+    "only counting who reads it"
+   ],
+   "text": "[0] [User @ 10:07]: who reads the audit store? (only counting who reads it)\n[1] [Tool result for bash @ 10:08]: $ grep -rl audit.db src | wc -l\n[2] [Tool result for bash @ 10:09]: 19\n[3] [Assistant @ 10:10]: The audit store location is settled, nothing about it is changing."
+  },
+  {
+   "chunkId": "hy-5c0b0001-cv-03",
+   "class": "tool_output",
+   "role": "carrier",
+   "why": "nobody decided anything here; the tool output states the value this corpus declares as its only carrier",
+   "probes": [
+    "pool_size"
+   ],
+   "transient": [
+    "only checking the pool line"
+   ],
+   "text": "[0] [User @ 09:08]: what is the pool size? (only checking the pool line)\n[1] [Tool result for bash @ 09:09]: $ cat workers.toml\n[2] [Tool result for bash @ 09:10]: pool_size = 12\nspin = 3\n[3] [Assistant @ 09:11]: The worker pool is pool_size = 12 in workers.toml."
+  },
+  {
+   "chunkId": "hy-5c0b0001-pr-03",
+   "class": "tool_output",
+   "role": "pressure",
+   "why": "the only thing said is that the subject was looked at and left alone, which is the wording that invites a merge into the carrier while dropping its value",
+   "probes": [
+    "29"
+   ],
+   "mergesInto": "hy-5c0b0001-cv-03",
+   "transient": [
+    "only counting the pool mentions"
+   ],
+   "text": "[0] [User @ 10:08]: how many pool mentions? (only counting the pool mentions)\n[1] [Tool result for bash @ 10:09]: $ grep -c pool workers.toml\n[2] [Tool result for bash @ 10:10]: 29\n[3] [Assistant @ 10:11]: The worker pool stays as it is for now."
+  },
+  {
+   "chunkId": "hy-5c0b0001-cv-04",
+   "class": "tool_output",
+   "role": "carrier",
+   "why": "nobody decided anything here; the tool output states the value this corpus declares as its only carrier",
+   "probes": [
+    "hy_snapshot_interval"
+   ],
+   "transient": [
+    "only checking the cadence line"
+   ],
+   "text": "[0] [User @ 09:09]: what drives the snapshot cadence? (only checking the cadence line)\n[1] [Tool result for bash @ 09:10]: $ grep -n snapshot config.toml\n[2] [Tool result for bash @ 09:11]: config.toml:8: hy_snapshot_interval = 60\n[3] [Assistant @ 09:12]: Snapshot cadence is hy_snapshot_interval, 60 seconds."
+  },
+  {
+   "chunkId": "hy-5c0b0001-pr-04",
+   "class": "tool_output",
+   "role": "pressure",
+   "why": "the only thing said is that the subject was looked at and left alone, which is the wording that invites a merge into the carrier while dropping its value",
+   "probes": [
+    "17"
+   ],
+   "mergesInto": "hy-5c0b0001-cv-04",
+   "transient": [
+    "only counting the snapshot mentions"
+   ],
+   "text": "[0] [User @ 10:09]: how many snapshot mentions? (only counting the snapshot mentions)\n[1] [Tool result for bash @ 10:10]: $ grep -c snapshot config.toml\n[2] [Tool result for bash @ 10:11]: 17\n[3] [Assistant @ 10:12]: The snapshot interval knob is not going to change."
+  },
+  {
+   "chunkId": "hy-5c0b0001-cv-05",
+   "class": "tool_output",
+   "role": "carrier",
+   "why": "nobody decided anything here; the tool output states the value this corpus declares as its only carrier",
+   "probes": [
+    "cache_shards"
+   ],
+   "transient": [
+    "only checking the shard line"
+   ],
+   "text": "[0] [User @ 09:10]: how many cache shards? (only checking the shard line)\n[1] [Tool result for bash @ 09:11]: $ cat cache.toml\n[2] [Tool result for bash @ 09:12]: cache_shards = 512\nwarm = true\n[3] [Assistant @ 09:13]: The cache is split into cache_shards = 512."
+  },
+  {
+   "chunkId": "hy-5c0b0001-pr-05",
+   "class": "tool_output",
+   "role": "pressure",
+   "why": "the only thing said is that the subject was looked at and left alone, which is the wording that invites a merge into the carrier while dropping its value",
+   "probes": [
+    "58"
+   ],
+   "mergesInto": "hy-5c0b0001-cv-05",
+   "transient": [
+    "only counting the shard mentions"
+   ],
+   "text": "[0] [User @ 10:10]: how many shard mentions? (only counting the shard mentions)\n[1] [Tool result for bash @ 10:11]: $ grep -c shard cache.toml\n[2] [Tool result for bash @ 10:12]: 58\n[3] [Assistant @ 10:13]: The cache shards are fine, leaving them as they are."
+  },
+  {
+   "chunkId": "hy-5c0b0001-cv-06",
+   "class": "tool_output",
+   "role": "carrier",
+   "why": "nobody decided anything here; the tool output states the value this corpus declares as its only carrier",
+   "probes": [
+    "204",
+    "121"
+   ],
+   "transient": [
+    "only mapping the hosts"
+   ],
+   "text": "[0] [User @ 09:11]: Which nodes and containers are running, and where does each one live? (only mapping the hosts)\n[1] [Tool result for bash @ 09:12]: $ nvcc list --nodes\n[2] [Tool result for bash @ 09:13]: node-a nginx-proxy container 118 port 8443 restart always ; node-b redis-cache container 121 port 6379 restart always ; node-c envoy-gateway container 77 port 8080 restart onfailure ; node-d grafana-agent container 204 port 3000 restart onfailure\n[3] [Assistant @ 09:14]: Inventory: each host has its own container, port and restart policy. node-a runs nginx-proxy on 8443, node-b runs redis-cache on 6379, node-c runs envoy-gateway on 8080, node-d runs grafana-agent on 3000."
+  },
+  {
+   "chunkId": "hy-5c0b0001-pr-06",
+   "class": "tool_output",
+   "role": "pressure",
+   "why": "the only thing said is that the subject was looked at and left alone, which is the wording that invites a merge into the carrier while dropping its value",
+   "probes": [
+    "316"
+   ],
+   "mergesInto": "hy-5c0b0001-cv-06",
+   "transient": [
+    "only checking the node names"
+   ],
+   "text": "[0] [User @ 10:11]: Are the node names stable? (only checking the node names)\n[1] [Tool result for bash @ 10:12]: $ nvcc list --nodes | wc -l\n[2] [Tool result for bash @ 10:13]: 316\n[3] [Assistant @ 10:14]: The nodes and containers are the same as before: node-a, node-b, node-c, node-d."
+  },
+  {
+   "chunkId": "hy-5c0b0001-ct-06",
+   "class": "tool_output",
+   "role": "constraint",
+   "why": "the tool output states the nightly schedule, and the two rules the user stated have to survive as rules",
+   "probes": [
+    "schedule.toml"
+   ],
+   "constraints": [
+    "do not resize the nightly pool before Friday",
+    "leave the audit store where it is"
+   ],
+   "transient": [
+    "just confirming the schedule"
+   ],
+   "text": "[0] [User @ 11:05]: Just confirming the schedule: do not resize the nightly pool before Friday, and leave the audit store where it is.\n[1] [Tool result for bash @ 11:06]: $ grep -n nightly schedule.toml\n[2] [Tool result for bash @ 11:07]: schedule.toml:7: nightly = 02:30\n[3] [Assistant @ 11:08]: Nightly runs at 02:30. I am not resizing the pool before Friday and not moving the audit store."
+  },
+  {
+   "chunkId": "hy-5c0b0001-nw-07",
+   "class": "nothing_work",
+   "why": "a log skim with no decision and no fact worth keeping: the counts are the chatter, and banking anything from here is the failure the abstention control scores",
+   "transient": [
+    "just skim this log",
+    "nothing here needs changing"
+   ],
+   "text": "[0] [User @ 11:20]: Let me just skim this log for a minute.\n[1] [Tool result for bash @ 11:21]: $ tail -n 20 run.log\n[2] [Tool result for bash @ 11:22]: 3 warn, 11 info, no errors\n[3] [Assistant @ 11:23]: Nothing here needs changing."
+  },
+  {
+   "chunkId": "hy-5c0b0001-nw-08",
+   "class": "nothing_work",
+   "why": "a directory listing of scratch files, which states nothing durable about the work",
+   "transient": [
+    "what is in the notes directory",
+    "nothing to keep"
+   ],
+   "text": "[0] [User @ 11:35]: I only wanted to see what is in the notes directory.\n[1] [Tool result for bash @ 11:36]: $ ls notes\n[2] [Tool result for bash @ 11:37]: scratch.md, old-plan.md\n[3] [Assistant @ 11:38]: Just scratch files, nothing to keep."
+  }
+ ]
+}

@@ -30,6 +30,8 @@ import type { SessionEntry } from "@earendil-works/pi-coding-agent";
 import { carries, hiddenSignatures } from "../dev/restraint-report.js";
 import { renderEntry } from "../src/entries.js";
 import { EXTRACT_SYSTEM, reconcileSystem } from "../src/prompts.js";
+import { sameSubject } from "../src/protocol.js";
+import { valueTokens } from "../src/values.js";
 
 // `--corpus <file>` exists so the check can be pointed at a deliberately broken copy and shown
 // to fail; `npm run test` runs it against the committed corpus with no arguments.
@@ -45,6 +47,7 @@ const TARGETS =
 				"dev/corpus-restraint2.json",
 				"dev/corpus-restraint3.json",
 				"dev/corpus-restraint4.json",
+				"dev/corpus-restraint5.json",
 			].map((f) => new URL(`../${f}`, import.meta.url).pathname);
 
 class CheckFailure extends Error {}
@@ -68,6 +71,10 @@ interface CorpusChunk {
 	argsFull?: string;
 	/** A chunk in the other authored session that restates this chunk's subject. */
 	crossSession?: string;
+	/** Corpus 5 only: `carrier` states a value, `pressure` re-says a carrier's subject and drops it. */
+	role?: string;
+	/** Corpus 5 only: the carrier chunk a `pressure` chunk invites a merge into. */
+	mergesInto?: string;
 	text: string;
 }
 
@@ -170,6 +177,8 @@ function checkCorpus(CORPUS: string): string {
 			tool_bearing_nothing_work?: number;
 			cross_session_pair?: number;
 			session_span?: number;
+			sole_carrier_value?: number;
+			merge_pressure_pair?: number;
 		};
 		chunks: CorpusChunk[];
 	};
@@ -583,6 +592,58 @@ function checkCorpus(CORPUS: string): string {
 			);
 	}
 
+	// ---- 5b. one carrier per value, and a merge the shipped guard approves --------
+	// Corpora 3 and 4 bank every declared value in more than one chunk, so a merge that retires one
+	// carrier leaves the value held elsewhere and `mergeValueGate` cannot be priced on them. Corpus 5
+	// is authored to have the opposite shape, and the promise is re-measured here from the shipped
+	// code rather than read off what the generator wrote: a declared value must have exactly one
+	// carrier, must be a token the value test can see, and must have a pressure chunk whose wording
+	// `sameSubject` accepts while carrying none of the carrier's values. If that last one fails, the
+	// corpus has no merge to price and the arm would measure nothing.
+	const declared = chunks.filter((c) => (c.probes ?? []).length > 0);
+	const pressure = chunks.filter((c) => c.role === "pressure");
+	if (pressure.length > 0) {
+		for (const c of declared) {
+			for (const probe of c.probes ?? []) {
+				const carriers = chunks.filter((x) => wordMatch(probe, x.text));
+				assert(carriers.length === 1, `${probe}: ${carriers.length} carrier chunks, one is the whole point`);
+				assert(
+					carriers[0]?.chunkId === c.chunkId,
+					`${probe}: declared by ${c.chunkId} but carried by ${carriers[0]?.chunkId ?? "no chunk"}`,
+				);
+				assert(
+					valueTokens(probe).has(probe),
+					`${probe}: not a specific token, so mergeValueGate cannot see it being dropped`,
+				);
+			}
+		}
+		assert(
+			gate.sole_carrier_value === declared.reduce((n, c) => n + (c.probes?.length ?? 0), 0),
+			`gate: ${declared.reduce((n, c) => n + (c.probes?.length ?? 0), 0)} single-carrier values, gate says ${gate.sole_carrier_value}`,
+		);
+		assert(
+			gate.merge_pressure_pair === pressure.length,
+			`gate: ${pressure.length} pressure chunks, gate says ${gate.merge_pressure_pair}`,
+		);
+		for (const p of pressure) {
+			const target = chunks.find((c) => c.chunkId === p.mergesInto);
+			assert(target !== undefined, `${p.chunkId}: names no carrier chunk to merge into`);
+			const verdict = sameSubject(
+				{ task: "", statement: p.text },
+				{ task: target!.chunkId, statement: target!.text },
+			);
+			assert(
+				verdict.ok,
+				`${p.chunkId}: the shipped subject guard refuses this merge (${verdict.shared}/${verdict.targetSize} shared), so there is nothing for the value gate to refuse`,
+			);
+			for (const probe of target!.probes ?? [])
+				assert(
+					!wordMatch(probe, p.text),
+					`${p.chunkId}: restates ${probe} from ${target!.chunkId}, so the merge would not drop it`,
+				);
+		}
+	}
+
 	// ---- 6. privacy (AGENTS.md) ---------------------------------------------------
 	const HOST = /\b[a-z0-9][a-z0-9-]*\.(?:com|net|org|io|dev|local|internal|lan)\b/i;
 	const ABS_PATH = /(?:^|[\s"'`(])\/(?:Users|home|root|var|etc|tmp|private)\//i;
@@ -594,7 +655,7 @@ function checkCorpus(CORPUS: string): string {
 	}
 
 	const totalChars = chunks.reduce((n, c) => n + c.text.length, 0);
-	return `pairs isolated, no leakage, window and label rules clean, no prompt contamination, privacy clean (${chunks.length} chunks, ~${Math.ceil(totalChars / 4)} est tokens, mean ${Math.round(totalChars / chunks.length / 4)} per chunk)`;
+	return `pairs isolated, no leakage, window and label rules clean, single-carrier and merge-pressure rules clean, no prompt contamination, privacy clean (${chunks.length} chunks, ~${Math.ceil(totalChars / 4)} est tokens, mean ${Math.round(totalChars / chunks.length / 4)} per chunk)`;
 }
 
 let failed = 0;
