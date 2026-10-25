@@ -259,9 +259,33 @@ gate.
       Either key it on user-stated wording rather than ref roles, or shrink the reservation and stop
       calling it a constraint slice. Numbers above are a point-in-time reading of `captures-dev/`,
       which is not committed; the durable measurement is the new counter.
-- [ ] 6.20b Whether a user turn that is a *question* should be groundable at all: in these chunks
-      the user's line asks, and the constraint ends up in the assistant's restatement, so
-      ref-role grounding may be the wrong signal even when refs improve.
+- [x] 6.20b Whether a user turn is groundable at all — **measured 2026-10-25, and the premise was
+      half wrong.** `dev/user-turn-report.ts` classifies each user turn by wording and joins the
+      ledger's drafts to the line each cited, over 25 captured chunks of 159 writes in the frozen
+      session: 13 user turns of 2 298 labelled turns — 6 go-aheads ("proceed"), 2 questions, 2
+      directives, 3 neither. In the captured chunks the writer *does* cite instructions: 4 drafts
+      cited a directive, 0 a question, 0 a go-ahead, so the mark is not misfiring on asks —
+      directives are simply rare, and 1 of the 2 is restated by the assistant inside the same chunk.
+      What fails is durability: 4 current facts carry a directive's wording and none is marked, and
+      of 11 marked entries 3 are current while the other 8 went to a merge (4) or to the bank
+      ceiling (4), none unattributed. `fromUser` belongs to the draft that wrote the row, so a merge
+      restating the constraint writes an unmarked successor and the mark leaves with the row it
+      replaced; capacity loss is the other half and says nothing about the mark.
+      `tools/user-turn-report-check.ts` pins the shapes, the restatement test and the three causes.
+      The directive count is a floor: the classifier is wording-based, so a rule phrased without a
+      marker word reads as neither.
+      Consequence stated in "TODO 6.20b: what a user's turn actually contains" in `EXPERIMENTS.md`:
+      the summary's reserved constraint slice selects on the mark and can fill from 3 facts of 820
+      current (`DESIGN.md`'s earlier 2 of 408 was a smaller fold), so raising
+      `summaryConstraintShare` buys nothing.
+- [ ] 6.20c The decision 6.20b produced: choose the constraint slice on the *statement* rather than
+      the citation — a fact that states a rule rather than a measurement — since the directive's
+      wording does reach the bank unmarked. Priced before changing anything: how many current facts
+      a rule-shaped test selects in the frozen session, and what it displaces from the summary under
+      the existing `summaryConstraintShare`, whether rule-shaped facts survive merges better than
+      marked ones, and what they displace from the foundations and current-state slices. Do not
+      repurpose `fromUser` as a rule-shape flag: it is provenance, and 6.20b showed it decays at
+      merges and at the ceiling rather than lying.
 - [x] 6.21 Retrieval refusals do not scale with the view size. Measured 2026-10-25 with
       `dev/retrieval-refusal-report.ts` over the frozen snapshot (159 writes, 1 798 drafts,
       shipped `candidateLimit: 24`, per-draft render): **386 refusals on record** — 170 "target not

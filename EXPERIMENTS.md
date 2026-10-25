@@ -2691,3 +2691,55 @@ one of them is the wrong direction — 8.9's claim that a single-carrier corpus 
 while one chunk banks its value twice now has a number attached to it. A live arm with retire on
 would be what a default-on decision needs; the offline fold is enough to price the idea and not
 enough to set a default.
+
+## TODO 6.20b: what a user's turn actually contains (2026-10-25)
+
+6.20 found 3 user-grounded facts in a bank of 820 and left a suspicion: refs skip the user's line,
+so the mark almost never fires. 6.20b asked the prior question — is there anything in the user's
+line to ground on? `dev/user-turn-report.ts` reads captured chunks beside the frozen snapshot,
+classifies each user turn by wording (question, directive, both, go-ahead, neither), looks for a
+later assistant turn in the same chunk that restates a directive, then joins the ledger's drafts to
+the line each one cited and the bank to the wording each fact carries.
+
+Session `01a…1510e`, 25 captured chunks of 159 writes: 13 user turns out of 2 298 labelled turns.
+
+| the user's turn is | count | what it grounds |
+|--------------------|------:|-----------------|
+| a go-ahead ("proceed", "ok next") | 6 | nothing — there is no constraint in it |
+| a question | 2 | an ask, not a decision |
+| a directive | 2 | a rule; 1 of the 2 is restated by the assistant in the same chunk |
+| neither | 3 | — |
+
+The suspicion was half right and half wrong, and the split matters.
+
+**Wrong about the mark, in the captured chunks.** The writer does cite instructions: 4 drafts cited
+a directive, 0 a question, 0 a go-ahead. `fromUser` is not misfiring because the user asked instead
+of told. It is rare because directives are rare — 2 turns in 2 298. These numbers describe the 25
+captured chunks, not the session: the other 134 writes have no capture, and the report prints them
+as unavailable rather than as zeros.
+
+**Right about what ends up current, for two reasons, separated.** 4 current facts carry the wording
+of a directive and none of them is marked. 11 marked entries were written and 3 are still current;
+the other 8 went to a merge that restated the fact (4) and to the bank ceiling retiring the row
+unchanged (4), with none unattributed. `fromUser` is a property of the *draft* that wrote a row, so
+when a merge restates the constraint the successor inherits the newer draft's citation — usually the
+plan file or the tool output — and the mark leaves with the row it replaced. That is half the loss;
+the other half is capacity, and a constraint retired by the ceiling was never wrong about where it
+came from. Both readings say the same thing about the slice: a marked fact is not reliably there to
+select.
+
+**What that says about the summary.** The reserved constraint slice (`summaryConstraintShare`, 10%)
+selects on the mark, so on this snapshot it can fill from 3 facts out of 820 current (the older
+figure in `DESIGN.md`, 2 of 408, was a smaller fold — different populations, both small). The slice
+is decorative: raising the share buys nothing, because there is nothing to raise it into. The selection that would work is on
+the statement rather than the citation — a fact that states a rule instead of a measurement — and
+the report's own shape test shows that distinction is wordable, since the directive's wording does
+reach the bank. Not implemented; recorded as 6.20c.
+
+Two caveats the report prints rather than hides. Captures cover 25 chunks of 159 writes, so a zero
+can mean "no capture for that chunk", and the second captured session has no ledger in the snapshot,
+which it reports as unavailable rather than as zero. And the shape test is wording, so the directive
+count is a floor: a rule phrased without any marker word ("the pool stays as it is") reads as
+neither, and `carries a directive's wording` is three shared content words rather than a quoted
+phrase — the numbers here are about the mark's durability, and the clean claim is the 820-current
+versus 3-marked gap, not the count of directives.
