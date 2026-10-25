@@ -2585,3 +2585,48 @@ the writer banks each value twice from the chunk that states it. The next step i
 corpus: it is the dedup question TODO 7.14 named — or a score that counts carriers per *fact* rather than
 per chunk, so a value held twice inside one chunk reads as one carrier. Until then there is no arm that
 can settle the default, and the organic replay (71% refused) remains the widest reading available.
+
+## TODO 6.21: what a retrieval refusal actually was (2026-10-25)
+
+`dev/live-bank-report.ts` had printed a refusal mix and left it there: 170 targets the view never
+showed, 160 subject disagreements, 48 same-batch collisions. The question TODO 6.21 asked was
+whether a wider `candidateLimit` would have cleared the first class. `dev/retrieval-refusal-report.ts`
+answers it offline: each write's bank is rebuilt with `foldLedger` — the folder a reload uses, not a
+second implementation of the write path — and the shipped candidate selection is re-run at
+24 / 48 / 96. One session, 159 writes, 1 798 drafts.
+
+The reason itself constrains the answer. `parseOps` accepts only ids the reconcile call was shown,
+so "update target not retrieved for this draft" cannot mean *the target was missing*: it means the
+target was on screen **for another draft**, and the writer attached it to this one.
+
+| view | would have offered the target to that draft | reconcile input |
+| --- | --- | --- |
+| 24 (shipped) | 2 of 170 | baseline |
+| 48 | +37 | +97% |
+| 96 | +13 | +272% |
+| never, at any size | 118 | — |
+
+Of those 118, **114 never reach the scorer's 0.2 eligibility floor** — the target's wording does not
+read like the draft at any view size — and only 4 are eligible but ranked past 96. So widening buys
+at most 52 refusals out of 386 recorded, for roughly double the reconcile input at 48 and nearly
+triple at 96. `candidateLimit` stays 24.
+
+What the refusals cost is also not what the name suggests. A refusal is recorded as an ADD, so the
+target stays current and the bank gains a near duplicate: this is 7.14's duplication pressure, not
+7.18's destroyed-value question. The class is a disagreement about what counts as one subject — the
+same territory TODO 464 priced from the guard side — arriving from the writer instead.
+
+The second finding is smaller and stranger. Eight recorded refusals were `target id not in bank`,
+which means the writer put something in `target` that was never on screen. Sorting them by what the
+field held: 4 bare indices (`5`, `2`), 2 function names from the work being remembered — not quoted
+here, since they identify the author's other project — and 2 hex strings of 13 characters where the
+id pattern allows exactly 12. None names a fact that exists.
+TODO 6.14 was the same confusion in the other direction — refs written as entry ids — and the shape
+of the answer is the same: count it, do not guess it into an entry.
+
+Caveats the report prints rather than hides. Reason lists were bounded at six per write until
+2026-10-25, so 386 is what was recorded, not what happened; `downgradedCount` says which writes kept
+less than they refused. And folding this ledger does not reproduce the frozen store — the ceiling bit
+and retirement still is not in the ledger (6.19) — which is why 2 of the 170 classify as reachable at
+the shipped limit: the fold differs from what the live call actually saw, and that gap is reported,
+not smoothed over.

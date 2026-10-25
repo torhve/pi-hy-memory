@@ -75,7 +75,7 @@ export type SessionReport = {
 const surface = (row: { task: string; statement: string; keys: string[] }) =>
 	`${row.task} ${row.statement} ${row.keys.join(" ")}`.toLowerCase();
 
-function parseJsonl(text: string): LedgerRecord[] {
+export function parseJsonl(text: string): LedgerRecord[] {
 	const out: LedgerRecord[] = [];
 	for (const line of text.split("\n")) {
 		if (!line.trim()) continue;
