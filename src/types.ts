@@ -97,6 +97,11 @@ export type LedgerRecord =
 			/** Bounded, so a later reader can see why the model's proposals were refused. */
 			rejectedOps?: { reason: string; draft?: number; target?: string }[];
 			downgradedOps?: { reason: string; draft?: number; target?: string }[];
+			/**
+			 * The real count behind the bounded reason lists above. Without it a reload can only
+			 * recover a floor, and `stats.countsAreFloor` has to say so (TODO 6.22).
+			 */
+			downgradedCount?: number;
 			usage: CallUsage;
 	  }
 	| {

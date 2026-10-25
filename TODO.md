@@ -249,9 +249,17 @@ gate.
       "already superseded in this batch" (`dev/live-bank-report.ts` prints the mix). The writer
       names merge targets a `candidateLimit: 24` view never showed it. This is 6.6's precision
       question arriving from the writer side, and it grows with the bank.
-- [ ] 6.22 `stats.json` counts the process, not the session: that session's ledger holds 159
-      write records and its stats say `writes: 14`, because the counters reset at `session_start`.
-      The status line reads as a session total. Either restore counters or say what they count.
+- [x] 6.22 `stats.json` counted the process, not the session: that session's ledger holds 159
+      write records and its stats said `writes: 14`, because the counters reset at `session_start`
+      while the status line reads as a session total. **Fixed 2026-10-25 by restoring them from the
+      ledger** (`src/stats.ts`, `statsFromLedger`): writes, drafts, adds/merges/deletes, refusals,
+      tokens and model time come from the records and this process continues from there. Two things
+      the recovery has to say rather than hide: `wallS` is the sum of each call's own duration, so a
+      reloaded session reports model time rather than the wall overhead a live process also counts;
+      and the bounded reason lists beside a write cannot carry a downgraded count, so `hy.ops` now
+      writes `downgradedCount` and an older ledger yields a floor with `countsAreFloor: true` on the
+      stats. Gaps and ceiling records are coverage and pressure, not writes — only a `compaction`
+      gap moves `compactions`. Pinned by `tools/stats-counter-check.ts`.
 ### 7. Restraint: the axis no corpus here measures (plan: `plan-restraint.md`)
 
 - [x] 7.1 `dev/corpus-restraint.json`: 8 authored `attribution` pairs (identical claim, only the

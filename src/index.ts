@@ -60,6 +60,7 @@ import { createWriter, type Writer } from "./llm.js";
 import { writeChunk } from "./pipeline.js";
 import { recallHits, renderFileOperations, renderMemory, renderRecallHit, summaryBudget } from "./render.js";
 import { pruneSessions } from "./state.js";
+import { type SessionStats, statsFromLedger } from "./stats.js";
 import { createStatusBar } from "./status.js";
 import { type BankEntry, type Draft, estimateTokens, type LedgerRecord } from "./types.js";
 
@@ -168,19 +169,7 @@ type SessionState = {
 	 * `seq`, which is what keeps the request delta-sized instead of whole-bank.
 	 */
 	hifi?: { text: string; seq: number; at: string; attempts?: Record<string, number> };
-	stats: {
-		writes: number;
-		drafts: number;
-		added: number;
-		updated: number;
-		deleted: number;
-		rejectedOps: number;
-		downgraded: number;
-		inTokens: 0 | number;
-		outTokens: 0 | number;
-		wallS: number;
-		compactions: number;
-	};
+	stats: SessionStats;
 };
 
 /** Read the ledger out of the session branch. Exported so the ceiling record's survival
@@ -480,19 +469,10 @@ export default function piHyMemory(pi: ExtensionAPI): void {
 			inFlight: false,
 			pending: null,
 			hifi: restoredHifi,
-			stats: {
-				writes: 0,
-				drafts: 0,
-				added: 0,
-				updated: 0,
-				deleted: 0,
-				rejectedOps: 0,
-				downgraded: 0,
-				inTokens: 0,
-				outTokens: 0,
-				wallS: 0,
-				compactions: 0,
-			},
+			// The counters continue from the ledger rather than restarting: they sit on a status
+			// line that reads as a session total, and a reload used to reset them to this process's
+			// own writes, so a session at write 145 printed "14 writes" (TODO 6.22).
+			stats: statsFromLedger(effective),
 		};
 		audit("session_start", {
 			sessionId,

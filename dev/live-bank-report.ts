@@ -307,10 +307,10 @@ export function reachableThroughQuery(live: BankEntry[], value: string): boolean
 function print(report: SessionReport, pool: number): void {
 	console.log(`session ${report.sessionId}`);
 	console.log(
-		`ledger ${report.records} records, ${report.writes} writes | stats.json says ${report.statsWrites ?? "-"} writes (counters reset at session_start)`,
+		`ledger ${report.records} records, ${report.writes} writes | stats.json says ${report.statsWrites ?? "-"} writes${report.statsWrites !== null && report.statsWrites !== report.writes ? " — counters reset at session_start, so this session ran before they were restored from the ledger" : ""}`,
 	);
 	console.log(
-		`the store as it ran: ${report.liveActive} current facts / ${report.liveTokens} tokens; the ledger folded: ${report.foldedActive} / ${report.foldedTokens} — retirement is not in the ledger, so the fold restores ${report.foldedActive - report.liveActive} facts the session had dropped`,
+		`the store as it ran: ${report.liveActive} current facts / ${report.liveTokens} tokens; the ledger folded: ${report.foldedActive} / ${report.foldedTokens} — the fold restores ${report.foldedActive - report.liveActive} facts the session had dropped, because this session's ledger never recorded the retirements (\`hy.evict\` exists only from 2026-10-25)`,
 	);
 	console.log(
 		`the same fold trimmed to the pool a reload re-applies (${report.pool}): ${report.fitsPool} facts, where the session had ${report.liveActive} current — ${report.trimmedSameAsStore ? "the same ids: a reload re-applies the same recency rule" : "a different set, so eviction is not reproducible from the ledger"}`,

@@ -362,6 +362,7 @@ export async function writeChunk(
 			createdAt,
 			ops,
 			rejectedCount: rejectedOps.length,
+			downgradedCount: downgradedOps.length,
 			repaired: reconcileRepaired,
 			rejectedOps: rejectedOps.slice(0, 6).map((r) => ({
 				reason: String(r.reason).slice(0, 160),
