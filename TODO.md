@@ -273,12 +273,15 @@ gate.
       draft's own list at 48 or 96 (37 at 48, 13 at 96), and **118 would never have been** — of
       those, 114 because the target's wording never reaches the scorer's 0.2 eligibility floor, so
       no view size could ever offer it. Widening is priced: 48 means +97% reconcile input tokens,
-      96 means +272%, and it buys at most 52 refusals out of 386. **Decision: `candidateLimit`
-      stays 24.** The class is a wording disagreement between the writer's idea of a merge and the
+      96 means +272%, and it buys at most 52 refusals out of the 386 recorded.
+      **Decision, scoped to what was measured: `candidateLimit` stays 24** on the shipped per-draft
+      render mode, for this session's shape — not a claim about every session or the legacy union
+      mode, which this report does not replay. The class is a wording disagreement between the writer's idea of a merge and the
       overlap score — 6.6's precision question from the writer side, and the same territory TODO 464
       priced from the guard side — not a view too narrow. It also costs duplication, not lost
-      values: a refusal is recorded as an ADD, so the target stays current and the bank grows a near
-      duplicate, which is 7.14's dedup pressure rather than 7.18's value question.
+      values: a refused op becomes an ADD, and `applyOps` appends without superseding anything, so the
+      target stays current and the bank gains a near duplicate — 7.14's dedup pressure, not 7.18's
+      value question.
       Two things this also exposed. **`target` arrives with something other than an id in 8
       recorded cases**: 4 bare indices ("5", "2"), 2 function names from the work being remembered
       (not quoted here — they identify the author's other project), 2 hex strings of 13 characters
@@ -286,11 +289,14 @@ gate.
       and none of them a fact that exists. Same field-confusion family as 6.14, pointing the other
       way; the report counts it rather than fixing it, since a writer that puts an index in `target`
       must not be *guessed* into an entry. Caveats, all printed by the report: the reason lists were
-      bounded at six per write until 2026-10-25, so 386 is a sample of what was recorded, not the
-      session's count; and folding the whole ledger does not reproduce the frozen store (the ceiling
-      bit, and retirement still isn't in the ledger — 6.19), so 2 of the 170 classify as reachable at
-      24 purely because the fold differs from what the live call saw. Pinned by
-      `tools/retrieval-refusal-report-check.ts`.
+      bounded at six per write until 2026-10-25, so 386 is what was recorded, not what happened, and
+      the class shares can shift once the counts are unbounded; and folding does not reproduce the
+      frozen store here (the ceiling bit, and that session's retirements predate `hy.evict` — 6.19),
+      so every classification rests on a reconstructed view rather than the byte-exact call. The
+      reachability split is directional — which way the view would have moved — not an exact replay:
+      2 of the 170 classify as reachable at 24 only because the fold differs from what the live call
+      saw. **Open residue:** the same question over a second session, and over `union` render mode,
+      is not measured. Pinned by `tools/retrieval-refusal-report-check.ts`.
 - [x] 6.22 `stats.json` counted the process, not the session: that session's ledger holds 159
       write records and its stats said `writes: 14`, because the counters reset at `session_start`
       while the status line reads as a session total. **Fixed 2026-10-25 by restoring them from the

@@ -2609,7 +2609,8 @@ target was on screen **for another draft**, and the writer attached it to this o
 Of those 118, **114 never reach the scorer's 0.2 eligibility floor** — the target's wording does not
 read like the draft at any view size — and only 4 are eligible but ranked past 96. So widening buys
 at most 52 refusals out of 386 recorded, for roughly double the reconcile input at 48 and nearly
-triple at 96. `candidateLimit` stays 24.
+triple at 96. `candidateLimit` stays 24 — for the shipped per-draft render mode and this session's
+shape. The report does not replay `union` mode, and one session is not a rule.
 
 What the refusals cost is also not what the name suggests. A refusal is recorded as an ADD, so the
 target stays current and the bank gains a near duplicate: this is 7.14's duplication pressure, not
@@ -2629,4 +2630,6 @@ Caveats the report prints rather than hides. Reason lists were bounded at six pe
 less than they refused. And folding this ledger does not reproduce the frozen store — the ceiling bit
 and retirement still is not in the ledger (6.19) — which is why 2 of the 170 classify as reachable at
 the shipped limit: the fold differs from what the live call actually saw, and that gap is reported,
-not smoothed over.
+not smoothed over. The reconstruction is offline: every classification rests on a rebuilt view rather
+than the byte-exact call, so the reachability split says which way a wider view would have moved the
+answer, not what the writer was provably shown.
