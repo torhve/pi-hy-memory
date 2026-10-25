@@ -248,6 +248,11 @@ export async function writeChunk(
 		chunkId,
 		coversUpToId: options.resume?.coversUpToId ?? chunk.refs[chunk.refs.length - 1] ?? chunkId,
 		createdAt,
+		// How much of this chunk was the user's own words, counted while the roles were in hand.
+		// A count rather than the role array: without it, "3 of 820 facts are user-grounded"
+		// cannot be read as either a mapping failure or a session that is mostly tool traffic.
+		labelledTurns: chunk.roles ? chunk.roles.length : undefined,
+		userTurns: chunk.roles ? chunk.roles.filter((r) => r === "user").length : undefined,
 		drafts: drafts.map((d) => ({ ...d, sourceEntryIds: d.refs.map((r) => chunk.refs[r]).filter(Boolean) })),
 		rejectedCount: rejected.length,
 		repaired: extractRepaired,

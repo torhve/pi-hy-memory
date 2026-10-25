@@ -226,12 +226,24 @@ gate.
       write path already recorded — `src/index.ts` says so in the comment beside that audit. Numbers
       published from the organic snapshot predate the record, so that session's ledger still cannot
       name its 631 retirements.
-- [ ] 6.20 `fromUser` on a real session: 3 of 820 current facts are user-grounded. The summary
-      reserves `summaryConstraintShare` (0.1) for facts the user stated and refills the slice
-      with whatever fits, so in organic use that slice is close to vacuous. Establish whether
-      chunks rarely contain a user turn or whether `draft.refs` → `chunk.roles`
-      (`src/pipeline.ts:240`) misses them, before changing the share or the claim in DESIGN's
-      selection section.
+- [x] 6.20 `fromUser` on a real session: 3 of 820 current facts are user-grounded — **measured
+      2026-10-25, and it is neither of the two candidates as written.** On 12 rendered chunks from
+      a real session: the user's own turn is 5 of 1 243 labelled turns (0.4 %), and 7 of 12 chunks
+      contain none. The mapping is sound — `rolesFromText` recovers roles from the rendered text on
+      all 12 chunks, and `tools/write-resume-check.ts` marks a draft that cites a user line — but of
+      the 36 drafts written from a chunk that *did* hold a user turn, **0 cited it**: the writer
+      refs the tool output or its own reply, not the instruction line. Two things changed:
+      `hy.extract` now records `labelledTurns` / `userTurns` so the ratio is readable from any
+      ledger without reading the conversation back (`dev/live-bank-report.ts` prints it, and says so
+      when a session predates the counter), and `dev/run.ts` was deriving no roles at all for
+      corpora — every dev run marked zero facts user-grounded, so the slice measured nothing by
+      construction. **Open decision:** the 10 % constraint slice is a promise the bank rarely fills.
+      Either key it on user-stated wording rather than ref roles, or shrink the reservation and stop
+      calling it a constraint slice. Numbers above are a point-in-time reading of `captures-dev/`,
+      which is not committed; the durable measurement is the new counter.
+- [ ] 6.20b Whether a user turn that is a *question* should be groundable at all: in these chunks
+      the user's line asks, and the constraint ends up in the assistant's restatement, so
+      ref-role grounding may be the wrong signal even when refs improve.
 - [ ] 6.21 Retrieval refusals scale with the bank: 378 downgrades in the snapshotted session —
       170 "target not retrieved for this draft", 160 "does not restate its subject", 48
       "already superseded in this batch" (`dev/live-bank-report.ts` prints the mix). The writer

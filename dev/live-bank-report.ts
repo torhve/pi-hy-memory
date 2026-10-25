@@ -65,6 +65,10 @@ export type SessionReport = {
 	fitsPoolShipped: number;
 	valuesOnlyInRetiredUnderGate: number;
 	userGrounded: number;
+	labelledTurns: number;
+	userTurns: number;
+	/** Whether any write in this ledger recorded turn counts at all. */
+	turnCountsRecorded: boolean;
 	refusalsByKind: Record<string, number>;
 };
 
@@ -250,6 +254,16 @@ export function reportSession(dir: string, sessionId: string, pool: number): Ses
 		}
 	}
 
+	// How much of what this session wrote was the user's own turn. `fromUser` on a fact only says
+	// a draft cited a user line; without the denominator the ratio between the two is unmeasurable,
+	// which is TODO 6.20. A session whose writes predate the counter prints 0 and says so.
+	let labelledTurns = 0;
+	let userTurns = 0;
+	for (const record of records) {
+		if (record.type !== "hy.extract") continue;
+		labelledTurns += record.labelledTurns ?? 0;
+		userTurns += record.userTurns ?? 0;
+	}
 	return {
 		sessionId,
 		records: records.length,
@@ -278,6 +292,9 @@ export function reportSession(dir: string, sessionId: string, pool: number): Ses
 		fitsPoolShipped: fitsWithin(shipped.bank, pool),
 		valuesOnlyInRetiredUnderGate: valuesOnlyWhereTheyDoNotCount(gated.active, [], gated.dropped),
 		userGrounded: liveActive.filter((e) => e.fromUser === true).length,
+		labelledTurns,
+		userTurns,
+		turnCountsRecorded: records.some((r) => r.type === "hy.extract" && r.labelledTurns !== undefined),
 		refusalsByKind,
 	};
 }
@@ -309,6 +326,9 @@ function print(report: SessionReport, pool: number): void {
 	);
 	console.log(`refusals the bank recorded: ${JSON.stringify(report.refusalsByKind)}`);
 	console.log(`user-grounded facts: ${report.userGrounded} of ${report.liveActive} current`);
+	console.log(
+		`what the writer was shown: ${report.userTurns} user turns of ${report.labelledTurns} labelled turns${report.turnCountsRecorded ? "" : " — no write in this ledger recorded turn counts, so this session ran before the counter existed"}`,
+	);
 	console.log(
 		`snapshot: last record ${report.snapshotAt || "unknown"}, ledger digest ${report.snapshotDigest} — re-run with --dir on a copy of these files to read the same numbers`,
 	);

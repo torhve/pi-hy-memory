@@ -195,10 +195,15 @@ async function main(): Promise<void> {
 				text: item.text,
 				refs: lines.map((_, i) => `${id}-r${i}`),
 				entryCount: lines.length,
+				roles: rolesFromText(item.text),
 				estimateChunkTokens: Math.ceil(item.text.length / 4),
 			};
 		}
-		return JSON.parse(readFileSync(join(capturesDir, String(item.path)), "utf8")) as Row;
+		// Captured chunks carry no `roles` field, and the shipped path never needs one: it derives
+		// them from the rendered text. Without that derivation here, every dev run marks zero facts
+		// user-grounded and the constraint slice silently measures nothing (TODO 6.20).
+		const row = JSON.parse(readFileSync(join(capturesDir, String(item.path)), "utf8")) as Row;
+		return { ...row, roles: row.roles ?? rolesFromText(String(row.text ?? "")) };
 	};
 
 	const writer = rawWriter({

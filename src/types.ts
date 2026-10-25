@@ -75,6 +75,14 @@ export type LedgerRecord =
 			rejectedCount: number;
 			/** Repairs `repairJson` had to apply before this parsed, if any. */
 			repaired?: string[];
+			/**
+			 * How much of this chunk was the user's own words, counted at write time. A count
+			 * rather than the role array: `fromUser` on a fact only says a draft cited a user
+			 * line, and with no record of how many user lines existed the ratio between the
+			 * two is unmeasurable. Omitted when the renderer labelled nothing.
+			 */
+			labelledTurns?: number;
+			userTurns?: number;
 			usage: CallUsage;
 	  }
 	| {

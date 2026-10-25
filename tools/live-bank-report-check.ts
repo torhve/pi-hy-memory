@@ -47,6 +47,9 @@ function extract(chunkId: string, drafts: Draft[]): LedgerRecord {
 		createdAt: AT,
 		drafts: drafts.map((d) => ({ ...d, sourceEntryIds: [`e-${chunkId}`] })),
 		rejectedCount: 0,
+		// Three writes, each shown four labelled turns of which one was the user's own.
+		labelledTurns: 4,
+		userTurns: 1,
 		usage: { inTokens: 100, outTokens: 20 },
 	} as unknown as LedgerRecord;
 }
@@ -213,6 +216,10 @@ if (report) {
 	// 4c. the replay is the shipped fold, not a story about it: with the gate off it agrees
 	// entry for entry with foldLedger, and the digest ties the reading to one ledger file.
 	ok(report.replayMatchesFold, "the gate-off replay disagrees with foldLedger on this ledger");
+	ok(
+		report.turnCountsRecorded && report.labelledTurns === 12 && report.userTurns === 3,
+		`turn counts did not add up across the writes: ${report.userTurns} of ${report.labelledTurns}, recorded ${report.turnCountsRecorded}`,
+	);
 	ok(/^[0-9a-f]{12}$/.test(report.snapshotDigest), `digest is not a 12-character hex: ${report.snapshotDigest}`);
 	const again = reportSession(dir, SESSION, 60000);
 	ok(again?.snapshotDigest === report.snapshotDigest, "the same files read twice gave different digests");

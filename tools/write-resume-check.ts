@@ -197,6 +197,22 @@ const writer: Writer = {
 			: "no extract record",
 		[true, false],
 	);
+	check(
+		"the extract record says how much of the chunk was the user's own turn",
+		first.records[0].type === "hy.extract"
+			? [first.records[0].labelledTurns, first.records[0].userTurns]
+			: "no extract record",
+		[2, 1],
+	);
+	const bare = await writeChunk(provenanceWriter, [...provenanceBank], "hy-prov-004", {
+		...chunk,
+		roles: undefined,
+	});
+	check(
+		"an unlabelled chunk records no turn counts rather than zero of them",
+		[(bare.records[0] as any).labelledTurns, (bare.records[0] as any).userTurns],
+		[undefined, undefined],
+	);
 	await writeChunk(provenanceWriter, provenanceBank, "hy-prov-002", chunk);
 	check(
 		"the next write advances chunkSeq",

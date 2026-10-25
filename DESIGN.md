@@ -672,7 +672,13 @@ order, each newest-first, never duplicated:
 3. **Current state** — everything else, newest first (the rest).
 
 Shares are budgets, and unused budget spills forward, so a session with no user-stated facts
-still fills the summary. Admission is a bin-packing walk inside each slice (one long fact does
+still fills the summary. Why that first slice is almost always empty is measured rather than
+assumed: in a real tool-heavy session's rendered chunks the user's own turn is **5 of 1 243
+labelled turns (0.4 %)**, and of the 36 drafts written from a chunk that *did* hold a user turn,
+**none cited it** — the writer points at the tool output or its own reply, so 3 of 820 facts end
+up marked. The mapping is not the fault: `rolesFromText` recovers roles from the rendered text on
+every chunk measured, and a fixture marks a draft that cites a user line. The reservation is
+therefore a promise the bank rarely fills, which is a decision (TODO 6.20), not a bug. Admission is a bin-packing walk inside each slice (one long fact does
 not block three short ones), and the omission tail still reports the total.
 
 The *display* is a different split from the selection: facts are printed under `## Current
