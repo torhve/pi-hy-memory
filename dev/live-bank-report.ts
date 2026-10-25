@@ -103,7 +103,8 @@ function replay(records: LedgerRecord[], valueGate: boolean) {
 	const dropped: { value: string; chunkId: string; task: string }[] = [];
 
 	for (const record of records) {
-		if (record.type === "hy.gap") continue;
+		// Same shape as `foldLedger`: a gap and an eviction carry no write.
+		if (record.type === "hy.gap" || record.type === "hy.evict") continue;
 		if (record.type === "hy.extract") {
 			pending = { chunkId: record.chunkId, drafts: record.drafts };
 			continue;

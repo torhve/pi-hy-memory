@@ -71,6 +71,7 @@ const SESSIONS_DIR = join(STATE_DIR, "sessions");
 
 const OPS_RECORD = "hy.ops";
 const GAP_RECORD = "hy.gap";
+const EVICT_RECORD = "hy.evict";
 /**
  * The floor on what a compaction budget cannot see: the system prompt and tool schemas are not ours
  * to render, and pi counts tokens with a real tokenizer while this file estimates them from
@@ -182,7 +183,9 @@ type SessionState = {
 	};
 };
 
-function ledgerFromSession(entries: SessionEntry[]): LedgerRecord[] {
+/** Read the ledger out of the session branch. Exported so the ceiling record's survival
+ * through a reload is a test rather than a claim (`tools/evict-record-check.ts`). */
+export function ledgerFromSession(entries: SessionEntry[]): LedgerRecord[] {
 	const records: LedgerRecord[] = [];
 	for (const entry of entries) {
 		if (entry.type !== "custom") continue;
@@ -196,6 +199,14 @@ function ledgerFromSession(entries: SessionEntry[]): LedgerRecord[] {
 		// fell back to pi's own summariser.
 		if (data.type === GAP_RECORD) {
 			if (typeof data.coversUpToId === "string" && typeof data.fromId === "string") records.push(data);
+			continue;
+		}
+		// A ceiling record is not a write, but it has to be read back: the mirror is
+		// rewritten from the ledger on every flush, so a record reload drops would be
+		// erased from the copy that wins on the next reload.
+		if (entry.customType === EVICT_RECORD) {
+			const droppedIds = (data as { droppedIds?: unknown }).droppedIds;
+			if (typeof data.coversUpToId === "string" && Array.isArray(droppedIds)) records.push(data);
 			continue;
 		}
 		if (entry.customType !== EXTRACT_RECORD && entry.customType !== OPS_RECORD) continue;
@@ -424,11 +435,17 @@ export default function piHyMemory(pi: ExtensionAPI): void {
 		const folded = foldLedger(effective);
 		const recheck = enforceBudget(folded, config.bankMaxTokens);
 		if (recheck.dropped.length > 0) {
+			// The durable naming lives in the ledger's own `hy.evict` records, written when a
+			// write pushed the bank over the cap; a reload re-applies that same ceiling, so
+			// this audit is the corroborating copy rather than the only record. Bounded,
+			// because one reload's drop list can be hundreds of ids.
 			audit("budget_reapplied", {
 				sessionId,
 				pool: config.bankMaxTokens,
 				dropped: recheck.dropped.length,
-				ids: recheck.dropped.slice(0, 5).map((e: { id: string }) => e.id),
+				droppedTokens: recheck.dropped.reduce((n: number, e: { tokenCount: number }) => n + e.tokenCount, 0),
+				ids: recheck.dropped.slice(0, 40).map((e: { id: string }) => e.id),
+				idsTruncated: recheck.dropped.length > 40,
 			});
 		}
 		const lastGap = [...effective].reverse().find((r) => r.type === "hy.gap");

@@ -217,7 +217,15 @@ gate.
       applies the pool, and reproduces it to within one fact when it does
       (`tools/live-bank-report-check.ts` pins that trimming never adds facts back). What is still
       missing is record, not reproducibility: an audit cannot say which fact the ceiling dropped
-      and when, and `hy.evict` stays proposed in DESIGN for that.
+      and when. **Closed 2026-10-25 for the write path**: a write that pushes the bank past
+      `bankMaxTokens` now appends an `hy.evict` record naming every id the ceiling took, its cap,
+      and the token arithmetic; `foldLedger` ignores the type, so replay still restores those facts
+      and a reload re-applies the same cap onto the same set (`tools/evict-record-check.ts` pins
+      all of it, including that the record survives the reload read path and that an unknown record
+      type breaks nothing). The reload path stays audit-only, because it re-applies a ceiling the
+      write path already recorded — `src/index.ts` says so in the comment beside that audit. Numbers
+      published from the organic snapshot predate the record, so that session's ledger still cannot
+      name its 631 retirements.
 - [ ] 6.20 `fromUser` on a real session: 3 of 820 current facts are user-grounded. The summary
       reserves `summaryConstraintShare` (0.1) for facts the user stated and refills the slice
       with whatever fits, so in organic use that slice is close to vacuous. Establish whether

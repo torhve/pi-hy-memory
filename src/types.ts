@@ -106,6 +106,27 @@ export type LedgerRecord =
 			 */
 			reason: "compaction" | "disabled" | "overflow-trim";
 			createdAt: string;
+	  }
+	| {
+			type: "hy.evict";
+			/**
+			 * The store ceiling dropped facts. This records *what* it dropped and when — it is
+			 * not an instruction to drop them, and `foldLedger` ignores the type, which is what
+			 * keeps re-folding a session able to restore the facts the ceiling took.
+			 */
+			createdAt: string;
+			/** Coverage as it stood; the `hy.ops` record whose write caused this precedes it. */
+			coversUpToId: string;
+			/** "write": the ceiling bit after a write landed. "reload": a reload re-applied the cap. */
+			cause: "write" | "reload";
+			/** The cap that was in force. */
+			poolTokens: number;
+			/** Active bank tokens before the ceiling was applied. */
+			activeTokensBefore: number;
+			droppedCount: number;
+			droppedTokens: number;
+			/** Every id the ceiling dropped: a sample would not answer "which fact went missing". */
+			droppedIds: string[];
 	  };
 
 export type CallUsage = {

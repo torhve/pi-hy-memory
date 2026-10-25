@@ -192,7 +192,9 @@ export function analyseRecords(
 	const activeAfterIndex = new Map<number, BankEntry[]>();
 	let pending: { chunkId: string; drafts: Draft[] } | undefined;
 	records.forEach((record, index) => {
-		if (record.type === "hy.gap") return;
+		// A gap and a ceiling record carry no write: neither is an ops index, and both
+		// would be read as one if this only skipped gaps.
+		if (record.type === "hy.gap" || record.type === "hy.evict") return;
 		if (record.type === "hy.extract") {
 			pending = { chunkId: record.chunkId, drafts: record.drafts };
 			return;

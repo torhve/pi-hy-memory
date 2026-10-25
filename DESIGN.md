@@ -698,8 +698,9 @@ the ledger folding to 1 451 facts / 104 736 tokens against a store that held 820
 59 980, 631 facts retired by the ceiling, the oldest fact still current from write 116. Read
 through `dev/live-bank-report.ts --snapshot` (ledger digest `a44ac4ebb1c3`), a frozen copy, so
 the numbers re-read the same way. Reload re-applies the ceiling and lands within one fact of
-what the store held, so nothing is unrecoverable — what the ledger cannot say is *which* fact the
-ceiling dropped and when. In order of preference:
+what the store held, so nothing is unrecoverable — what the ledger could not say is *which* fact the
+ceiling dropped and when — a write that reaches the cap now writes an `hy.evict` naming them,
+and that gap is what step 4 below closed. In order of preference:
 
 1. **Demote.** A fact past the summary budget stays active and retrievable; it is simply not
    printed. This is already what the omission tail promises, and it costs nothing.
@@ -710,8 +711,12 @@ ceiling dropped and when. In order of preference:
 3. **Evict.** Today's rule, kept as the last resort: deterministic, visible in the audit, and
    the fact stays recallable — which it only does because `hy_recall` scores the whole bank
    and marks the row retired; a query restricted to `active` entries would make this rule a
-   deletion wearing a tombstone's name. When it does fire, it should record `hy.evict` so a
-   reload cannot change what the reader saw.
+   deletion wearing a tombstone's name. When it fires it records `hy.evict` — every id the
+   ceiling took, after the write that pushed the bank over it. The record is a record of
+   pressure, not an instruction: `foldLedger` ignores it, so replay still restores the facts
+   and a reload re-applies the same cap and lands on the same active set. Raising the cap
+   therefore still restores facts retroactively (`tools/reload-budget-check.ts`), which is the
+   behaviour a durable record must not quietly undo.
 
 ### Plan
 
@@ -720,7 +725,7 @@ ceiling dropped and when. In order of preference:
 | 1 | split `bankMaxTokens` / `summaryMaxTokens`; the summary becomes a selection | oldest kept moves 7 → 20+ chunks on the 32-chunk ledger; no regression on current state | shipped |
 | 2 | stratify the selection: constraints / foundations / current | reach 7 → 20 chunks at the same cap; blind judge still pending | shipped |
 | 3 | key-exact retrieval ranking | fewer misses on removal drafts than 93/109 | rejected (measured 725 → 730 subject matches, 7 gained / 2 lost) |
-| 4 | durable `hy.evict` when the ceiling bites | a reload cannot change the rendered summary | planned |
+| 4 | durable `hy.evict` when the ceiling bites | a reload cannot change the rendered summary: `tools/evict-record-check.ts` shows a reload at the recorded cap dropping exactly the ids the record names, so the re-applied ceiling reproduces the same active set | shipped |
 | 5 | consolidation pass at the ceiling | judge specificity does not fall | later |
 
 ### Ranking

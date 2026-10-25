@@ -370,8 +370,9 @@ export function scoreRun(chunks: CorpusChunk[], ledger: LedgerRecord[]): RunScor
 	>();
 	const opTotals = new Map<string, number>();
 	for (const record of ledger) {
-		// A gap records lost coverage and carries no chunkId.
-		if (record.type === "hy.gap") continue;
+		// A gap records lost coverage and a ceiling record names dropped ids: neither
+		// carries a chunkId, so neither can be keyed by one.
+		if (record.type === "hy.gap" || record.type === "hy.evict") continue;
 		const key = base(record.chunkId);
 		if (record.type === "hy.extract") {
 			evidence.set(key, {

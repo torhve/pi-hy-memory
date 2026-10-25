@@ -147,13 +147,18 @@ export function foldLedger(records: LedgerRecord[]): BankEntry[] {
 	let chunkSeq = 0;
 
 	for (const record of records) {
-		// A gap records lost coverage; it contributes no facts and must not be read
-		// as an ops record (it has none).
-		if (record.type === "hy.gap") continue;
+		// A gap records lost coverage and an eviction records ceiling pressure: neither
+		// contributes facts, and neither may be read as an ops record — they have no
+		// `ops` field, and reading one as a write is how facts go missing from a replay.
+		if (record.type === "hy.gap" || record.type === "hy.evict") continue;
 		if (record.type === "hy.extract") {
 			pending = { chunkId: record.chunkId, drafts: record.drafts };
 			continue;
 		}
+		// Anything else carries no write. A ledger line this reader does not know
+		// contributes no facts; it does not shift `chunkSeq` either, so numbering
+		// stays identical to what the writer counted.
+		if (record.type !== "hy.ops") continue;
 		const drafts = pending?.chunkId === record.chunkId ? pending.drafts : [];
 		chunkSeq += 1;
 		for (const op of record.ops) {

@@ -19,7 +19,6 @@ import {
 	parseOps,
 	renderBankForReconcile,
 	renderDraftsForReconcile,
-	sameSubject,
 	selectShownPerDraft,
 	takeJsonRepair,
 } from "./protocol.js";
@@ -345,6 +344,10 @@ export async function writeChunk(
 	const report = applyOps(bank, drafts, ops, chunkId, chunk.refs, createdAt, chunkSeq);
 	const budget = enforceBudget(bank, options.bankMaxTokens ?? 60000);
 
+	const poolTokens = options.bankMaxTokens ?? 60000;
+	const droppedTokens = budget.dropped.reduce((n, e) => n + e.tokenCount, 0);
+	const activeTokensAfter = bank.filter((e) => e.status === "active").reduce((n, e) => n + e.tokenCount, 0);
+
 	const records: LedgerRecord[] = [
 		extractRecord,
 		{
@@ -380,6 +383,24 @@ export async function writeChunk(
 			usage: reconcileUsage,
 		},
 	];
+
+	// Ceiling pressure is a fact about the bank, so it belongs in the ledger — as a record
+	// of what was dropped, ordered after the write that caused it. Folding ignores it, so a
+	// replay still restores these facts and a reload re-applies the cap (see TODO 6.19):
+	// without this line, an audit could count the missing facts but never name them.
+	if (budget.dropped.length > 0) {
+		records.push({
+			type: "hy.evict",
+			createdAt,
+			coversUpToId: chunk.refs[chunk.refs.length - 1] ?? chunkId,
+			cause: "write",
+			poolTokens,
+			activeTokensBefore: activeTokensAfter + droppedTokens,
+			droppedCount: budget.dropped.length,
+			droppedTokens,
+			droppedIds: budget.dropped.map((e) => e.id),
+		});
+	}
 
 	return {
 		chunkId,

@@ -1,9 +1,10 @@
 /**
  * Pool-cap lifecycle check: fold → enforce → reload → enforce.
  *
- * Budget eviction is deliberately *not* written to the ledger — it is pressure,
- * not deletion, so re-folding a session restores the evicted facts. That has two
- * consequences this file pins:
+ * Budget eviction is written to the ledger as an `hy.evict` *record*, never as a
+ * delete: it is pressure, not deletion, so re-folding a session restores the
+ * evicted facts and the record only says which ones went (`tools/evict-record-check.ts`
+ * pins the record itself). That has two consequences this file pins:
  *
  * 1. Raising `poolMaxTokens` retroactively restores facts (observed live on
  *    session 01a14c10: 69 → 91 active after a reload at 12 000).
