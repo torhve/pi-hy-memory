@@ -56,6 +56,7 @@ import {
 	recordOffers,
 	withRecallNote,
 } from "./hifi.js";
+import { decideCompactionWait, type InFlightWrite, TIMING_WINDOW, type WriteTiming } from "./lag.js";
 import { createWriter, type Writer } from "./llm.js";
 import { writeChunk } from "./pipeline.js";
 import { recallHits, renderFileOperations, renderMemory, renderRecallHit, summaryBudget } from "./render.js";
@@ -89,6 +90,19 @@ const COMPACT_OVERHEAD_TOKENS = 2000;
 const COMPACT_SLACK_TOKENS = 1500;
 /** The kept tail never goes below this, so a compaction cannot leave the model with nothing to work from. */
 const COMPACT_KEEP_MIN_TOKENS = 1000;
+
+/**
+ * The wait for a write that lands during a compaction is polled, not hung on: a slice this short
+ * notices a replaced session or a chain that never starts, while costing nothing when the promise
+ * settles first. `WAIT_GRACE_MS` is the beat a chained follow-up gets after its parent write's own
+ * promise settles, because `startWrite` assigns it inside that write's `finally`.
+ */
+const WAIT_POLL_MS = 250;
+const WAIT_GRACE_MS = 250;
+
+function sleep(ms: number): Promise<void> {
+	return new Promise((resolve) => setTimeout(resolve, ms));
+}
 
 /**
  * What a refused `hy_flush` answers with. The wording differs by reason because the useful next step
@@ -164,6 +178,14 @@ type SessionState = {
 	inFlight: boolean;
 	pending: Promise<void> | null;
 	/**
+	 * The write running right now. `session_before_compact` reads it to decide whether the
+	 * backlog it would drop is a write that is seconds from landing (`src/lag.ts`), so this is
+	 * the writer's own stage report rather than an outside guess.
+	 */
+	inFlightWrite: InFlightWrite | null;
+	/** Completed writes this process has seen, oldest first, capped at `TIMING_WINDOW`. */
+	timings: WriteTiming[];
+	/**
 	 * The last model-written checkpoint, and the chunk sequence it covered. The next
 	 * hi-fi call gets this text as `<previous-summary>` and only the facts newer than
 	 * `seq`, which is what keeps the request delta-sized instead of whole-bank.
@@ -202,6 +224,31 @@ export function ledgerFromSession(entries: SessionEntry[]): LedgerRecord[] {
 		if (Array.isArray((data as any).drafts ?? (data as any).ops)) records.push(data);
 	}
 	return records;
+}
+
+/**
+ * Stage timings for the compaction ETA, from the records this session already holds.
+ *
+ * A reload has no completed write in this process, and the policy refuses to wait without history
+ * (`src/lag.ts`), so the first compaction after a resume would never wait. The ledger carries each
+ * call's own `usage.wallS`, which is exactly the split the ETA needs: `hy.extract` is the extract
+ * stage, `hy.ops` is the reconcile stage, and the two share a `chunkId`.
+ *
+ * Only a pair counts. An `hy.extract` with no `hy.ops` is a write that failed before its reconcile,
+ * and seeding from it would estimate a total write from half of one.
+ */
+function writeTimingsFromLedger(records: LedgerRecord[]): WriteTiming[] {
+	const byChunk = new Map<string, WriteTiming>();
+	for (const record of records) {
+		if (record.type !== "hy.extract" && record.type !== "hy.ops") continue;
+		const wallS = record.usage?.wallS;
+		if (typeof wallS !== "number" || !(wallS >= 0)) continue;
+		const timing = byChunk.get(record.chunkId) ?? { chunkId: record.chunkId, extractMs: 0, reconcileMs: 0 };
+		if (record.type === "hy.extract") timing.extractMs = wallS * 1000;
+		else timing.reconcileMs = wallS * 1000;
+		byChunk.set(record.chunkId, timing);
+	}
+	return [...byChunk.values()].filter((t) => t.extractMs > 0 && t.reconcileMs > 0).slice(-TIMING_WINDOW);
 }
 
 export default function piHyMemory(pi: ExtensionAPI): void {
@@ -310,6 +357,24 @@ export default function piHyMemory(pi: ExtensionAPI): void {
 
 	/** The one place that answers "may this session write?", config and switch together. */
 	const sessionActive = (): boolean => config.enabled && state?.enabled !== false;
+
+	/**
+	 * Is the writer worth waiting on? A failed attempt, an active cooldown or a primary held down
+	 * by failover all mean the next write is not about to land, so a compaction should not hold the
+	 * user on it. The one question `decideCompactionWait` asks outside the ETA model.
+	 */
+	const writerHealthy = (live: SessionState): boolean =>
+		live.failures === 0 &&
+		live.consecutiveFailures === 0 &&
+		live.writeCooldownUntil <= Date.now() &&
+		live.primaryDownUntil <= Date.now();
+
+	/**
+	 * The unread *conversation*. A coverage window starts at the watermark, so the writer's own
+	 * `hy.extract` / `hy.ops` records sit inside it too; counting them would put "unread 2 entries"
+	 * in the footer of a session that is completely covered.
+	 */
+	const unreadContent = (pending: SessionEntry[]): number => pending.filter((e) => e.type !== "custom").length;
 
 	function readPendingExtract(sessionId: string): PendingExtract | null {
 		try {
@@ -468,6 +533,10 @@ export default function piHyMemory(pi: ExtensionAPI): void {
 			primaryDownUntil: 0,
 			inFlight: false,
 			pending: null,
+			inFlightWrite: null,
+			// Seeded, not empty: a resumed session has writes behind it, and the ETA policy
+			// refuses to wait with no history to estimate from.
+			timings: writeTimingsFromLedger(effective),
 			hifi: restoredHifi,
 			// The counters continue from the ledger rather than restarting: they sit on a status
 			// line that reads as a session total, and a reload used to reset them to this process's
@@ -544,6 +613,19 @@ export default function piHyMemory(pi: ExtensionAPI): void {
 				const startState = state;
 				if (!startState) return;
 				const resume = startState.pendingExtract?.chunkId === chunkId ? startState.pendingExtract : null;
+				// What a compaction waiting on this write reads: the chunk it is carrying, when it
+				// started, and the stage the writer reports below. Cleared when it lands or fails.
+				if (startState.sessionId === sessionId) {
+					startState.inFlightWrite = {
+						chunkId,
+						chunkTokens: estimateTokens(chunk.text),
+						startedAt: started,
+						// A resumed extract skips the extract call and goes straight to reconcile.
+						stage: resume ? "reconcile" : "extract",
+						stageAt: started,
+						...(resume ? { reconcileAt: started } : {}),
+					};
+				}
 				const { primary, fallback } = writers(ctx);
 				const result = await writeChunk(primary, startState.bank, chunkId, chunk, {
 					bankMaxTokens: config.bankMaxTokens,
@@ -557,7 +639,19 @@ export default function piHyMemory(pi: ExtensionAPI): void {
 					// A quarter of the call budget: enough for a slot to free, not enough
 					// to spend the whole write asleep.
 					busyBudgetMs: Math.max(1, Math.round((config.timeoutMs ?? 480_000) / 4)),
-					onStage: (stage, detail) => status.stage(stage, detail),
+					onStage: (stage, detail) => {
+						status.stage(stage, detail);
+						// The stage report is the only honest signal of what is left of a write, so
+						// it goes on the in-flight record as well as the footer.
+						const live = state && state.sessionId === sessionId ? state : null;
+						const record = live?.inFlightWrite;
+						if (!record || record.chunkId !== chunkId) return;
+						record.stage = stage;
+						record.stageAt = Date.now();
+						// Set once: a `waiting` notice afterwards is a 429 backoff inside the same
+						// reconcile, not a second reconcile to measure.
+						if (stage === "reconcile" && record.reconcileAt === undefined) record.reconcileAt = Date.now();
+					},
 					resume: resume
 						? {
 								drafts: resume.drafts,
@@ -650,6 +744,17 @@ export default function piHyMemory(pi: ExtensionAPI): void {
 				live.stats.inTokens += result.usage.extract.inTokens + result.usage.reconcile.inTokens;
 				live.stats.outTokens += result.usage.extract.outTokens + result.usage.reconcile.outTokens;
 				live.stats.wallS += (Date.now() - started) / 1000;
+				// The ETA model's history: one entry per write that landed, bounded. A failure
+				// records nothing, so a timeout never teaches the next compaction to wait.
+				live.timings = [
+					...live.timings,
+					{
+						chunkId,
+						extractMs: Math.round(result.usage.extract.wallS * 1000),
+						reconcileMs: Math.round(result.usage.reconcile.wallS * 1000),
+					},
+				].slice(-TIMING_WINDOW);
+				live.inFlightWrite = null;
 
 				// Mirror first: it works even when the session is already closed.
 				// Session entries are then best-effort, because a ctx captured before
@@ -722,6 +827,9 @@ export default function piHyMemory(pi: ExtensionAPI): void {
 					const waitMs = writeCooldownMs(state.consecutiveFailures, (config.writeCooldownS ?? 30) * 1000);
 					state.writeCooldownUntil = Date.now() + waitMs;
 					state.cooldownAudited = false;
+					// Nothing to wait for any more: a failed write leaves no timing behind, so the
+					// next compaction estimates from the writes that did land.
+					state.inFlightWrite = null;
 					audit("write_cooldown", {
 						sessionId,
 						failures: state.consecutiveFailures,
@@ -996,57 +1104,250 @@ export default function piHyMemory(pi: ExtensionAPI): void {
 	 */
 	pi.on("session_before_compact", async (event, ctx) => {
 		if (!config.enabled || !state) return undefined;
-		const active = state.bank.filter((e) => e.status === "active");
+		let active = state.bank.filter((e) => e.status === "active");
 		if (active.length === 0) return undefined;
 
-		const entries = event.branchEntries;
-		// What the next request can actually hold. `keepRecentTokens` is a working-set heuristic; the
-		// window is a hard limit, and a compaction that leaves the request oversized is not a recovery —
-		// it is the 400 the provider answers with. So the window is split between the three things the
-		// retry sends: the kept tail, the summary, and the digest of whatever the cut removes that the
-		// writer never read. What the retry carries on top of those three is measured below, since the
-		// prompt and the tool schemas are not ours to render.
-		const windowTokens = ctx.model?.contextWindow ?? 0;
-		const reserve = event.preparation?.settings?.reserveTokens ?? 0;
-		// The overhead the budget has to absorb is measured, not assumed. Pi's count covers the whole
-		// request — system prompt, tool schemas, everything this extension does not render — while
-		// `entryTokens` covers only the conversation, so the difference is what the retry will carry
-		// on top of the summary and the tail. A session with a large prompt and many tools needs a far
-		// bigger allowance than one with none, and guessing too small makes the compaction miss the
-		// threshold it was supposed to clear: pi compacts again, and again. `COMPACT_OVERHEAD_TOKENS`
-		// stays as the floor for a session pi has not counted.
-		const branchTokens = entries.reduce((sum, e) => sum + entryTokens(e), 0);
-		// Only part of that gap is prompt: pi counts with a real tokenizer and this file estimates
-		// with characters, so a long conversation inflates the difference by counting alone. A third
-		// of the window is treated as the most prompt and schemas can plausibly cost, which keeps a
-		// large session from trimming its working set away.
-		const overheadTokens = Math.max(
-			COMPACT_OVERHEAD_TOKENS,
-			Math.min((event.preparation?.tokensBefore ?? 0) - branchTokens, Math.floor(windowTokens * 0.3)),
-		);
-		const available =
-			windowTokens > 0 ? Math.max(0, windowTokens - reserve - overheadTokens - COMPACT_SLACK_TOKENS) : undefined;
-		const digestBudget =
-			available === undefined
-				? config.overflowDigestTokens
-				: Math.min(config.overflowDigestTokens, Math.floor(available / 4));
-		// The tail keeps a floor so a compaction never leaves the model with nothing to work from; the
-		// summary gives up its configured maximum before the tail gives up its entries.
-		const summaryTokenBudget =
-			available === undefined
-				? config.summaryMaxTokens
-				: Math.max(500, Math.min(config.summaryMaxTokens, available - digestBudget - COMPACT_KEEP_MIN_TOKENS));
-		const maxKeepTokens =
-			available === undefined ? undefined : Math.max(0, available - digestBudget - summaryTokenBudget);
-		// pi's own cut point and its real token count: the boundary is only worth
-		// keeping if holding the backlog does not defeat the compaction entirely.
-		const choice = compactionBoundary(entries, {
-			cursorId: state.cursorId,
-			keepRecentTokens: config.keepRecentTokens,
-			proposedId: event.preparation?.firstKeptEntryId,
-			maxUncoveredTokens: config.maxChunkTokens,
-			maxKeepTokens,
-		});
+		// The branch pi is cutting. A wait appends entries to it, so every number downstream comes
+		// from a snapshot taken after the write lands — never from this one.
+		let entries = event.branchEntries;
+		const branchEndAtEvent = entries.at(-1)?.id;
+		const preparationTokens = event.preparation?.tokensBefore;
+
+		/**
+		 * The window split and the cut, for a branch snapshot.
+		 *
+		 * It runs twice when a write lands during the wait: the cursor moves and the write's own
+		 * `hy.extract` / `hy.ops` entries are appended, so the boundary that ends the hook has to be
+		 * computed from fresh data. Only pi's cut point survives a wait, because it names an entry
+		 * rather than a token count.
+		 */
+		const boundaryFor = (list: SessionEntry[]) => {
+			// What the next request can actually hold. `keepRecentTokens` is a working-set heuristic;
+			// the window is a hard limit, and a compaction that leaves the request oversized is not a
+			// recovery — it is the 400 the provider answers with. So the window is split between the
+			// three things the retry sends: the kept tail, the summary, and the digest of whatever the
+			// cut removes that the writer never read.
+			const windowTokens = ctx.model?.contextWindow ?? 0;
+			const reserve = event.preparation?.settings?.reserveTokens ?? 0;
+			const branchTokens = list.reduce((sum, e) => sum + entryTokens(e), 0);
+			// The overhead the budget has to absorb is measured, not assumed. Pi's count covers the
+			// whole request — system prompt, tool schemas, everything this extension does not render —
+			// while `entryTokens` covers only the conversation, so the difference is what the retry
+			// will carry on top of the summary and the tail. A session with a large prompt and many
+			// tools needs a far bigger allowance than one with none, and guessing too small makes the
+			// compaction miss the threshold it was supposed to clear: pi compacts again, and again.
+			// `COMPACT_OVERHEAD_TOKENS` stays as the floor for a session pi has not counted. Only part
+			// of that gap is prompt: pi counts with a real tokenizer and this file estimates with
+			// characters, so a long conversation inflates the difference by counting alone. A third of
+			// the window is treated as the most prompt and schemas can plausibly cost, which keeps a
+			// large session from trimming its working set away. Pi's count is only a valid overhead
+			// while the branch it counted is still the branch being cut; after a wait the branch has
+			// grown, and then the floor is what stands.
+			const measured =
+				preparationTokens === undefined || list.at(-1)?.id !== branchEndAtEvent
+					? 0
+					: preparationTokens - branchTokens;
+			const overheadTokens = Math.max(
+				COMPACT_OVERHEAD_TOKENS,
+				Math.min(measured, Math.floor(windowTokens * 0.3)),
+			);
+			const available =
+				windowTokens > 0
+					? Math.max(0, windowTokens - reserve - overheadTokens - COMPACT_SLACK_TOKENS)
+					: undefined;
+			const digestBudget =
+				available === undefined
+					? config.overflowDigestTokens
+					: Math.min(config.overflowDigestTokens, Math.floor(available / 4));
+			// The tail keeps a floor so a compaction never leaves the model with nothing to work from;
+			// the summary gives up its configured maximum before the tail gives up its entries.
+			const summaryTokenBudget =
+				available === undefined
+					? config.summaryMaxTokens
+					: Math.max(
+							500,
+							Math.min(config.summaryMaxTokens, available - digestBudget - COMPACT_KEEP_MIN_TOKENS),
+						);
+			const maxKeepTokens =
+				available === undefined ? undefined : Math.max(0, available - digestBudget - summaryTokenBudget);
+			// pi's own cut point and its real token count: the boundary is only worth keeping if
+			// holding the backlog does not defeat the compaction entirely.
+			return {
+				branchTokens,
+				windowTokens,
+				overheadTokens,
+				available,
+				digestBudget,
+				summaryTokenBudget,
+				maxKeepTokens,
+				choice: compactionBoundary(list, {
+					cursorId: state?.cursorId,
+					keepRecentTokens: config.keepRecentTokens,
+					proposedId: event.preparation?.firstKeptEntryId,
+					maxUncoveredTokens: config.maxChunkTokens,
+					maxKeepTokens,
+				}),
+			};
+		};
+		type Boundary = ReturnType<typeof boundaryFor>;
+		let boundary = boundaryFor(entries);
+
+		/**
+		 * Await the in-flight write and its chained follow-ups inside one shared deadline.
+		 *
+		 * The budget is shared rather than per write: the write that was already running plus up to
+		 * `MAX_CHAIN` follow-ups (`src/chain.ts`) ride the same `compactWaitMs`, so a large backlog
+		 * cannot pin compaction for chain length × budget.
+		 */
+		const waitForWrite = async (
+			signal: AbortSignal,
+			deadline: number,
+		): Promise<{ landed: number; outcome: "landed" | "timeout" | "aborted" | "writer_failed" }> => {
+			let landed = 0;
+			let onAbort: (() => void) | undefined;
+			const abortPromise = new Promise<"aborted">((resolve) => {
+				onAbort = () => resolve("aborted");
+				signal.addEventListener("abort", onAbort, { once: true });
+			});
+			try {
+				for (;;) {
+					if (signal.aborted) return { landed, outcome: "aborted" };
+					const live = state;
+					if (!live) return { landed, outcome: "writer_failed" };
+					const promise = live.pending;
+					if (!promise) {
+						// The write landed. Give a chained follow-up one beat to be assigned — it is
+						// started inside this write's own `finally`, so it can appear just after.
+						await sleep(WAIT_GRACE_MS);
+						if (!state?.pending) return { landed, outcome: "landed" };
+						if (Date.now() >= deadline) return { landed, outcome: "timeout" };
+						continue;
+					}
+					const remaining = deadline - Date.now();
+					if (remaining <= 0) return { landed, outcome: "timeout" };
+					const settled: Promise<"landed" | "writer_failed" | "slice" | "aborted"> = promise.then(
+						() => "landed",
+						// A failed write is a reason to stop waiting, not to retry: the deferral and
+						// the cooldown are already the right response.
+						() => "writer_failed",
+					);
+					const why = await Promise.race([
+						settled,
+						sleep(Math.min(WAIT_POLL_MS, remaining)).then(() => "slice"),
+						abortPromise,
+					]);
+					if (why === "aborted") return { landed, outcome: "aborted" };
+					if (why === "writer_failed") return { landed, outcome: "writer_failed" };
+					if (why === "landed") landed++;
+				}
+			} finally {
+				// The listener sits on pi's signal, which outlives this hook.
+				if (onAbort) signal.removeEventListener("abort", onAbort);
+			}
+		};
+
+		/**
+		 * Ask the policy, wait when it says yes, then recompute from a fresh branch.
+		 *
+		 * Never throws, and always returns a boundary the hook can act on: a throwing hook fails
+		 * pi's compaction outright, which is worse than the deferral this replaces.
+		 */
+		const waitBeforeCompact = async (before: Boundary): Promise<Boundary> => {
+			const live = state;
+			if (!live) return before;
+			const cursorBefore = live.cursorId;
+			const window = coverageWindow(entries, live.ledger, live.cursorId, live.resumeFromId);
+			const decision = decideCompactionWait({
+				enabled: config.waitForWriterBeforeCompact,
+				dryRun: config.dryRun,
+				sessionActive: sessionActive(),
+				reason: event.reason,
+				wouldDrop: true,
+				inFlight: live.inFlightWrite,
+				timings: live.timings,
+				// A writer that has failed, is cooling down, or has its primary held down is not
+				// worth holding a compaction for.
+				healthy: writerHealthy(live),
+				entries: unreadContent(window.pending),
+				tokens: window.tokens,
+				maxChunkTokens: config.maxChunkTokens,
+				budgetMs: config.compactWaitMs,
+				now: Date.now(),
+			});
+			if (!decision.wait) {
+				// Audited only for the shapes that could have waited, so a skip is visible without a
+				// line for every compaction that never had a write to wait for.
+				if (live.inFlightWrite) {
+					audit("compact_wait_skipped", {
+						sessionId: live.sessionId,
+						reason: decision.reason,
+						stage: decision.stage,
+						entries: decision.entries,
+						tokens: decision.tokens,
+						chunksBehind: decision.chunksBehind,
+						etaS: decision.etaS,
+					});
+				}
+				return before;
+			}
+
+			const budgetMs = config.compactWaitMs;
+			const startedAt = Date.now();
+			try {
+				ctx.ui.notify(
+					`pi-hy-memory: writer ${decision.entries} entries behind (~${decision.tokens} tok), ${decision.stage} ${decision.elapsedS}s in, ~${decision.etaS}s left — waiting up to ${Math.round(budgetMs / 1000)}s before compacting`,
+					"info",
+				);
+			} catch {
+				/* ctx is stale; the audit line is the record */
+			}
+			try {
+				status.stage("waiting", "compact");
+			} catch {
+				/* the footer is optional */
+			}
+			const wait = await waitForWrite(event.signal, startedAt + budgetMs);
+
+			// Recompute, never reuse: the write appended its records and moved the cursor while we
+			// waited, so the pre-wait choice, boundary and token sums are stale.
+			let fresh = entries;
+			try {
+				fresh = ctx.sessionManager.getBranch();
+			} catch {
+				/* session replaced; pi's own snapshot is the best branch left */
+			}
+			entries = fresh;
+			const after = boundaryFor(fresh);
+			const outcome =
+				wait.outcome === "timeout"
+					? "timeout"
+					: wait.outcome === "aborted"
+						? "aborted"
+						: wait.outcome === "writer_failed"
+							? "writer_failed"
+							: after.choice.wouldDrop
+								? "still_would_drop"
+								: "boundary_recomputed";
+			audit("compact_wait", {
+				sessionId: live.sessionId,
+				reason: event.reason,
+				stage: decision.stage,
+				entries: decision.entries,
+				tokens: decision.tokens,
+				chunksBehind: decision.chunksBehind,
+				elapsedS: decision.elapsedS,
+				etaS: decision.etaS,
+				budgetMs,
+				waitedMs: Date.now() - startedAt,
+				cursorAdvanced: (state?.cursorId ?? undefined) !== cursorBefore,
+				/** Follow-ups waited on beyond the write that was running when compaction started. */
+				chainDepth: Math.max(0, wait.landed - 1),
+				unreadAfterTokens: after.choice.wouldDrop?.tokens ?? 0,
+				outcome,
+				deferred: after.choice.wouldDrop !== undefined,
+			});
+			return after;
+		};
 
 		// Hand back to pi when honouring our summary would drop entries the writer has
 		// never read. Our boundary can only *keep* a bounded backlog, and the entries
@@ -1062,18 +1363,30 @@ export default function piHyMemory(pi: ExtensionAPI): void {
 		// context window" both times, and the session was left unrecoverable. Here the trim above has
 		// already cut the tail to fit and the unread range it removed is digested into the summary, so
 		// producing our own summary degrades the session instead of ending it.
-		if (choice.wouldDrop && event.reason !== "overflow") {
+		//
+		// Before handing it back, one bounded wait: pi runs its compaction check before
+		// `agent_before_settle`, so the backlog it would drop is very often a write that is seconds
+		// from landing. The policy and the ETA model are in `src/lag.ts`.
+		if (boundary.choice.wouldDrop && event.reason !== "overflow") boundary = await waitBeforeCompact(boundary);
+		// A write that landed during the wait also added facts to the bank.
+		active = state.bank.filter((e) => e.status === "active");
+
+		if (boundary.choice.wouldDrop && event.reason !== "overflow") {
 			audit("compact_deferred", {
 				sessionId: state.sessionId,
 				reason: event.reason,
-				entries: choice.wouldDrop.entries,
-				tokens: choice.wouldDrop.tokens,
+				entries: boundary.choice.wouldDrop.entries,
+				tokens: boundary.choice.wouldDrop.tokens,
 				facts: active.length,
 			});
 			void ctx;
 			return undefined;
 		}
 
+		// Everything downstream is read from the boundary that survived the wait, so the numbers
+		// reported are the ones the cut was actually made with.
+		const { choice, digestBudget, summaryTokenBudget, maxKeepTokens, overheadTokens, windowTokens, available } =
+			boundary;
 		const firstKeptIndex = choice.firstKeptIndex;
 
 		// The trim cut past the writer's watermark, so material the bank never learned is leaving the
@@ -1257,10 +1570,12 @@ export default function piHyMemory(pi: ExtensionAPI): void {
 		// The checkpoint is the model's prose; the reminder that its ids are lookupable is
 		// ours to add, because a good checkpoint will not have written it itself.
 		const summary = (checkpoint ? withRecallNote(checkpoint.text) : fallback) + digest;
-		// Prefer pi's count: ours renders unclipped text, which is the stored branch
-		// rather than the request pi builds.
-		const estimate = entries.reduce((sum, e) => sum + entryTokens(e), 0);
-		const tokensBefore = event.preparation?.tokensBefore ?? estimate;
+		// Prefer pi's count: ours renders unclipped text, which is the stored branch rather than
+		// the request pi builds. That count only describes the branch we cut, so after a wait that
+		// appended entries the estimate is what is honest.
+		const estimate = boundary.branchTokens;
+		const tokensBefore =
+			preparationTokens !== undefined && entries.at(-1)?.id === branchEndAtEvent ? preparationTokens : estimate;
 		state.stats.compactions++;
 		audit("compact", {
 			sessionId: state.sessionId,
@@ -1712,10 +2027,47 @@ export default function piHyMemory(pi: ExtensionAPI): void {
 				);
 				return;
 			}
+			// What the writer has not read yet, and for a write in flight how far into it it is.
+			// The ETA appears only when the compaction policy would actually wait on this write, so
+			// the status line can never promise a wait the hook would not make.
+			const lag = (): string => {
+				let window: ReturnType<typeof coverageWindow> | null = null;
+				try {
+					window = coverageWindow(
+						ctx.sessionManager.getBranch(),
+						live.ledger,
+						live.cursorId,
+						live.resumeFromId,
+					);
+				} catch {
+					return ""; // a replaced session has no branch to measure; the rest still answers
+				}
+				const pendingEntries = unreadContent(window.pending);
+				if (pendingEntries === 0) return "";
+				const decision = decideCompactionWait({
+					enabled: config.waitForWriterBeforeCompact,
+					dryRun: config.dryRun,
+					sessionActive: sessionActive(),
+					reason: "threshold",
+					wouldDrop: true,
+					inFlight: live.inFlightWrite,
+					timings: live.timings,
+					healthy: writerHealthy(live),
+					entries: pendingEntries,
+					tokens: window.tokens,
+					maxChunkTokens: config.maxChunkTokens,
+					budgetMs: config.compactWaitMs,
+					now: Date.now(),
+				});
+				const unread = ` · unread ${decision.entries} entries / ~${decision.tokens} tok`;
+				if (!decision.wait || !decision.stage) return unread;
+				return `${unread} · ${decision.stage} ${Math.round(decision.elapsedS)}s in, ~${decision.etaS}s left`;
+			};
 			ctx.ui.notify(
 				`pi-hy-memory ${live.enabled ? "" : "OFF "}${config.dryRun ? "(dry run) " : ""}· writer ${config.model} · ${active.length}/${live.bank.length} facts active · ${tokens} tokens · ` +
 					`${live.stats.writes} writes · +${live.stats.added} ~${live.stats.updated} -${live.stats.deleted} · ` +
-					`${live.stats.inTokens} in / ${live.stats.outTokens} out tok · ${live.stats.wallS.toFixed(0)}s · ${live.stats.compactions} compactions`,
+					`${live.stats.inTokens} in / ${live.stats.outTokens} out tok · ${live.stats.wallS.toFixed(0)}s · ${live.stats.compactions} compactions` +
+					lag(),
 				"info",
 			);
 		},

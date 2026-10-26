@@ -76,7 +76,7 @@ nothing backs off between turns. The audit records `write_cooldown { waitS }` an
 | `foundationAfterChunks` | `8` | a fact this many chunks old and never superseded counts as a *foundation* for the summary selection |
 | `summaryConstraintShare` | `0.1` | share of the summary budget reserved for facts whose evidence was a user turn |
 | `summaryFoundationShare` | `0.35` | share reserved for old, never-superseded facts |
-| `keepRecentTokens` | `6000` | raw entries kept verbatim by a compaction. The cut is clamped back to the write watermark so nothing unread is dropped, but only by up to `maxChunkTokens`; past that a manual or threshold compaction is handed back to pi, and an overflow cut is taken anyway with the unread range digested into the summary (see "Compaction: who decides when") |
+| `keepRecentTokens` | `6000` | raw entries kept verbatim by a compaction. The cut is clamped back to the write watermark so nothing unread is dropped, but only by up to `maxChunkTokens`; past that a manual or threshold compaction first waits for the write in flight, up to `compactWaitMs`, and is then handed back to pi, and an overflow cut is taken anyway with the unread range digested into the summary (see "Compaction: who decides when") |
 | `overflowDigestTokens` | `1500` | share of the window an overflow digest may take. When the kept tail has to be cut to fit the model's context window, the entries the writer never read are folded into the summary as a bounded digest rather than vanishing; the cut is also recorded as a gap in the ledger. `0` cuts without a digest |
 | `candidateLimit` | `24` | bank entries shown to the reconcile call, and the per-draft retrieval depth. Was 12: measured on the extended corpus, 12 starved 2.2 % of drafts once the bank passed ~110 entries; 24 starves none for +24 % reconcile input tokens |
 | `candidateRenderMode` | `perDraft` | how the `candidateLimit` window is chosen: `perDraft` guarantees every draft its own best bank match before the cap fills; `union` shows the score-sorted union (legacy) |
@@ -103,13 +103,15 @@ nothing backs off between turns. The audit records `write_cooldown { waitS }` an
 | `busyRetries` / `busyBackoffMs` | `3` / `4000` | 429 handling: llama-swap rejects a concurrent request to a single-slot model *instantly* instead of queueing. Waits double, capped at 60 s each and at a quarter of `timeoutMs` in total; after that the fallback is used instead of sleeping through the write |
 | `pruneAfterDays` | `30` | delete per-session state older than this; `0` disables. The 10 newest sessions and the running one are always kept |
 | `waitForWriteOnSettle` | `true` | block the end of a turn on an in-flight write. A write that completes with the window still over the trigger is followed by another, at most twice per turn and only while the writer is healthy |
+| `waitForWriterBeforeCompact` | `true` | wait for a write that is already running before handing a compaction back to pi. pi checks compaction *before* `agent_before_settle`, so the backlog a cut would drop is very often a write started at `turn_end` that is seconds from landing. Stage-aware and ETA-gated, and never applied to overflow or to a writer that is failing or cooling down. `false` is the rollback: the wait and its notification go away and pi summarises as before |
+| `compactWaitMs` | `60000` | ceiling on that wait, shared by the running write and its chained follow-ups — not per write, or a backlog could pin compaction. 60 000 covers the reconcile p75 (~55 s) and both deferrals in the live audit (2 s and 11 s left); it deliberately does not cover most extract-stage waits, where the ETA says do not bother |
 | `shutdownWaitMs` | `5000` | cap on how long `session_shutdown` waits for a write |
 | `statusBar` | `true` | footer bar: window fill, bank fill, spinner, `✓ +N ~M` |
 
 ## Commands
 
 ```
-/hy           status: session switch, bank size, cost so far
+/hy           status: session switch, bank size, cost so far, how far behind the writer is
 /hy summary   the facts a compaction would render, as the model would read them
 /hy off       stop memory work for this session (remembered across reloads)
 /hy on        resume; the window accumulated while off is not remembered
@@ -169,12 +171,33 @@ That cut is pi's, with one adjustment: it is clamped back to the write watermark
 entries the writer has not read yet are not dropped from the branch. The clamp is
 bounded by `maxChunkTokens` — one chunk's worth of backlog is worth holding, more is not.
 
-Past that bound the extension **hands the compaction back to pi** (`return undefined`):
-pi's own summariser compresses the unread entries into prose, which is what would happen
-without this extension, instead of the entries disappearing from the live context unread.
-The audit line is `compact_deferred { entries, tokens }`. This is the case a writer outage
-creates — measured on 2026-10-19, a 36-minute 502 storm left 477 unread entries and the
-older behaviour dropped 53 459 tokens of history that no chunk had ever read. The
+Past that bound the extension **waits first, then hands the compaction back to pi**. The
+wait comes first because of where pi asks: `_checkCompaction` runs *before*
+`agent_before_settle`, so a threshold compaction arrives while the write that `turn_end`
+started is still running, and that whole in-flight chunk counts as unread. On session
+`01a17818` a compaction deferred at 12:36:01 with 95 entries / 23 061 tokens unread; the
+write it was deferring for landed at 12:37:40, and the next manual `/compact` cut at the
+cursor — the deferral was priced on a write that was 39 s from finishing.
+
+The wait is bounded by `compactWaitMs` and priced from the last eight writes
+(`src/lag.ts`): which stage the write is in, what that stage usually costs, and whether what
+is left fits the budget. It applies only to a write already running, only to `threshold` and
+`manual`, only while the writer is healthy, and never to overflow (below) or to a write
+sitting in 429 backoff with the endpoint busy. It is announced once, in the shape
+`pi-hy-memory: writer 95 entries behind (~23 061 tok), reconcile 38s in, ~11s left — waiting
+up to 60s before compacting`, with `wait` in the footer; `waitForWriterBeforeCompact: false`
+removes both.
+
+When the write lands, the boundary is recomputed from the branch it left behind — the cursor
+moved, and the chunk's own `hy.extract` / `hy.ops` records were appended — and the extension
+compacts as usual. When it does not, the extension **hands the compaction back to pi**
+(`return undefined`): pi's own summariser compresses the unread entries into prose, which is
+what would happen without this extension, instead of the entries disappearing from the live
+context unread. The audit lines are `compact_wait { stage, entries, tokens, etaS, budgetMs,
+waitedMs, cursorAdvanced, chainDepth, outcome }` and `compact_wait_skipped { reason, etaS }`,
+ahead of the existing `compact_deferred { entries, tokens }`. Deferring is still the case a
+writer outage creates — measured on 2026-10-19, a 36-minute 502 storm left 477 unread entries
+and the older behaviour dropped 53 459 tokens of history that no chunk had ever read. The
 extension renders a summary for free; when it cannot do that faithfully, paying pi's model
 call is the cheaper mistake.
 
@@ -422,6 +445,7 @@ is required to use the extension.
 | `src/entries.ts` | coverage window, entry rendering, chunk building from session entries |
 | `src/chain.ts` | when a finished write is followed by another, and when a flush is accepted |
 | `src/failures.ts` | failure class, cooldown ladder, whether a chunk should shrink |
+| `src/lag.ts` | how far behind the writer is, and whether a compaction should wait for it: stage-aware ETA from the last eight writes, and the gates that make it skip (overflow, unhealthy writer, backoff, no history, ETA past the budget). Pure — pinned by `tools/lag-check.ts`, and its wiring by `tools/compaction-wait-check.ts` |
 | `src/flush.ts` | `hy_flush`: list the unwritten entries, resolve a `to` into a monotone range |
 | `src/hifi.ts` | the optional model-written checkpoint and its fact guard |
 | `src/llm.ts` | the writer client used by the extension |
@@ -433,6 +457,7 @@ is required to use the extension.
 | `dev/prompts-actorframe.ts` | the actor-frame extract prompt: the shipped prompt plus the clauses upstream Hy-Memory puts at the top of its own coding extract prompt — who a statement is about, restraint as budget reallocation rather than abstention, evidence fidelity. Experiment-only; `tools/extract-prompt-check.ts` pins that it is additive, reaches only the extract call, and is never set by the shipped extension |
 | `dev/judge.ts` | blind quality judge for one run's writes, rubric in `dev/rubric.md` |
 | `dev/boundary-arms.ts` | move the chunk boundary over identical content, compare runs, emit the pieces for the judge |
+| `dev/live-wait-replay.ts` | replay the live audit through the compaction wait policy: for every past `compact_deferred`, what the hook would have seen, whether it would have waited, and whether the write landed inside the budget. Read-only; it is how `compactWaitMs` was chosen rather than guessed |
 | `dev/live-flush.sh` | run pi headless with the extension loaded and ask whether the model calls `hy_flush` |
 | `dev/live-cadence.sh` | compare model-initiated writes against the token threshold in one live session |
 | `dev/corpus-restraint.json` | authored contrast pairs with known-correct output: 8 attribution pairs, 10 empty chunks (contract enforced by `tools/restraint-corpus-check.ts`) |
@@ -447,7 +472,7 @@ is required to use the extension.
 | `dev/verbatim-report.ts` | whether the values a merge destroyed are recoverable at all: for each declared value, quoted in a banked statement, present only as a paraphrase, or absent |
 | `dev/guard-fold-report.ts` | the same ledgers re-folded under five merge gates — shipped, tightened, off, and two code-side value gates that accept an UPDATE only when the draft restates every specific token the target carries — with the values each gate dropped, the cascade each refusal caused counted beside its zero, and the re-fold's agreement with the bank on disk reported first |
 | `dev/session-scope-report.ts` | destructive ops read off every ledger: applied, refused by the reason the bank recorded, and split by whether the target was written by another session, plus the merge candidates each chunk was offered split by who wrote them, and the tier-6a re-entry trigger when any applied op crossed a session boundary |
-| `dev/live-bank-report.ts` | one real session read from its own state files, offline (`--snapshot <dir>` freezes the three files first and prints the ledger digest, so a session that is still writing yields numbers that can be re-read): what the pool ceiling retired, the values carried only by retired facts and whether the query reaches them, the fold against the store the session actually had (they differ by the retirements that session never recorded — it ran before `hy.evict` existed), the value gate replayed over the merges the writer really proposed, whether that replay agrees entry for entry with `foldLedger`, the refusal mix, how much of what the writer was shown was the user's own turn (0 of 0 with the note that the session predates the counter), and the stats counters, which for a session reloaded before 2026-10-25 counted only this process while its ledger counted the session |
+| `dev/live-bank-report.ts` | one real session read from its own state files, offline (`--snapshot <dir>` copies the three files and writes a `manifest.json` naming the copy (session, when taken, ledger digest), which every snapshot-reading report prints before its numbers, so a session that is still writing yields numbers that can be re-read and said to be about a named copy): what the pool ceiling retired, the values carried only by retired facts and whether the query reaches them, the fold against the store the session actually had (they differ by the retirements that session never recorded — it ran before `hy.evict` existed), the value gate replayed over the merges the writer really proposed, whether that replay agrees entry for entry with `foldLedger`, the refusal mix, how much of what the writer was shown was the user's own turn (0 of 0 with the note that the session predates the counter), and the stats counters, which for a session reloaded before 2026-10-25 counted only this process while its ledger counted the session |
 | `dev/retrieval-refusal-report.ts` | every refusal a frozen session recorded, attributed offline (`--snapshot <dir> --shipped 24 --limits 24,48,96`): each write's bank is rebuilt with `foldLedger` and the shipped candidate selection re-run at each limit, so a "target not retrieved for this draft" is separated into what a wider view would have shown, what is eligible but ranked past every limit tried, and what never reaches the scorer's floor at all; `target id not in bank` is sorted by what the writer put there, and each limit is priced in rendered entries and estimated reconcile input |
 | `dev/draft-gate-report.ts` | why the model was never shown some bank entries, offline from a run's ledger: retrieval coverage per drafted fact and every candidate it was actually rendered next to, split by candidate-render mode, and which entries were never candidates for any draft in the run |
 | `dev/inspect-supersede.ts` | read-side follow-up on the loss measurement: what replaced a given bank entry, and whether the replacement is a genuine update or a same-subject copy that never made it into retrieval |

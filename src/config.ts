@@ -75,6 +75,21 @@ export type HyConfig = {
 	 */
 	mergeValueGate: boolean;
 	waitForWriteOnSettle: boolean;
+	/**
+	 * Wait for an in-flight write before handing a compaction back to pi. pi checks compaction
+	 * *before* `agent_before_settle`, so the backlog that would be dropped is very often a write
+	 * started at `turn_end` that is seconds from landing: on session `01a17818` two deferrals
+	 * covered a write that finished 39 s after the first one. The wait is bounded by
+	 * `compactWaitMs`, stage-aware, and never applies to overflow. `false` is the rollback: the
+	 * deferral and its notification go away and pi summarises as before.
+	 */
+	waitForWriterBeforeCompact: boolean;
+	/**
+	 * Ceiling on that wait, shared by the running write and its chained follow-ups. 60 000 covers
+	 * the reconcile p75 (~55 s) and both incidents in the live audit (2 s and 11 s remaining); it
+	 * deliberately does not cover most extract-stage waits, where the ETA says do not bother.
+	 */
+	compactWaitMs: number;
 	/** Upper bound on how long session_shutdown waits for an in-flight write. */
 	shutdownWaitMs?: number;
 	/** Writer model, as pi lists it: `provider/modelId`, or a bare model id. */
@@ -173,6 +188,8 @@ export const SETTING_DEFAULTS: HyConfig = {
 	candidateRenderMode: "perDraft",
 	mergeValueGate: false,
 	waitForWriteOnSettle: true,
+	waitForWriterBeforeCompact: true,
+	compactWaitMs: 60_000,
 	model: "hy-memory-30b-a3b",
 	maxTokens: 8000,
 	timeoutMs: 480_000,

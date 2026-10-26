@@ -584,6 +584,40 @@ the extension — and audits `compact_deferred { entries, tokens }`. A free summ
 having only while it is faithful; when it is not, one model call is the cheaper mistake.
 `hy.gap` remains for the `/hy off` switch, where discarding the off window is the point.
 
+**A deferral is often priced on a write that is seconds from finishing, so the hook waits
+first.** pi runs `_checkCompaction` *before* `agent_before_settle` in `_handlePostAgentRun`, so
+a threshold compaction reaches the hook while the write started at `turn_end` is still running —
+and that in-flight chunk is, correctly, unread, so `wouldDrop` fires on a backlog the writer is
+already halfway through. On `01a17818` (2026-10-26): `write_start` chunk 005 at 12:33:02,
+`compact_deferred` at 12:36:01 (95 entries / 23 061 tokens), `extract_persisted` at 12:37:01, a
+second `compact_deferred` at 12:37:38, `write_end` at 12:37:40 — and the manual `/compact` three
+seconds later cut at the cursor with no gap. Two deferrals bought nothing the wait would not have.
+
+The wait is bounded and stage-aware, on the promise that is already running (`src/lag.ts`,
+pinned by `tools/lag-check.ts`, wiring pinned by `tools/compaction-wait-check.ts`): `reconcile`
+is priced against the median reconcile of the last eight writes minus what that stage has spent,
+`extract` against the median total minus elapsed, both floored at 0. It is conservative on
+purpose. Across 760 live writes the medians are extract 158 s and reconcile 30 s, so a
+reconcile-stage wait is short and an extract-stage wait usually exceeds the budget and is
+skipped rather than paid. `waiting` (429 backoff) gets no ETA — the endpoint is single-slot and
+another session probably holds it — a writer that has failed or is cooling down is not worth
+holding a compaction for, and a session with no completed write yet has nothing to price from.
+`compactWaitMs` (60 000, which covers the reconcile p75 and both incidents above) is one budget
+shared by the running write and its chained follow-ups, so a backlog cannot pin compaction by
+chaining.
+
+A wait changes the branch, so everything downstream is recomputed from a fresh `getBranch()`:
+the coverage window, the boundary choice, and the branch's own token total. pi's
+`preparation.tokensBefore` is kept only while the branch's last id is unchanged, because it
+counts a request against a branch that no longer exists. `compact_wait` records
+`{ stage, entries, tokens, elapsedS, etaS, budgetMs, waitedMs, cursorAdvanced, chainDepth,
+outcome }` with `outcome` one of `boundary_recomputed`, `still_would_drop`, `timeout`, `aborted`,
+`writer_failed`, and `compact_wait_skipped` records why a possible wait was not taken — the
+false waits and the added latency are meant to be read off the audit rather than asserted. The
+user is told once before waiting, and `waitForWriterBeforeCompact: false` removes both the wait
+and the notice. Overflow never waits (next paragraph): there, recovery is the thing that must
+not be delayed.
+
 **Overflow is the one case that never goes back to pi.** Deferring assumes pi's summariser can
 read the conversation, and overflow is exactly when it cannot: on `01a15d4e` (2026-10-21) the
 extension deferred twice at 375 464 tokens against a 196 608-token window, the provider answered
