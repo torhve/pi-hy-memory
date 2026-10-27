@@ -352,6 +352,29 @@ const WINDOWS = [16_000, 24_000, 32_000, 48_000, 64_000, 168_000];
 		},
 		{ available: 0, digest: 0, tail: 0, note: 500, underprovisioned: true },
 	);
+	// A room the note's floor cannot fit inside: the tail gives up everything, the note still renders at
+	// its 500, and the split admits it exceeds the room rather than reporting a budget that fits.
+	const starvingRoom = split({ windowTokens: 7900 });
+	check(
+		"a room below the note's floor leaves the tail with nothing",
+		{
+			available: starvingRoom.available,
+			digest: starvingRoom.digestTokens,
+			tail: starvingRoom.tailTokens,
+			note: starvingRoom.summaryTokenBudget,
+			underprovisioned: starvingRoom.underprovisioned,
+		},
+		{ available: 400, digest: 100, tail: 0, note: 500, underprovisioned: true },
+	);
+	// 0 + 500 + 100 against 400 of room: 200 over, which is the floor minus the room the digest left.
+	check(
+		"and the overshoot is exactly the note's floor minus the room, not a negative budget",
+		starvingRoom.tailTokens +
+			starvingRoom.summaryTokenBudget +
+			starvingRoom.digestTokens -
+			(starvingRoom.available ?? 0),
+		COMPACT_SUMMARY_MIN_TOKENS - ((starvingRoom.available ?? 0) - starvingRoom.digestTokens),
+	);
 	const blind = split({ windowTokens: 0 });
 	check(
 		"model reported no window: pi's own numbers stand",

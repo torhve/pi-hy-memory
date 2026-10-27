@@ -33,8 +33,9 @@ writeFileSync(
 	JSON.stringify({
 		model: "test/writer",
 		observeAfterTokens: 100_000,
-		keepRecentTokens: 6000,
-		summaryMaxTokens: 8000,
+		keepRecentTokens: 20_000,
+		summaryMaxTokens: 12_000,
+		keepRecentShare: 0.4,
 		overflowDigestTokens: 1500,
 		maxChunkTokens: 6000,
 	}),
@@ -337,6 +338,71 @@ const gaps = readFileSync(join(process.env.PI_HY_MEMORY_STATE as string, "sessio
 	.map((line) => JSON.parse(line) as Record<string, unknown>);
 check("the cut is recorded as a gap", gaps[0]?.reason, "overflow-trim");
 check("coverage resumes at the first kept entry", gaps[0]?.fromId, overflow?.compaction?.firstKeptEntryId);
+
+// 7. The same hook at a wide window, since the change is about what a large window delivers. 200
+//    entries of ~1 000 tokens, the write cursor still at e1, an overflow cut: the figure the hook hands
+//    the boundary is the split's, so what survives is the tail's 20 000 — not the 6 000 the old wiring
+//    stopped at, and not the whole branch either.
+const wideBranch: SessionEntry[] = [
+	hookBranch[0],
+	hookBranch[1],
+	hookBranch[2],
+	...Array.from({ length: 200 }, (_, i) => fat(`f${i}`, i + 3)),
+];
+const wideTokens = wideBranch.reduce((sum, e) => sum + entryTokens(e), 0);
+const wideCtx = {
+	...ctx,
+	model: { id: "wide", provider: "test", contextWindow: 168_000 },
+	sessionManager: {
+		getSessionId: () => "01234567",
+		getBranch: () => wideBranch,
+		getEntry: (id: string) => wideBranch.find((e) => (e as { id: string }).id === id),
+	},
+};
+const wide = await compact(
+	{
+		branchEntries: wideBranch,
+		preparation: preparation("f0", wideTokens + 2_500),
+		reason: "overflow",
+		willRetry: true,
+		signal: new AbortController().signal,
+	},
+	wideCtx,
+);
+// The wide branch's cut is made by the backward walk, not by the request cap, so there is no
+// `compact_trimmed` line for it — the split it was walked with is on the `compact` line instead.
+const wideLine = readFileSync(join(process.env.PI_HY_MEMORY_STATE as string, "audit.ndjson"), "utf8")
+	.split("\n")
+	.filter(Boolean)
+	.map((line) => JSON.parse(line) as Record<string, unknown>)
+	.filter((a) => a.event === "compact")
+	.at(-1);
+const wideKept = wideBranch
+	.slice(wideBranch.findIndex((e) => (e as { id: string }).id === wide?.compaction?.firstKeptEntryId))
+	.reduce((sum, e) => sum + entryTokens(e), 0);
+check("the wide-window overflow still returns a compaction", wide?.compaction !== undefined, true);
+check(
+	"and it delivers the tail the split asked for, not the ceiling the old wiring stopped at",
+	{
+		firstKept: wide?.compaction?.firstKeptEntryId,
+		tail: wideLine?.tailTokens,
+		note: wideLine?.summaryTokenBudget,
+		keptTokens: wideKept,
+	},
+	// 168 000 − 1 000 reserve − 2 500 overhead − 1 500 slack = 163 000; the tail asked 0.4 × 161 500
+	// and the 20 000 ceiling is what bound it. The walk stops at the first entry that would cross, so
+	// nineteen entries survive — `entryTokens` prices each at 1 005 (4 004 characters over 4, plus its
+	// own overhead), and the twentieth would have reached 20 100. 19 095 tokens of verbatim conversation
+	// where the old wiring handed over 6 000 and left the rest of the room unbudgeted.
+	{ firstKept: "f181", tail: 20_000, note: 12_000, keptTokens: 19_095 },
+);
+check("and that tail is past the 6 000 the old wiring delivered", wideKept > 6_000, true);
+check(
+	"and the request after it still fits the window",
+	wideKept + (wideLine?.summaryTokenBudget as number) + (wideLine?.digestBudget as number) + 2_500 + 1_000 < 168_000,
+	true,
+);
+check("and a cut the walk made is not reported as a budget trim, so no digest is claimed", wideLine?.digestBudget, 0);
 
 for (const line of audit.filter((a) => a.event === "compact_trimmed")) {
 	console.log(
