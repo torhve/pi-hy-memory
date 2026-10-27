@@ -18,3 +18,7 @@ The same applies to anything that publishes or rewrites shared state:
   layout table in `README.md` covers the files.
 - No private infrastructure in the diff: no hostnames, IP addresses, absolute paths under a
   home directory, or credentials.
+
+
+## Do not add plans to git unless specifically ask to do
+
