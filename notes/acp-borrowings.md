@@ -8,7 +8,7 @@ Sources:
 - ACP sidecar contract — <https://github.com/ranxianglei/billion-context-pi/blob/master/schema/bcp-block-v1.json>
 - pi extension API — `node_modules/@earendil-works/pi-coding-agent/dist/core/extensions/types.d.ts`
 - pi-ai usage type — `node_modules/@earendil-works/pi-ai/dist/types.d.ts:279`
-- this repo — `README.md`, `DESIGN.md`, `TODO.md`, `src/index.ts`, `src/chain.ts`, `src/serialize.ts`
+- this repo — `README.md`, `DESIGN.md`, the local task list (`TODO.md`, untracked scratch), `src/index.ts`, `src/chain.ts`, `src/serialize.ts`
 
 ## The one fact that dominates the comparison
 
@@ -58,7 +58,7 @@ falls back instead of crashing) and gates replacement of the four load-bearing r
 `acknowledgePromptsRisk`.
 
 Our two prompts are frozen in `src/prompts.ts` and they have to resemble the Mem0/MemOS/Hy-Memory
-harness prompts the writer was trained on, so every A/B arm in `TODO.md` currently means editing
+harness prompts the writer was trained on, so every A/B arm in the local task list currently means editing
 `src/` and re-capturing. Packs make an arm a config change:
 `~/.pi/agent/pi-hy-memory/prompts/<name>.json`, selected by `writerPromptPack`, default = the
 built-in bytes, loud warning when a pack overrides the extract prompt (that prompt is what keeps

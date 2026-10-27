@@ -1,7 +1,7 @@
 # Experiment metrics contract
 
 Every runner (`dev/run.ts`) writes `out/<runId>/metrics.json`: one object per
-run, one row per chunk. All experiment gates in `TODO.md` are computed from
+run, one row per chunk. All experiment gates in the local task list are computed from
 this file so two runs are comparable word-for-word.
 
 ```jsonc

@@ -1,10 +1,11 @@
 # Experiments log
 
-All runs use the committed harness (`dev/TODO.md` phases) against the captured
-corpus (5 chunks from two real sessions: short planning, dense implementation
-×2, many-draft, follow-up). Bank is cumulative and corpus order is sequential,
-exactly like production. Raw transcripts and per-run outputs stay local
-(`captures-dev/`, `out/` — gitignored); this file records only numbers.
+All runs use the committed harness against the captured corpus (5 chunks from two real sessions: short
+planning, dense implementation ×2, many-draft, follow-up). Bank is cumulative and corpus order is
+sequential, exactly like production. Raw transcripts and per-run outputs stay local (`captures-dev/`,
+`out/` — gitignored); this file records only numbers. Where an entry cites a `plan-*.md` name or a task
+number, that is the maintainer's local scratch — neither is tracked — and the numbers it led to are the
+ones recorded here.
 
 ## Run: `baseline-remote` (2026-10-19)
 

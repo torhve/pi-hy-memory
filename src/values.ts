@@ -7,8 +7,8 @@
  * value is the part of a claim that is not vocabulary — a number, a flag, a dotted file name, a
  * path, an underscored identifier — and it is the part a reworded draft most often drops.
  *
- * `TODO.md` 7.18 prices this as a merge gate: an UPDATE is allowed only when the draft restates
- * every value its target carries. The measurement lives in `dev/guard-fold-report.ts`; the gate
+ * Task 7.18 of the local task list prices this as a merge gate: an UPDATE is allowed only when the
+ * draft restates every value its target carries. The measurement lives in `dev/guard-fold-report.ts`;
  * itself is `mergeValueGate` in `pipeline.ts`, and this file is the single definition both read.
  */
 
