@@ -24,14 +24,21 @@ export type HyConfig = {
 	/** Share reserved for old, never-superseded facts. */
 	summaryFoundationShare: number;
 	/**
-	 * Ceiling on the verbatim tail a compaction keeps. It is a ceiling, not a delivered size: the split
-	 * hands the note its configured maximum first — subject to leaving `COMPACT_KEEP_MIN_TOKENS` for the
-	 * tail — and the tail takes what remains, so a 24 k window delivers a 1 000-token tail and only a
-	 * window of ~36 k or more delivers this much. The tail is verbatim conversation and cannot be
-	 * rebuilt; the note is re-rendered from the fact bank, so the note is what gives way when the room
-	 * cannot pay both.
+	 * Ceiling on the verbatim tail a compaction keeps. It is a ceiling, not a delivered size:
+	 * `keepRecentShare` decides how much of the room the tail asks for, and the walk back through
+	 * the branch stops there rather than at this number — so a 24 k window delivers a share of its
+	 * room and a 168 k window delivers this much, and the leftover room is left unbudgeted instead
+	 * of being spent on conversation the next turn will truncate anyway.
 	 */
 	keepRecentTokens: number;
+	/**
+	 * Share of the room left after pi's reserve, the measured overhead and the digest reservation
+	 * that the tail asks for, before `keepRecentTokens` caps it. The tail is verbatim conversation
+	 * and nothing can rebuild it; the note is re-rendered from the fact bank at every compaction, so
+	 * the note takes what the tail left, up to `summaryMaxTokens`, and gives way first. Accepted range is
+	 * 0…1 and the split clamps it there: 0 leaves the note the whole room, 1 leaves it the 500-token floor.
+	 */
+	keepRecentShare: number;
 	/**
 	 * How much of the compaction budget the overflow digest may use: when the kept tail has to be cut
 	 * to fit the model's window, the entries the writer never read are folded into the summary as a
@@ -181,11 +188,12 @@ export const SETTING_DEFAULTS: HyConfig = {
 	maxChunkTokens: 6000,
 	maxEntryChars: 3000,
 	bankMaxTokens: 60000,
-	summaryMaxTokens: 8000,
+	summaryMaxTokens: 12000,
 	foundationAfterChunks: 8,
 	summaryConstraintShare: 0.1,
 	summaryFoundationShare: 0.35,
-	keepRecentTokens: 6000,
+	keepRecentTokens: 20000,
+	keepRecentShare: 0.4,
 	overflowDigestTokens: 1500,
 	candidateLimit: 24,
 	hifiCompaction: false,

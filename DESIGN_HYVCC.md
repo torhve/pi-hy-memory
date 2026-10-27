@@ -181,43 +181,47 @@ alone is 328 tokens in that window — two fact lines — and 1 032–1 167 in t
 
 ### Tail and digest: what the budget arithmetic actually delivers
 
-`keepRecentTokens: 6000` is an **upper bound, not a delivered size**. The shipped split is
-`available = window − reserve − measuredOverhead − 1500`, digest first, summary at its cap, tail getting
-whatever was left, now living in `src/budget.ts` (`:92-106`) instead of inline in `boundaryFor`
-(`HEAD:src/index.ts:1158-1175`). The table below is recomputed from `budgetSplit` itself by
-`tools/budget-split-check.ts`, which reproduces every row at pi's default `reserveTokens: 16 384` and
-pins that its tail column is the *delivered* tail — the room the split leaves, capped by
-`keepRecentTokens`. Computed from those formulas — arithmetic, not a measurement:
+`keepRecentTokens: 20000` is an **upper bound, not a delivered size**, and since 2026-10-27 it is not
+the number the tail asks for either. The shipped split (`src/budget.ts:96-126`) is
+`available = window − reserve − measuredOverhead − 1500`, a digest reservation priced by a probe, then
+the **tail** asking `keepRecentShare` (0.4) of what the furniture left — floored at 1 000 while the room
+can pay one, capped by `keepRecentTokens` and by the note's 500-token minimum — and the **note** taking
+what the tail left, up to `summaryMaxTokens: 12000`. The table below is recomputed from `budgetSplit`
+itself by `tools/budget-split-check.ts`, which reproduces every row at pi's default
+`reserveTokens: 16 384` and pins that the tail column is the *delivered* tail: what the backward walk is
+asked to stop at, not a ceiling it happens to hit. Arithmetic, not measurement:
 
-| window | overhead | available | tail delivered | summary | digest |
+| window | overhead | available | tail delivered | note | digest |
 |---|---|---|---|---|---|
-| 16 000 | 2 000 | 0 | 0 (newest entry only) | 500 | 0 |
-| 24 000 | 2 000 | 4 116 | 1 000 | 2 087 | 1 029 |
-| 32 000 | 2 000 | 12 116 | 2 616 | 8 000 | 1 500 |
-| 32 000 | 9 600 (30 % cap) | 4 516 | 1 000 | 2 387 | 1 129 |
-| 36 000 | 2 000 | 16 116 | **6 000** | 8 000 | 1 500 |
-| 168 000 | 2 016 | 148 100 | 6 000 | 8 000 | 1 500 |
+| 16 000 | 2 000 | 0 | 0 (newest entry only) | 500 | 0 — `underprovisioned` |
+| 24 000 | 2 000 | 4 116 | 1 235 | 1 852 | 1 029 |
+| 32 000 | 2 000 | 12 116 | 4 246 | 6 370 | 1 500 |
+| 32 000 | 9 600 (30 % cap) | 4 516 | 1 355 | 2 032 | 1 129 |
+| 36 000 | 2 000 | 16 116 | 5 846 | 8 770 | 1 500 |
+| 168 000 | 2 016 | 148 100 | **20 000** | 12 000 | 1 500 |
+| 200 000 | 2 000 | 180 116 | **20 000** | 12 000 | 1 500 |
+| 262 144 | 2 016 | 242 244 | **20 000** | 12 000 | 1 500 |
 
-- Under those committed formulas the tail reaches its configured 6 000 only at `available ≥ 15 500` — a ~36 k window with a small
-  prompt, or ~48 k once overhead runs to the 30 % cap. Below `available 10 500` it is exactly
-  1 000. `trimKeptTail` always keeps the newest entry (`src/entries.ts:243-247`), so a tail never
-  goes empty — but a single 100 k-token tool result is a tail the window cannot hold, which the
-  code reports as the larger-context case rather than fixing.
-- The shipped code keeps the comment "the summary gives up its configured maximum before the tail gives
-  up its entries" (`src/budget.ts:100-101`), and the arithmetic agrees with it above `available 10 500`:
-  the summary clamps at its 8 000 cap there and the tail absorbs the shortfall, while below
-  `available 10 500` the summary is what shrinks and the tail sits at exactly 1 000. A variant was
-  written during this session that inverted it — the note hoarding a 500-token minimum while the tail
-  asked for `COMPACT_TAIL_SHARE = 0.35` of the room — and **reverted the same day**, on the measured
-  difference between the two. They agree wherever the room is too small to pay both and wherever it is
-  large enough to pay both with the note at its cap. They differ in the middle: at `available 12 116`
-  the shipped split gives note 8 000 and tail 2 616, the variant gave note 6 900 and tail 3 716 —
-  **1 100 tokens, 14 % of the note, moved from the memory to verbatim conversation the session never
-  asked for**. The fixture's sessions wanted tails of 10 120–39 922 estimated tokens at a lagging
-  writer's watermark, far above either number, and what actually fixed that thrash was the
-  `maxKeepTokens` request cap (`src/entries.ts`), not a tail share. The lesson for the skeleton is the
-  ordering itself: a block that competes in the 10 500–15 500 band must take its share from the note's
-  maximum, not from the tail's entries.
+- The tail reaches its 20 000 ceiling at `room ≥ 50 000`, which a 168 k window clears comfortably, and
+  it is the share that binds between `room 2 500` and that point. `trimKeptTail` always keeps the newest
+  entry (`src/entries.ts:243-247`), so a tail never goes empty — but a single 100 k-token tool result is
+  a tail the window cannot hold, which the code reports as the larger-context case rather than fixing.
+- Room past both ceilings is deliberately unbudgeted: on a 168 k window the split spends 33 500 of
+  146 600 and hands the rest back. Spending it would fill the window to pi's trigger and put the next
+  request straight back on the threshold, and pi would rather have a 400-token summary than a failed
+  compaction.
+- **The ordering was the decision, and it was reversed once and then shipped.** An earlier shape let
+  the note take its configured maximum first and gave the tail the remainder; a 0.35-share variant was
+  written and **reverted the same day** on the measured difference — at `available 12 116` it moved
+  1 100 tokens (14 % of the note) out of the memory and into verbatim conversation nobody had asked
+  for, and the thrash that motivated it was fixed by the `maxKeepTokens` request cap, not by a share
+  (`src/entries.ts`). What changed the judgement was the delivery figure, not the argument: the note-first
+  split handed the 168 k window a room of 138 600 and delivered a tail of 6 000, because both ceilings
+  were absolute — and the note is re-rendered from the bank on disk at every compaction while the tail
+  is nothing's to rebuild. Option C prices the tail first *and raises both ceilings* (6 000 → 20 000,
+  8 000 → 12 000), so the note at a wide window is larger than under the old defaults while the tail
+  stops hoarding room it cannot use. The lesson for the skeleton still holds: a block that competes in
+  the small-room band must take its share from the note's maximum, not from the tail's entries.
 - Absolute caps do not survive the arithmetic. On a 32 k window with overhead at the cap, the
   summary is 2 387 tokens, so `skeleton 1 200 + brief 1 500` is 2 700 — **the facts go negative**.
   Caps must be derived from `summaryTokenBudget`, not declared: `skeleton = min(1 200,

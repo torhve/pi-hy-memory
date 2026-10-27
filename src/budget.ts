@@ -1,14 +1,18 @@
 /**
  * How a compaction splits the room the next request has: tail, digest, note.
  *
- * The order is the whole design. The kept tail is verbatim conversation and nothing can
-reconstruct it, so it is held at its floor (`COMPACT_KEEP_MIN_TOKENS`) and the note gives up its
-configured maximum before the tail gives up entries — the note is re-rendered from the fact bank on
-disk at every compaction, so it is the part that can give way. What this package adds is the digest:
-the reservation is probed instead of assumed. A boundary is computed with the full share, the drop set
-it actually produces is priced, and the reservation may only fall to that price — never above
-`overflowDigestTokens`, never above a quarter of the room. A compaction that trims nothing then pays
-nothing for the digest, and a trim that needs the whole share still gets it.
+ * The order is the whole design. The tail asks first: a share (`keepRecentShare`) of the room the
+ * furniture left, held at least at `COMPACT_KEEP_MIN_TOKENS` while the room can pay for one, and
+ * capped by `keepRecentTokens`. It is verbatim conversation and nothing can rebuild it. The note
+ * takes what the tail left, up to `summaryMaxTokens`, and gives way first — it is re-rendered from
+ * the fact bank on disk at every compaction. When the room cannot pay both, the note keeps its
+ * minimum and `underprovisioned` says so rather than claiming a split that fits.
+ *
+ * What this package adds on top of that order is the digest: the reservation is probed instead of
+ * assumed. A boundary is computed with the full share, the drop set it actually produces is priced,
+ * and the reservation may only fall to that price — never above `overflowDigestTokens`, never above
+ * a quarter of the room. A compaction that trims nothing then pays nothing for the digest, and a
+ * trim that needs the whole share still gets it.
  *
  * Everything here is pure and takes the window from pi plus the measured overhead, so
  * `tools/budget-split-check.ts` can table-test the arithmetic. Token figures are the
@@ -48,15 +52,15 @@ export type BudgetInput = {
 	/** What the request carries that is not conversation: prompt, tool schemas, bookkeeping. */
 	overheadTokens: number;
 	/**
-	 * How far back the kept tail walks when nothing else constrains it: the working-set preference
-	 * from config. It is not the request cap — `tailTokens` below is, and the difference between the
-	 * two is what a trim reports as dropped, digests, and records as a gap. Folding the cap into this
-	 * walk instead makes the trim silent.
+	 * How much of the room the tail asks for before this ceiling caps it. It is a ceiling, not the
+	 * number the tail delivers on a small window, and it is not the request cap either —
+	 * `tailTokens` below is, and the walk back through the branch stops at that.
 	 */
 	keepRecentTokens: number;
+	/** The share of the room `keepRecentTokens` caps. */
+	keepRecentShare: number;
 	summaryMaxTokens: number;
 	overflowDigestTokens: number;
-	/**
 	/**
 	 * Digest room carried in from the previous boundary probe. Omitted on the first pass, which is
 	 * the full share; every later pass can only price it down to what the drop set costs.
@@ -97,19 +101,33 @@ export function budgetSplit(input: BudgetInput): BudgetSplit {
 	// value that arrives here is a price a probe measured, so it can only land below this ceiling.
 	const digestCap = Math.min(input.overflowDigestTokens, Math.floor(available / 4));
 	const digestTokens = Math.max(0, Math.min(digestCap, input.digestTokens ?? digestCap));
-	// The note gives up its configured maximum before the tail gives up its entries: whenever the room
-	// can pay it, the tail keeps COMPACT_KEEP_MIN_TOKENS of verbatim conversation.
+	const room = available - digestTokens;
+	// The tail asks for a share of what the furniture left, and it is never asked for less than the
+	// floor while the room can pay for one. Then two ceilings clamp it: `keepRecentTokens`, and the
+	// note's minimum — a room this small keeps a coherent note over two messages of exact text, and
+	// `underprovisioned` says the compaction cannot clear the threshold instead of pretending the
+	// split worked.
+	const tailAsk = Math.max(
+		COMPACT_KEEP_MIN_TOKENS,
+		// The share is clamped rather than trusted: 0 is "the note may have everything", 1 is "the tail
+		// takes all but the note's minimum", and anything outside that range is a config mistake that
+		// should not turn into a negative budget.
+		Math.round(Math.min(1, Math.max(0, input.keepRecentShare)) * room),
+	);
+	const tailTokens = Math.max(0, Math.min(input.keepRecentTokens, tailAsk, room - COMPACT_SUMMARY_MIN_TOKENS));
+	// Whatever the tail did not ask for belongs to the note, up to its configured maximum. The note
+	// is re-rendered from the fact bank on disk at every compaction; the tail is the part nothing can
+	// rebuild, which is why it is priced first.
 	const summaryTokenBudget = Math.max(
 		COMPACT_SUMMARY_MIN_TOKENS,
-		Math.min(input.summaryMaxTokens, available - digestTokens - COMPACT_KEEP_MIN_TOKENS),
+		Math.min(input.summaryMaxTokens, room - tailTokens),
 	);
-	const tailTokens = Math.max(0, available - digestTokens - summaryTokenBudget);
 	return {
 		available,
 		digestTokens,
 		tailTokens,
 		summaryTokenBudget,
-		underprovisioned: available < COMPACT_KEEP_MIN_TOKENS + COMPACT_SUMMARY_MIN_TOKENS,
+		underprovisioned: room < COMPACT_KEEP_MIN_TOKENS + COMPACT_SUMMARY_MIN_TOKENS,
 	};
 }
 
@@ -226,7 +244,11 @@ function probe(
 ): CompactionBoundary {
 	return compactionBoundary(args.entries, {
 		cursorId: args.cursorId,
-		keepRecentTokens: args.base.keepRecentTokens,
+		// The walk stops where the split decided the tail is allowed to reach, so the number the
+		// share computed is the number delivered — the config ceiling is applied in `budgetSplit`,
+		// not here. `maxKeepTokens` is the same figure: past it the trim is the budget's doing, and
+		// a cut the walk made on its own stays a working-set choice rather than a reported trim.
+		keepRecentTokens: split.tailTokens,
 		proposedId: args.proposedId,
 		maxUncoveredTokens: args.maxUncoveredTokens,
 		maxKeepTokens: split.available === undefined ? undefined : split.tailTokens,

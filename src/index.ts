@@ -1106,11 +1106,13 @@ export default function piHyMemory(pi: ExtensionAPI): void {
 		 * rather than a token count.
 		 */
 		const boundaryFor = (list: SessionEntry[]) => {
-			// What the next request can actually hold. `keepRecentTokens` is a working-set heuristic;
-			// the window is a hard limit, and a compaction that leaves the request oversized is not a
-			// recovery — it is the 400 the provider answers with. So the window is split between the
-			// three things the retry sends: the kept tail, the summary, and the digest of whatever the
-			// cut removes that the writer never read.
+			// What the next request can actually hold. The window is a hard limit, and a compaction
+			// that leaves the request oversized is not a recovery — it is the 400 the provider
+			// answers with. So the window is split between the three things the retry sends: the kept
+			// tail, the summary, and the digest of whatever the cut removes that the writer never
+			// read. `budgetSplit` decides the shares; `keepRecentShare` and `keepRecentTokens` are
+			// the tail's ask and its ceiling, and the backward walk stops at the figure the split
+			// produced.
 			const windowTokens = ctx.model?.contextWindow ?? 0;
 			const reserve = event.preparation?.settings?.reserveTokens ?? 0;
 			const branchTokens = list.reduce((sum, e) => sum + entryTokens(e), 0);
@@ -1144,6 +1146,7 @@ export default function piHyMemory(pi: ExtensionAPI): void {
 					reserveTokens: reserve,
 					overheadTokens,
 					keepRecentTokens: config.keepRecentTokens,
+					keepRecentShare: config.keepRecentShare,
 					summaryMaxTokens: config.summaryMaxTokens,
 					overflowDigestTokens: config.overflowDigestTokens,
 				},
@@ -1409,6 +1412,7 @@ export default function piHyMemory(pi: ExtensionAPI): void {
 				keptTokens: choice.used,
 				windowTokens,
 				overheadTokens,
+				availableTokens: split.available,
 				maxKeepTokens,
 				digestEntries,
 				digestTokens: digest ? estimateTokens(digest) : 0,
@@ -1573,6 +1577,17 @@ export default function piHyMemory(pi: ExtensionAPI): void {
 			summaryTokens: estimateTokens(summary),
 			summaryKind: checkpoint ? "hifi" : "render",
 			fileOps: { read: files.readFiles.length, modified: files.modifiedFiles.length },
+			/**
+			 * The split this compaction was actually made with. A compaction that trims nothing emits
+			 * no `compact_trimmed`, and then the arithmetic behind the cut is invisible — which is the
+			 * one thing a later reader needs to know about a tight window.
+			 */
+			overheadTokens,
+			availableTokens: split.available,
+			tailTokens: split.tailTokens,
+			summaryTokenBudget,
+			digestBudget,
+			underprovisioned: split.underprovisioned,
 		});
 		mirror();
 		void ctx;

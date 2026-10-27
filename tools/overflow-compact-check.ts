@@ -182,10 +182,12 @@ const ctx = {
 	thinkingLevel: "off",
 };
 
-// 12 000 − 1 000 reserve − overhead = what the retry can hold. The overhead is measured, not
-// assumed: pi counts the whole request, this branch counts only the conversation, and the fixture
-// states that gap as 2 500 tokens of prompt and schemas. So 8 500 available: 1 500 to the digest,
-// 6 000 to the summary, 1 000 to the kept tail. Entries are ~1 000 tokens, so the tail is cut to one.
+// 12 000 − 1 000 reserve − overhead − 1 500 slack = what the retry can hold. The overhead is
+// measured, not assumed: pi counts the whole request, this branch counts only the conversation, and
+// the fixture states that gap as 2 500 tokens of prompt and schemas. So 7 000 available: 1 500 asked
+// for the digest, the tail asking 40% of the rest (2 200), the note taking 3 300. Entries are ~1 000
+// tokens, so the tail holds two. The digest then costs 417, which releases room, and the re-split
+// raises the tail figure to 2 628 — the price of a trim is paid back when it turns out smaller.
 const branchTokens = hookBranch.reduce((sum, e) => sum + entryTokens(e), 0);
 const preparation = (firstKeptEntryId: string, tokensBefore = branchTokens + 2_500) => ({
 	firstKeptEntryId,
@@ -244,7 +246,9 @@ check(
 	hookBranch.some((e) => (e as { id: string }).id === overflow?.compaction?.firstKeptEntryId),
 	true,
 );
-check("the newest entry is kept", overflow?.compaction?.firstKeptEntryId, "b7");
+// The tail is priced before the note, so at this window it holds two entries rather than the one the
+// old split could afford. The newest entry survives either way; what moved is the cut's left edge.
+check("the newest entry is kept, and one more with it", overflow?.compaction?.firstKeptEntryId, "b6");
 
 // 5. A model with no known window keeps the previous behaviour.
 const noWindow = await compact(
@@ -285,17 +289,45 @@ const audit = readFileSync(join(process.env.PI_HY_MEMORY_STATE as string, "audit
 const trimmedLine = audit.find((a) => a.event === "compact_trimmed");
 check("the manual deferral is audited", audit.filter((a) => a.event === "compact_deferred").length >= 1, true);
 check("the trim is audited", trimmedLine?.reason, "overflow");
-check("the trim leaves a tail inside the kept share", (trimmedLine?.keptTokens as number) <= 1500, true);
-check("the digest is bounded by its own budget", (trimmedLine?.digestTokens as number) <= 1500, true);
-check("and it covers the unread entries the trim removed", trimmedLine?.digestEntries, 7);
-check("the overhead is pi's count minus this branch", trimmedLine?.overheadTokens, 2500);
-const inflatedLine = audit.filter((a) => a.event === "compact_trimmed").at(-1);
-check("and capped at a third of the window", inflatedLine?.overheadTokens, 3600);
-// The newest entry survives even when it alone exceeds the kept share, so the share is a target,
-// not a ceiling: what the capped run must do is shed more than it keeps.
+// The share is whatever the split decided for this window, so the audit is checked against itself:
+// the kept tail must sit inside the figure the same line reports as the cap.
 check(
-	"the capped run shed more than it kept",
-	(inflatedLine?.trimmedTokens as number) > (inflatedLine?.keptTokens as number),
+	"the trim leaves a tail inside the share the split set",
+	(trimmedLine?.keptTokens as number) <= (trimmedLine?.maxKeepTokens as number),
+	true,
+);
+// The literals below are what this fixture happens to deliver. These invariants are the reason a change
+// to any of them would be a change to the split and not a coincidence: the three parts the audit names
+// must fit the room the same line names, the note keeps its floor, and the probe settled on one price.
+const parts =
+	(trimmedLine?.maxKeepTokens as number) +
+	(trimmedLine?.summaryTokens as number) +
+	(trimmedLine?.digestBudget as number);
+check(
+	"the three parts the split named fit the room it was given",
+	parts <= (trimmedLine?.availableTokens as number),
+	true,
+);
+check("and the note kept its floor", (trimmedLine?.summaryTokens as number) >= 500, true);
+check("and the probe settled on one digest price", trimmedLine?.probeConverged, true);
+check("the digest is bounded by its own budget", (trimmedLine?.digestTokens as number) <= 1500, true);
+check("and it covers the unread entries the trim removed", trimmedLine?.digestEntries, 6);
+check("the overhead is pi's count minus this branch", trimmedLine?.overheadTokens, 2500);
+// The overhead is measured, then capped: a count far larger than this branch can account for must not
+// be charged entirely to the prompt. The cap is visible on the compaction line, because a tighter
+// budget does not necessarily mean a trim — the walk stops where the tail figure says it does.
+const compactLines = audit.filter((a) => a.event === "compact");
+check("and the inflated count was capped at a third of the window", compactLines.at(-1)?.overheadTokens, 3600);
+// The three compactions in this fixture are the honest overflow, an unknown window, and the inflated
+// count, so the honest one is the first line and the inflated one the last.
+check(
+	"the inflated count was given less room than the honest one",
+	(compactLines.at(-1)?.availableTokens as number) < (compactLines[0]?.availableTokens as number),
+	true,
+);
+check(
+	"and it was walked with a smaller tail share than the honest run",
+	(compactLines.at(-1)?.tailTokens as number) < (compactLines[0]?.tailTokens as number),
 	true,
 );
 

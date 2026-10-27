@@ -75,11 +75,12 @@ nothing backs off between turns. The audit records `write_cooldown { waitS }` an
 | `maxChunkTokens` | `6000` | chunk budget per write. Estimated at chars/4, and code-heavy chunks tokenise at ~1.4–1.5× that, so 6 000 is ~9 000 real prompt tokens. Was 24 000: one wide window found 41 facts over three captures, five ~4 500-token windows found 120 for +5 % input tokens and half the wall time (see "Chunk size") |
 | `maxEntryChars` | `3000` | per-entry truncation inside a chunk, so one huge tool output cannot consume the whole budget |
 | `bankMaxTokens` | `60000` | ceiling on the *active* bank — the store, not the summary (the *second* footer bar). Reaching it retires facts by recency and writes an `hy.evict` record naming every id it took; a retired fact stays in `hy_recall`'s query results, marked with what dropped it, and a reload re-applies the same rule. Most sessions end far below it; the longest measured session (159 writes, read from a frozen snapshot) reached it and retired 631 facts, leaving 820 current. `poolMaxTokens` from older configs is this key |
-| `summaryMaxTokens` | `8000` | what a compaction summary renders, selected out of the bank (see DESIGN.md § "The bank is a store; the summary is a selection"). ~72 tokens per fact, and the rendered summary is ~1.2× this |
+| `summaryMaxTokens` | `12000` | ceiling on what a compaction summary renders, selected out of the bank (see DESIGN.md § "The bank is a store; the summary is a selection"). The tail is priced first, so this is the most the note may take of what the tail left rather than a size it always reaches — below a 32 k window the tail's ceiling and this one bind together. ~72 tokens per fact, and the rendered summary is ~1.2× this |
 | `foundationAfterChunks` | `8` | a fact this many chunks old and never superseded counts as a *foundation* for the summary selection |
 | `summaryConstraintShare` | `0.1` | share of the summary budget reserved for facts whose evidence was a user turn |
 | `summaryFoundationShare` | `0.35` | share reserved for old, never-superseded facts |
-| `keepRecentTokens` | `6000` | raw entries kept verbatim by a compaction. The cut is clamped back to the write watermark so nothing unread is dropped, but only by up to `maxChunkTokens`; past that a manual or threshold compaction first waits for the write in flight, up to `compactWaitMs`, and is then handed back to pi, and an overflow cut is taken anyway with the unread range digested into the summary (see "Compaction: who decides when") |
+| `keepRecentTokens` | `20000` | ceiling on the raw entries a compaction keeps verbatim; `keepRecentShare` decides how much of the room the tail asks for, and the backward walk stops at that figure rather than here. The cut is clamped back to the write watermark so nothing unread is dropped, but only by up to `maxChunkTokens`; past that a manual or threshold compaction first waits for the write in flight, up to `compactWaitMs`, and is then handed back to pi, and an overflow cut is taken anyway with the unread range digested into the summary (see "Compaction: who decides when") |
+| `keepRecentShare` | `0.4` | share of the room left after pi's reserve, the measured overhead and the digest reservation that the tail asks for, before `keepRecentTokens` caps it. The tail is verbatim conversation and nothing can rebuild it; the note is re-rendered from the bank at every compaction, so the note takes what the tail left and gives way first. Never asked below 1 000 tokens while the room can pay one. Accepted range `0`–`1`, clamped by the split |
 | `overflowDigestTokens` | `1500` | share of the window an overflow digest may take. When the kept tail has to be cut to fit the model's context window, the entries the writer never read are folded into the summary as a bounded digest rather than vanishing; the cut is also recorded as a gap in the ledger. `0` cuts without a digest |
 | `candidateLimit` | `24` | bank entries shown to the reconcile call, and the per-draft retrieval depth. Was 12: measured on the extended corpus, 12 starved 2.2 % of drafts once the bank passed ~110 entries; 24 starves none for +24 % reconcile input tokens |
 | `candidateRenderMode` | `perDraft` | how the `candidateLimit` window is chosen: `perDraft` guarantees every draft its own best bank match before the cap fills; `union` shows the score-sorted union (legacy) |
@@ -165,9 +166,9 @@ conversation shape (`RESULTS.md`).
 ## Compaction: who decides when
 
 **pi decides.** The extension never triggers a compaction — it only supplies the summary
-through `session_before_compact` (`renderMemory(bank, summaryMaxTokens)`), sets
-`firstKeptEntryId` itself (so this extension's `keepRecentTokens` wins over pi's
-`compaction.keepRecentTokens`), and logs the event. If the bank is empty it returns
+through `session_before_compact` (`renderMemory(bank, summaryMaxTokens)`), sets `firstKeptEntryId`
+itself from the split it computes — so this extension's tail share wins over pi's
+`compaction.keepRecentTokens` — and logs the event. If the bank is empty it returns
 nothing and pi summarises with its own model.
 
 That cut is pi's, with one adjustment: it is clamped back to the write watermark so
@@ -215,13 +216,23 @@ before the cut is chosen: kept tail, summary and digest all fit inside
 count of the request minus this branch's own token sum, floored at 2000 and capped at a third of the
 window, since that gap is prompt and tool schemas only partly. Guessing it too small is what caused
 the thrash: a compaction that misses the threshold it was meant to clear makes pi compact again.
-`keepRecentTokens` is a working-set preference and loses to that budget. Inside the split the note gives
-way first — it sheds tokens from its configured maximum before the tail gives up an entry, and the tail
-is held at 1 000 tokens whenever the room can pay that — so a small window keeps a usable working set. The
-newest entry is never dropped because pi needs a real id to cut at. Whatever the cut removes while still
-unread is digested into the summary — `overflowDigestTokens` is a ceiling, and what is spent is what the drop set costs — recorded as an `hy.gap` in the
-ledger, and audited as `compact_trimmed`, so coverage resumes at the first kept entry instead of
-claiming history the extension never sent.
+`keepRecentTokens` is a ceiling and loses to that budget. Inside the split the tail is priced first:
+`keepRecentShare` of the room the furniture left, never asked below 1 000 tokens while the room can pay
+one, capped by `keepRecentTokens` — 4 246 tokens on a 32 k window, 20 000 on a 168 k one. The note takes
+what the tail left, up to `summaryMaxTokens`, and gives way first, because it is re-rendered from the
+bank on disk at every compaction and the tail is nothing's to rebuild. Room beyond both ceilings is left
+unbudgeted on purpose: filling the window to the trigger puts the next request back on the threshold, and
+a compaction that trims every turn is worse than one that trims less and holds. The newest entry is never
+dropped because pi needs a real id to cut at. Whatever the cut removes while still unread is digested into
+the summary — `overflowDigestTokens` is a ceiling, and what is spent is what the drop set costs — recorded
+as an `hy.gap` in the ledger, and audited as `compact_trimmed`, so coverage resumes at the first kept
+entry instead of claiming history the extension never sent.
+
+Two of those figures are floors doing their work rather than bugs. The digest reservation is never more
+than a quarter of the room, so a window the reserve already ate reserves nothing at all. And when the
+room cannot pay both halves, the note keeps its 500-token minimum even though that puts the split past
+the room — which is why such a compaction reports `underprovisioned` in the audit instead of claiming it
+cleared the threshold.
 
 pi's trigger is `contextTokens > contextWindow − compaction.reserveTokens`, default
 `reserveTokens: 16384`, plus a manual `/compact` and one compact-and-retry on overflow.
@@ -292,14 +303,22 @@ does.
 
 ### `summaryMaxTokens` is window-relative
 
-The summary cap is only meaningful next to the session model's window:
+The note's ceiling is only meaningful next to the session model's window, and under the split it is a
+ceiling rather than a target: the tail is priced first, so a small window's note is smaller than the
+number configured here. With pi's default furniture (reserve 16 384, digest ceiling 1 500, tail share
+0.4, tail ceiling 20 000) and the 1 500-token slack, a ceiling of `12000` renders at most:
 
-| session window | 8 000-token summary is | comfortable range |
+| session window | the note may take | share of the window |
 |---|---|---|
-| 40 960 | 20 % — too big | 3 000–4 000 |
-| 168 000 | 4.8 % — about right | 8 000–12 000 |
-| 262 144 | 3 % | 12 000–16 000 |
-| 1 048 576 | 0.8 % | 20 000–30 000 |
+| 32 000 | 1 804 | 5.6 % |
+| 64 000 | 10 456 | 16 % |
+| 168 000 | 12 000 | 7.1 % |
+| 262 144 | 12 000 | 4.6 % |
+
+The same figures come out of `src/budget.ts` and are pinned by `tools/budget-split-check.ts`. The
+older measurement — an 8 000-token summary was 20 % of a 40 960 window and 4.8 % of a 168 000 one — is
+why the ceiling is a ceiling: the note is sized against the window the split is running in, not the
+model that happens to be answering.
 
 The cap is per session, not per model, so a config used across models should be sized
 for the *smallest* window you actually run, or split per project.
@@ -434,6 +453,10 @@ is required to use the extension.
 
 ## Layout
 
+Where a row cites a task number ("TODO 8.9"), it names an entry in the maintainer's local task list,
+which is scratch and not part of the repository. The measurement a task cites is the file named beside
+it, which is.
+
 | file | role |
 |---|---|
 | `src/types.ts` | bank entry, ledger record, draft, op |
@@ -454,7 +477,7 @@ is required to use the extension.
 | `src/chain.ts` | when a finished write is followed by another, and when a flush is accepted |
 | `src/failures.ts` | failure class, cooldown ladder, whether a chunk should shrink |
 | `src/lag.ts` | how far behind the writer is, and whether a compaction should wait for it: stage-aware ETA from the last eight writes, and the gates that make it skip (overflow, unhealthy writer, backoff, no history, ETA past the budget). Pure — pinned by `tools/lag-check.ts`, and its wiring by `tools/compaction-wait-check.ts` |
-| `src/budget.ts` | how a compaction splits the room the next request has — tail, digest, note — including who gives way (the note sheds its configured maximum before the tail gives up an entry, and the tail is owed `COMPACT_KEEP_MIN_TOKENS` whenever the room can pay it), a digest reserved at a ceiling and then priced down by a boundary probe, and the difference between the backward walk (`keepRecentTokens`) and the request cap a trim is reported from. Pure — pinned by `tools/budget-split-check.ts` |
+| `src/budget.ts` | how a compaction splits the room the next request has — tail, digest, note — including who gives way (the tail asks for `keepRecentShare` of the room and is held at `COMPACT_KEEP_MIN_TOKENS` while the room can pay one; the note takes what is left up to `summaryMaxTokens`, and below 1 500 tokens of room the tail is the half that goes under its floor, which `underprovisioned` reports), a digest reserved at a ceiling and then priced down by a boundary probe, and the difference between a cut the backward walk made and a cut the request cap made. Pure — pinned by `tools/budget-split-check.ts` |
 | `src/flush.ts` | `hy_flush`: list the unwritten entries, resolve a `to` into a monotone range |
 | `src/hifi.ts` | the optional model-written checkpoint and its fact guard |
 | `src/llm.ts` | the writer client used by the extension |
