@@ -23,11 +23,21 @@ export type HyConfig = {
 	summaryConstraintShare: number;
 	/** Share reserved for old, never-superseded facts. */
 	summaryFoundationShare: number;
+	/**
+	 * Ceiling on the verbatim tail a compaction keeps. It is a ceiling, not a delivered size: the split
+	 * hands the note its configured maximum first — subject to leaving `COMPACT_KEEP_MIN_TOKENS` for the
+	 * tail — and the tail takes what remains, so a 24 k window delivers a 1 000-token tail and only a
+	 * window of ~36 k or more delivers this much. The tail is verbatim conversation and cannot be
+	 * rebuilt; the note is re-rendered from the fact bank, so the note is what gives way when the room
+	 * cannot pay both.
+	 */
 	keepRecentTokens: number;
 	/**
 	 * How much of the compaction budget the overflow digest may use: when the kept tail has to be cut
 	 * to fit the model's window, the entries the writer never read are folded into the summary as a
-	 * bounded deterministic digest instead of disappearing. `0` drops them without a digest.
+	 * bounded deterministic digest instead of disappearing. `0` drops them without a digest. The room
+	 * is only reserved when a trim is actually going to happen, and only in the size that drop set
+	 * can use.
 	 */
 	overflowDigestTokens: number;
 	candidateLimit: number;

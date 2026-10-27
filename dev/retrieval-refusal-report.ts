@@ -32,7 +32,7 @@ import type { BankEntry, Draft, LedgerRecord } from "../src/types.js";
 
 type OpsRecord = Extract<LedgerRecord, { type: "hy.ops" }>;
 
-import { parseJsonl } from "./live-bank-report.js";
+import { parseJsonl, snapshotIdentityLine } from "./live-bank-report.js";
 
 export type RefusalReport = {
 	sessionId: string;
@@ -331,6 +331,7 @@ function main(): void {
 		: readdirSync(args.dir)
 				.filter((f) => f.endsWith(".ledger.jsonl"))
 				.map((f) => f.slice(0, -".ledger.jsonl".length));
+	console.log(`  ${snapshotIdentityLine(args.dir)}`);
 	for (const sessionId of sessions) {
 		const records = parseJsonl(readFileSync(join(args.dir, `${sessionId}.ledger.jsonl`), "utf8"));
 		let store: BankEntry[] | undefined;
@@ -384,7 +385,10 @@ function main(): void {
 		}
 		if (report.foldMatchesStore !== null)
 			console.log(
-				`  folding the whole ledger reproduces the frozen store entry for entry: ${report.foldMatchesStore}`,
+				`  folding the whole ledger reproduces the frozen store entry for entry: ${report.foldMatchesStore}` +
+					(report.foldMatchesStore === false
+						? " — expected on a session that retired facts before hy.evict records existed (TODO 6.19): the fold has no record of those retirements and hands the facts back"
+						: ""),
 			);
 	}
 }

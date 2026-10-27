@@ -28,7 +28,7 @@
  */
 
 import { createHash } from "node:crypto";
-import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { enforceBudget, foldLedger, newId } from "../src/bank.js";
 import { guardUpdateOps } from "../src/protocol.js";
@@ -49,6 +49,8 @@ export type SessionReport = {
 	trimmedSameAsStore: boolean;
 	snapshotAt: string;
 	snapshotDigest: string;
+	/** Where this copy was taken, or null when the directory has no manifest. */
+	copyIdentity: string;
 	replayMatchesFold: boolean;
 	liveActive: number;
 	liveTokens: number;
@@ -165,10 +167,45 @@ function replay(records: LedgerRecord[], valueGate: boolean) {
 
 /** How many facts survive the ceiling a reload re-applies. `enforceBudget` mutates what it is
  * given, so this counts on copies. */
+/**
+ * A snapshot directory is a *copy* of a live session's files, and it moves whenever someone takes
+ * it again. So taking one records what was copied: the directory gets a manifest naming the session,
+ * when the copy was taken and the ledger's digest. Every report that reads a copy prints it, and
+ * says plainly when there is none — otherwise a report prints numbers from a copy whose identity is
+ * unknown and reads as if they were frozen.
+ */
+export type SnapshotManifest = { session: string; takenAt: string; ledgerDigest: string };
+
+export function readSnapshotManifest(dir: string): SnapshotManifest | null {
+	const path = join(dir, "manifest.json");
+	if (!existsSync(path)) return null;
+	try {
+		const parsed = JSON.parse(readFileSync(path, "utf8")) as Partial<SnapshotManifest>;
+		return typeof parsed.session === "string" &&
+			typeof parsed.takenAt === "string" &&
+			typeof parsed.ledgerDigest === "string"
+			? { session: parsed.session, takenAt: parsed.takenAt, ledgerDigest: parsed.ledgerDigest }
+			: null;
+	} catch {
+		return null;
+	}
+}
+
+/** The line every snapshot-reading report prints before any number. */
+export function snapshotIdentityLine(dir: string, ledgerText?: string): string {
+	const manifest = readSnapshotManifest(dir);
+	if (!manifest)
+		return "copy identity: no manifest in this directory — these numbers come from a copy whose taking is not recorded";
+	const digest = ledgerText === undefined ? manifest.ledgerDigest : digestOf(ledgerText);
+	return `copy identity: taken ${manifest.takenAt}, session ${manifest.session}, ledger digest ${manifest.ledgerDigest}${digest === manifest.ledgerDigest ? "" : ` — and the files now read ${digest}, so this copy has moved since it was taken`}`;
+}
+
 /** Ties the printed numbers to one file: the same ledger text gives the same digest. */
-function digest(text: string): string {
+function digestOf(text: string): string {
 	return createHash("sha256").update(text).digest("hex").slice(0, 12);
 }
+
+export const digest = digestOf;
 
 /** Whether trimming the fold by the pool leaves exactly the ids the store marked current. */
 function sameIds(trimmed: BankEntry[], store: BankEntry[]): boolean {
@@ -277,6 +314,7 @@ export function reportSession(dir: string, sessionId: string, pool: number): Ses
 		replayMatchesFold: sameIds(shipped.bank, folded),
 		snapshotAt: String(records[records.length - 1]?.createdAt ?? ""),
 		snapshotDigest: digest(ledgerText),
+		copyIdentity: snapshotIdentityLine(dir, ledgerText),
 		liveActive: liveActive.length,
 		liveTokens: liveActive.reduce((n, e) => n + e.tokenCount, 0),
 		retiredByBudget: retired.filter((e) => e.supersedeReason === "bank budget").length,
@@ -332,6 +370,7 @@ function print(report: SessionReport, pool: number): void {
 	console.log(
 		`snapshot: last record ${report.snapshotAt || "unknown"}, ledger digest ${report.snapshotDigest} — re-run with --dir on a copy of these files to read the same numbers`,
 	);
+	console.log(`   ${report.copyIdentity}`);
 	console.log(
 		`the re-decided fold agrees with src/bank.ts foldLedger on this ledger: ${report.replayMatchesFold ? "yes" : "no"} — where it is no, the gate numbers below are an estimate, not shipped behaviour`,
 	);
@@ -355,6 +394,15 @@ function main(): void {
 			const from = join(source, `${wanted}${suffix}`);
 			if (existsSync(from)) copyFileSync(from, join(snapshot, `${wanted}${suffix}`));
 		}
+		const ledgerPath = join(snapshot, `${wanted}.ledger.jsonl`);
+		writeFileSync(
+			join(snapshot, "manifest.json"),
+			JSON.stringify({
+				session: wanted,
+				takenAt: new Date().toISOString(),
+				ledgerDigest: existsSync(ledgerPath) ? digestOf(readFileSync(ledgerPath, "utf8")) : "",
+			}),
+		);
 		dir = snapshot;
 	}
 	const pool = Number(arg("pool") ?? 60000);

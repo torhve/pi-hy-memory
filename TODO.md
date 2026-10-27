@@ -278,6 +278,37 @@ gate.
       the summary's reserved constraint slice selects on the mark and can fill from 3 facts of 820
       current (`DESIGN.md`'s earlier 2 of 408 was a smaller fold), so raising
       `summaryConstraintShare` buys nothing.
+- [x] 6.23 The frozen snapshot was not frozen — **fixed 2026-10-25**. `--snapshot` copies a live
+      session's files into `out/live-snapshot/`, and taking the copy again replaces it, so reports
+      reading that directory printed numbers from a copy of unknown vintage: 6.20b, 6.20c, 6.20d and
+      6.21 were measured on a copy of 159 writes and 820 current facts, while the copy taken later
+      holds 201 writes and 800, and a re-run printed 228 retrieval refusals where the section says
+      170. Taking a snapshot now writes `manifest.json` beside the files (session, taken-at, ledger
+      digest) and `dev/live-bank-report.ts`, `dev/user-turn-report.ts` and
+      `dev/constraint-slice-report.ts` print that line before any number; a directory with no
+      manifest says so in words, and a ledger that grew since the copy was taken says the copy has
+      moved. The published sections were re-read against the newer copy rather than rewritten: every
+      decision in them reproduces, with the counts moving together (50 rule-shaped facts against 10
+      marked, 9 of 91 shown facts displaced instead of 10 of 88; the same turn shapes; the same
+      refusal shape), and each section now names the copy its numbers came from.
+      `tools/live-bank-report-check.ts` pins the manifest, the unlabelled-copy message and the drift.
+- [x] 6.24 The same defect in the compaction-arms harness — **fixed 2026-10-27**. `dev/hyvcc-demo.ts`
+      measured a *live* pi session file (44 543 004 bytes, still being appended to) and `DESIGN_HYVCC.md`
+      published its figures, which is the same moving target 6.23 was: taking the copy showed the
+      published numbers had drifted from 21 314 entries and a 161-message window to 21 333 entries and a
+      173-message window within an hour. `--snapshot` now freezes both legs — session copy, bank copy, and a
+      manifest recording bytes, entry count and a content digest for each — because naming only the session
+      would leave the bank free to drift while the numbers looked pinned; `--fixture` measures that copy, the
+      identity line prints before the first number, and `MOVED` is reported when the files no longer match the
+      record. Comparability was measured rather than asserted: two runs against the copy wrote byte-identical
+      arm outputs. The published sections were re-derived from the copy (arms 11 182 → 10 981, block 1 268 =
+      328 sections + 939 ranked brief, tail 32 entries / ~5 301 tokens), and the harness was run against all
+      60 compactions of it: the block overshot its 1 500-token budget in 21 of the 60, the section block carried
+      no `(#N)` reference in any of them, and the tail came out identical at all 60.
+      `tools/hyvcc-fixture-check.ts` pins the copy machinery on a synthetic session in a temp directory —
+      manifest round-trip, both legs named, an identity line with no path in it, `MOVED` on a copy that moved, a
+      live file named as one, and a torn trailing record costing exactly one entry — so the guarantee holds on a
+      machine that has never held the fixture, and no published token count is asserted by any check.
 - [x] 6.20c The decision 6.20b produced — choose the constraint slice on the *statement* rather
       than the citation — **priced 2026-10-25 and not adopted.** `dev/constraint-slice-report.ts`
       runs the shipped `selectForSummary` on a shadow bank whose mark has been moved onto

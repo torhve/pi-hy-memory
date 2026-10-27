@@ -2595,6 +2595,14 @@ answers it offline: each write's bank is rebuilt with `foldLedger` — the folde
 second implementation of the write path — and the shipped candidate selection is re-run at
 24 / 48 / 96. One session, 159 writes, 1 798 drafts.
 
+Those numbers name one copy of the live session, taken at 159 writes and 1 798 drafts — and its
+digest was never recorded, which is the gap TODO 6.23 closes.
+The same report over the copy taken on 2026-10-25 at 201 writes and 2 233 drafts gives the same shape and
+the same conclusion: 501 refusals (228 target-on-screen-for-another-draft, 202 subject, 62 same batch, 9
+id-never-on-screen), and widening the view to 48 or 96 would have reached only 43 and 23 of the 228, with
+160 never reachable at any listed limit and 144 of those below the eligibility floor. Every number in this
+section is the first copy's; the report prints which copy it read.
+
 The reason itself constrains the answer. `parseOps` accepts only ids the reconcile call was shown,
 so "update target not retrieved for this draft" cannot mean *the target was missing*: it means the
 target was on screen **for another draft**, and the writer attached it to this one.
@@ -2704,6 +2712,10 @@ verdict beside each — and a reader labels them. No regex decides the answer.
 against anyone else. The list itself is reproducible — same snapshot, same 64 lines — so the labels
 can be taken again; they are not stored in the repo, only the counts below.
 
+The 64 are the narrow matches in the copy with 820 current facts. The copy taken at 201 writes offers
+50 narrow matches instead, which is the number a reader relabels next time; the rubric and the
+verdict do not depend on which copy is read.
+
 | a narrow match is | count | share of 64 |
 |-----------------|------:|------------:|
 | wholly a rule or prohibition, usable as it stands | 5 | 8 % |
@@ -2741,6 +2753,29 @@ required or would work, and neither is priced here. A shape test stays open only
 accept clause extraction or partial snippets, or a manual/protocol path, none of which the frozen
 session shows a need for.
 
+## TODO 6.23: which copy a measurement came from (2026-10-25)
+
+The frozen snapshot is not frozen. `dev/live-bank-report.ts --snapshot` copies a live session's three
+files into `out/live-snapshot/`, and taking the copy again replaces it — so a report that reads that
+directory prints numbers from a copy of unknown vintage, and the `EXPERIMENTS.md` sections written
+against an earlier copy stop matching what a re-run prints. They did: 6.20b, 6.20c, 6.20d and 6.21
+were measured on a copy of 159 writes and 820 current facts; the copy taken later holds 201 writes and
+800, and re-running prints 228 retrieval refusals where the section says 170, 50 rule-shaped facts
+where it says 64.
+
+**What shipped is an identity, not a re-measurement.** Taking a snapshot now writes
+`manifest.json` beside the files — session, when it was taken, the ledger digest — and every report
+that reads a copy prints that line before any number: `constraint-slice-report`, `user-turn-report`,
+`live-bank-report`. A directory with no manifest says so in words instead of reading as frozen, and a
+copy whose files no longer match its recorded digest says the copy has moved. `out/` is gitignored, so
+the repo holds no session data; the identity lives in the copy, and the sections above now name the
+copy their numbers came from.
+
+The sections were re-read against the newer copy rather than rewritten with its numbers: every
+decision in them reproduces (the same turn shapes, the same refusal shape, the same tenth-of-the-summary
+swap, the same verdicts), so the older counts stay published with the copy named. Where a decision would
+*not* reproduce, naming the copy is what makes that visible on the next re-run instead of silent.
+
 ## TODO 6.20c: the constraint slice priced on statement shape (2026-10-25)
 
 6.20b ended with a candidate: choose the summary's reserved constraint slice by what the statement
@@ -2748,6 +2783,11 @@ says — a rule rather than a measurement — instead of by the citation the mar
 `dev/constraint-slice-report.ts` prices that without touching the shipped selector: it runs
 `selectForSummary` on a shadow bank whose `fromUser` has been moved onto rule-shaped statements, so
 both arms are the same code with one input changed. Session `01a…1510e`, 820 current facts.
+
+The copy measured held 820 current facts and 159 writes. Re-run over the copy taken at 201 writes and
+800 current facts the decision stands and the numbers move together: 50 rule-shaped current facts
+against 10 marked, 23 of the 50 proxy-flagged, and a swap that displaces 9 of 91 shown facts and
+admits 10 — still about a tenth of the composition, still not worth reserving a slice for.
 
 | the slice selects from | marked (shipped) | rule-shaped, narrow | rule-shaped, broad |
 |------------------------|-----------------:|--------------------:|-------------------:|
@@ -2807,6 +2847,12 @@ the line each one cited and the bank to the wording each fact carries.
 
 Session `01a…1510e`, 25 captured chunks of 159 writes: 13 user turns out of 2 298 labelled turns.
 
+These numbers are one copy of that session (159 writes at the time of reading). The copy taken on
+2026-10-25 at 201 writes reproduces the turn shapes exactly — 6 go-aheads, 2 questions, 2 directives,
+3 neither over the same 25 captured chunks — and moves the bank numbers: 5 current facts carry a
+directive's wording unmarked, and of 21 marked entries 10 are current, 5 lost to a merge and 6 to the
+ceiling. The finding is unchanged; the counts belong to the copy.
+
 | the user's turn is | count | what it grounds |
 |--------------------|------:|-----------------|
 | a go-ahead ("proceed", "ok next") | 6 | nothing — there is no constraint in it |
@@ -2847,3 +2893,90 @@ count is a floor: a rule phrased without any marker word ("the pool stays as it 
 neither, and `carries a directive's wording` is three shared content words rather than a quoted
 phrase — the numbers here are about the mark's durability, and the clean claim is the 820-current
 versus 3-marked gap, not the count of directives.
+
+## Fixture: the compaction arms harness now measures a named copy (2026-10-27)
+
+`dev/hyvcc-demo.ts` synthesizes the two arms (today's summary, and the same summary with a
+deterministic block carved out of the same cap) and `DESIGN_HYVCC.md` publishes its figures. Until
+now those figures came from a *live* pi session file: 44 543 004 bytes, still being appended to
+when the harness read it. That is not reproducible, and it is not a fair A/B input either — two
+arms in separate runs would compare different bytes while both looked pinned.
+
+Taking the copy showed the drift concretely. The published figures had come from a reading of
+21 314 entries with a 161-message window; the same session, read again an hour later, holds
+21 333 entries and a 173-message window after its last compaction. Every published number moved.
+
+The copy, as the harness records it (no path, no session directory name — `tools/design-leak-check.ts`
+scans every root `.md` for exactly those shapes):
+
+```
+copy identity  hyvcc-fixture taken 2026-10-27T07:43:09.107Z, session 01a1510e…9f8e6 44 543 004 bytes
+/ 21 333 entries / sha 0fbcbdbe9a9e, bank 212 843 bytes / 293 facts (240 active, 3 user-stated)
+/ sha 47ffef72e89b
+```
+
+Both legs are named because naming only the session would leave the bank free to drift while the
+numbers looked pinned. The manifest records bytes, entry count and a content digest per leg, and
+the harness prints `MOVED` when the files it reads no longer match that record.
+
+**Comparability, measured rather than asserted.** Two runs against the copy wrote byte-identical
+`today.md`, `proposed.md`, `hazard.md` and `self-merge.md`; `report.md` differed only in the line
+naming its own output directory. So the arms are comparable across runs, which is what the spike
+gates in `DESIGN_HYVCC.md` (A: 60 compactions, B: the same corpus) need.
+
+**Re-measured against the copy** (window = last compaction; `keepRecentTokens 6000`; `--brief 1500`
+inside the 8 000 summary cap):
+
+| arm | bank facts | block | file lists | recall note | total |
+|---|---|---|---|---|---|
+| today | 11 050 | — | 131 | — | 11 182 |
+| proposed | 9 550 | 1 268 | 131 | 31 | 10 981 |
+
+Tail kept: 32 entries / ~5 301 tokens; summarized prefix: 141 entries / ~22 409 tokens; block
+composition 328 tokens of sections (0 `(#N)` refs) and 939 in the ranked brief (15 refs); compile
+11 ms, no model call. Merge hazard: 68 of 131 fact ids survive having hy's fact block handed to
+the merge as `previousSummary` (~7 535 tokens out), against 2 487 when the session's own stored
+summary is used. Self-merge: 55 of 55 lines reappear and the block grows 1 268 → 2 174 tokens.
+
+Across the copy's compactions 1, 15, 30, 45 and 60 the brief's share of the block runs 18 %, 19 %,
+31 %, 41 %, 74 % — the same shape as the earlier four-window reading, from bytes that can now be
+re-read. Two of those windows put the block past the 1 500-token budget the compiler is not
+enforcing (1 514 and 1 765), which the harness now prints instead of hiding.
+
+`tools/hyvcc-fixture-check.ts` pins this machinery on a synthetic session in a temp directory —
+manifest round-trip, both legs named, the identity line carrying no path, `MOVED` on a copy that
+moved, a live file named as one, and a torn trailing record costing exactly one entry — because
+pinning it to the 44 MB fixture would make `npm run check` pass only on this machine.
+
+**And across all 60 compactions of that copy** (one harness run per compaction, `--window <k>`,
+reports under the gitignored `out/hyvcc-sweep/all/`, nothing stored in the repo):
+
+| | range across the 60 windows |
+|---|---|
+| live messages in the window | 173 → 13 363 |
+| summarized prefix | 141 → 13 331 entries |
+| block compiled | 941 → 1 979 tokens; **past its 1 500-token budget in 21 of 60** (windows 30, 32–48, 50–52; peak 1 979 at window 44) |
+| block's split | sections 1 167 → 328 tokens, ranked brief 257 → 939; brief share 18 % → 74 % |
+| `(#N)` refs in the section block | **0 in all 60** |
+| tail kept | **32 entries / ~5 301 tokens in all 60** |
+| compile | 12 → 235 ms, no model call |
+| fact tokens given up | 1 500 in every window (19 lines at this bank) |
+| arm totals | today 11 182 → 12 478, proposed 10 763 → 12 804; proposed the *bigger* arm in 22 of 60 |
+
+Three of these are the first measurements that hold over a whole session instead of a sample. The
+block overshooting its budget is not a late-window curiosity — it happens in a third of the
+compactions, up to 1 979 against 1 500. No `(#N)` reference ever lands in the section block, so the
+release boundary (Release 1 needs no transcript corpus) is a property of the session, not of the
+window chosen to look at. The tail came out *identical* at all 60 compactions (32 entries / ~5 301
+tokens), which is the sweep's construction rather than a finding: every window's scope ends at the
+same newest suffix of the session, so varying the prefix cannot change that tail. What was checked
+directly against the copy, not read off the reports, is the one thing the constant tail exposes: the
+backward walk stops at 5 301 because the next-older entry is 1 160 tokens, which would take the tail
+to 6 461 against a 6 000 ceiling — greedy, not off-by-one, and a tail that arrives in entry-sized
+steps. The invariant worth asserting once the shipped subtraction exists is maximality (tail tokens
+≤ `keepRecentTokens`, and adding the next-older entry would exceed it), not the constant.
+
+The last row is a caution about this harness, not a finding: because it renders the facts at the
+full 8 000 cap and then *adds* the block, the proposed arm is larger than today's in 22 of the 60
+windows. The shipped shape subtracts the block from the cap first; measuring that subtraction on
+the rendered string is still open (spike D).

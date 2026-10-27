@@ -8,6 +8,9 @@ agent with tools.
   what is carried over from
   [`pi-observational-memory`](https://github.com/elpapi42/pi-observational-memory) V3.
 - [`RESULTS.md`](RESULTS.md) — the PoC run against four real captured observer chunks.
+- [`DESIGN_HYVCC.md`](DESIGN_HYVCC.md) — an *unbuilt* proposal: what hy would gain by
+  carrying a deterministic transcript layer and a raw-session recall alongside the bank, what
+  it would cost, and the five measurements that decide it.
 
 ## Install
 
@@ -212,9 +215,11 @@ before the cut is chosen: kept tail, summary and digest all fit inside
 count of the request minus this branch's own token sum, floored at 2000 and capped at a third of the
 window, since that gap is prompt and tool schemas only partly. Guessing it too small is what caused
 the thrash: a compaction that misses the threshold it was meant to clear makes pi compact again.
-`keepRecentTokens` is a working-set preference and loses to that budget; the summary gives up its
-entry is never dropped because pi needs a real id to cut at. Whatever the cut removes while still
-unread is digested into the summary (`overflowDigestTokens`), recorded as an `hy.gap` in the
+`keepRecentTokens` is a working-set preference and loses to that budget. Inside the split the note gives
+way first — it sheds tokens from its configured maximum before the tail gives up an entry, and the tail
+is held at 1 000 tokens whenever the room can pay that — so a small window keeps a usable working set. The
+newest entry is never dropped because pi needs a real id to cut at. Whatever the cut removes while still
+unread is digested into the summary — `overflowDigestTokens` is a ceiling, and what is spent is what the drop set costs — recorded as an `hy.gap` in the
 ledger, and audited as `compact_trimmed`, so coverage resumes at the first kept entry instead of
 claiming history the extension never sent.
 
@@ -408,6 +413,9 @@ to break silently:
 | `session-scope-check` | destructive authority across a session boundary, pinned as the behaviour that ships: candidates are retrieved unscoped, `sameSubject` is blind to session identity, a cross-session UPDATE supersedes the other session's entry leaving only its own session marker, and the ledger classifier keeps applied crossings apart from refused proposals and refuses by the reason the bank recorded |
 | `prune-check` | retention deletes old sessions and nothing else |
 | `config-docs-check` | every setting in the code is in the table above, with the same default |
+| `budget-split-check` | the arithmetic a compaction hands the model: exact values at window boundaries, the digest cap flooring rather than rounding, the order the parts are served in (the note sheds its cap before the tail sheds an entry), the published window table in `DESIGN_HYVCC.md` reproduced row for row, a reservation that only ever moves down and never past its ceiling, the walk and the request cap staying separate so a budget trim always yields a reportable `trimmed` range, monotonicity as the window grows, and a probe loop that reports `converged: false` instead of iterating forever |
+| `design-leak-check` | every markdown file in the repository is free of the shapes that would say where it was written: an absolute path under a home directory, a pi session directory name, a credential-shaped token, an e-mail address, a non-local IP. It exists because a design document now quotes a summary synthesized from a real session file |
+| `hyvcc-fixture-check` | the fixture that `dev/hyvcc-demo.ts` measures actually names itself: a frozen copy records bytes, entry count and a content digest for both legs (session *and* bank, so neither can drift while the numbers look pinned), the identity line is printed before any figure and carries no path and no session directory name, a copy that no longer matches its manifest reports `MOVED`, a live file with no manifest is called one rather than looking pinned, and a session file caught mid-append loses its half-written record and nothing else. Built on a synthetic session in a temp directory, so it passes on a machine that has never held the fixture — no real token count is asserted anywhere, because a check that pinned one would pass only here |
 | `status-check` | footer rendering, including a stale context |
 
 ## Run the proof of concept
@@ -446,6 +454,7 @@ is required to use the extension.
 | `src/chain.ts` | when a finished write is followed by another, and when a flush is accepted |
 | `src/failures.ts` | failure class, cooldown ladder, whether a chunk should shrink |
 | `src/lag.ts` | how far behind the writer is, and whether a compaction should wait for it: stage-aware ETA from the last eight writes, and the gates that make it skip (overflow, unhealthy writer, backoff, no history, ETA past the budget). Pure — pinned by `tools/lag-check.ts`, and its wiring by `tools/compaction-wait-check.ts` |
+| `src/budget.ts` | how a compaction splits the room the next request has — tail, digest, note — including who gives way (the note sheds its configured maximum before the tail gives up an entry, and the tail is owed `COMPACT_KEEP_MIN_TOKENS` whenever the room can pay it), a digest reserved at a ceiling and then priced down by a boundary probe, and the difference between the backward walk (`keepRecentTokens`) and the request cap a trim is reported from. Pure — pinned by `tools/budget-split-check.ts` |
 | `src/flush.ts` | `hy_flush`: list the unwritten entries, resolve a `to` into a monotone range |
 | `src/hifi.ts` | the optional model-written checkpoint and its fact guard |
 | `src/llm.ts` | the writer client used by the extension |
@@ -458,6 +467,8 @@ is required to use the extension.
 | `dev/judge.ts` | blind quality judge for one run's writes, rubric in `dev/rubric.md` |
 | `dev/boundary-arms.ts` | move the chunk boundary over identical content, compare runs, emit the pieces for the judge |
 | `dev/live-wait-replay.ts` | replay the live audit through the compaction wait policy: for every past `compact_deferred`, what the hook would have seen, whether it would have waited, and whether the write landed inside the budget. Read-only; it is how `compactWaitMs` was chosen rather than guessed |
+| `dev/live-wait.sh` | watch a live session wait: one headless pi session over RPC, first prompt allowed to finish its write (an ETA needs a completed write to price), second prompt leaves a chunk running, compaction requested while that chunk is in flight. Asks each provider instance what it actually serves before anything runs and drops the ones that do not answer, because a model list broken by a dead instance is what lost two earlier probes their runs mid-session. Prints the audit lines it produced and pi's own answer. `LIVE_MODEL=<provider/modelId>`; scratch HOME, scratch state, scratch provider config so the writer really resolves |
+| `dev/live-wait-driver.py` | the RPC client behind it: JSONL over stdin/stdout, keeps `extension_ui_request` notices as evidence, follows the audit filtered to that session, and says whether the wait happened or was skipped and why. The compaction line is read from the audit rather than from pi's event stream — a manual compaction is not an agent run and never says it has settled, and waiting for that is what discarded an earlier probe's verdict |
 | `dev/live-flush.sh` | run pi headless with the extension loaded and ask whether the model calls `hy_flush` |
 | `dev/live-cadence.sh` | compare model-initiated writes against the token threshold in one live session |
 | `dev/corpus-restraint.json` | authored contrast pairs with known-correct output: 8 attribution pairs, 10 empty chunks (contract enforced by `tools/restraint-corpus-check.ts`) |
@@ -480,3 +491,4 @@ is required to use the extension.
 | `dev/dedup-report.ts` | the duplicate one chunk writes twice, priced before anything ships (TODO 7.14's residue): re-applies a run's ledger write by write with a deterministic same-batch dedup and compares banks, three ways — drop, drop only what is provably redundant, or retire the duplicate behind a pointer to its survivor. Says what each removal was made of (a value the survivor already held, no value at all, the user's own words, a number the value extractor never named), which later merges aimed at a removed row and rebuilt it as an orphan ADD, and whether any value went dark. `tools/dedup-report-check.ts` pins the rule and the replay trap: folding a ledger that recorded a retirement hands the duplicate back as current |
 | `dev/user-turn-report.ts` | what a user's turn actually contains, offline from captured chunks beside a frozen snapshot (TODO 6.20b): each user turn classified by wording (question, directive, both, go-ahead, neither), which directives a later assistant turn restates, which line each draft cited and of what shape, and how many current facts carry a directive's wording with no `fromUser` mark — including ones sitting where a marked fact used to be, which is how a merge drops the mark. Says which numbers are unavailable because a chunk has no capture, rather than printing zeros. `tools/user-turn-report-check.ts` pins the shapes, the restatement test and that decay |
 | `dev/constraint-slice-report.ts` | what the summary's reserved constraint slice would contain if it selected on the statement rather than the citation (TODO 6.20c): runs the shipped `selectForSummary` twice over a frozen snapshot, once on the bank as it is and once on a shadow bank whose `fromUser` sits on rule-shaped statements, so the comparison is one code path with one input changed. Reports both a narrow and a broad rule test, how many narrow matches a not-a-rule proxy flags (a floor on false positives, not a precision measurement), which facts the swap displaces and admits — both the slice and the foundations partition move when the mark moves — and whether rule-shaped facts stay current better than marked ones. `--list` prints every narrow match with the proxy's verdict beside it, so the rate can be labelled by a reader rather than regexed (TODO 6.20d, one reader's labels: 5 of 64 usable as a constraint, 39 carry no obligation). `tools/constraint-slice-report-check.ts` pins the shape verdicts, the list and the tight-budget case where marking a rule fact takes it out of the foundations slice and it leaves the summary |
+| `dev/hyvcc-demo.ts` | synthesize a compaction summary in two arms over one real session file and one real bank, with no model call: hy's own cut and `renderMemory` with and without a deterministic block carved out of the same summary cap, the block compiled by pi-vcc's own `compileRanked` over the identical prefix. Reports the parts in tokens, the block's section composition, its compile time, and what pi-vcc's merge does to a memory block handed to it as `previousSummary` (how many fact ids come back) and to a skeleton merged with itself (how many lines survive, and how much the block grows). Redacts home paths, project directory names and credentials on the way out. `--snapshot` freezes both inputs into a named copy (`--fixture`, default `out/hyvcc-fixture/`) whose manifest records bytes, entry count and a content digest for each leg, so the two arms and every published figure measure the same bytes; without it the harness says on its first line that it is reading live files. The worked example in `DESIGN_HYVCC.md` is its output |

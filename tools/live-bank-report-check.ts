@@ -28,10 +28,15 @@
  *   7. a missing stats file is reported as unknown rather than as zero
  */
 
-import { appendFileSync, copyFileSync, mkdtempSync, writeFileSync } from "node:fs";
+import { appendFileSync, copyFileSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { reachableThroughQuery, reportSession } from "../dev/live-bank-report.js";
+import {
+	reachableThroughQuery,
+	readSnapshotManifest,
+	reportSession,
+	snapshotIdentityLine,
+} from "../dev/live-bank-report.js";
 import { newId } from "../src/bank.js";
 import { recallHits } from "../src/render.js";
 import type { BankEntry, Draft, LedgerRecord } from "../src/types.js";
@@ -231,6 +236,29 @@ if (report) {
 	ok(
 		frozen?.snapshotDigest === report.snapshotDigest && frozen?.liveActive === report.liveActive,
 		"reading a copy of the store gave different numbers than reading the store",
+	);
+	// 4d. a copy says which copy it is. The snapshot directory is a copy of a live session and moves
+	// when it is taken again, so taking one records the digest it copied, and a report reading a
+	// directory with no manifest or with a drifted ledger says so instead of reading as frozen.
+	ok(readSnapshotManifest(copy) === null, "a directory that was only copied by hand reported a manifest");
+	ok(
+		snapshotIdentityLine(copy).includes("no manifest in this directory"),
+		`an unlabelled copy did not say so: ${snapshotIdentityLine(copy)}`,
+	);
+	ok(report.copyIdentity.includes("no manifest in this directory"), "the report printed an identity it did not have");
+	writeFileSync(
+		join(copy, "manifest.json"),
+		JSON.stringify({ session: SESSION, takenAt: "2026-10-25T10:00:00.000Z", ledgerDigest: report.snapshotDigest }),
+	);
+	ok(
+		snapshotIdentityLine(copy).includes(`ledger digest ${report.snapshotDigest}`) &&
+			!snapshotIdentityLine(copy).includes("has moved"),
+		`a labelled copy that has not moved was reported as moved: ${snapshotIdentityLine(copy)}`,
+	);
+	appendFileSync(join(copy, `${SESSION}.ledger.jsonl`), `${JSON.stringify(records[records.length - 1])}\n`);
+	ok(
+		snapshotIdentityLine(copy, readFileSync(join(copy, `${SESSION}.ledger.jsonl`), "utf8")).includes("has moved"),
+		"a copy whose ledger grew since it was taken did not say so",
 	);
 	appendFileSync(join(dir, `${SESSION}.ledger.jsonl`), `${JSON.stringify(records[records.length - 1])}\n`);
 	ok(

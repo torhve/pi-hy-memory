@@ -627,8 +627,10 @@ produces the summary itself and the window is divided before the cut is chosen �
 `contextWindow − reserveTokens − overhead` split between the kept tail, the summary and a digest of
 whatever the cut removes that the writer never read (`overflowDigestTokens`,
 bounded by `serializeEntries({ maxTokens, maxEntryChars })` so one huge tool result cannot spend
-the whole share). `keepRecentTokens` is a working-set preference and yields to that budget; the
-summary gives up its configured maximum before the tail gives up entries, and the newest entry is
+the whole share). `keepRecentTokens` is a working-set preference and yields to that budget; the note
+gives up its configured maximum before the tail gives up its entries — the tail is owed
+`COMPACT_KEEP_MIN_TOKENS` whenever the room can pay it — and the digest is reserved only for the drop
+set a boundary probe actually found. The newest entry is
 kept whatever its size because pi needs a real id to cut at — if that remainder still exceeds the
 window, `compact_trimmed` reports the kept size so the case is visible rather than silent. The cut
 is audited as `compact_trimmed`, recorded as an `hy.gap { reason: "overflow-trim" }`, and moves

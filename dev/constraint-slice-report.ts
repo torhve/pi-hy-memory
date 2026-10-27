@@ -21,7 +21,7 @@ import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { selectForSummary } from "../src/render.js";
 import type { BankEntry, LedgerRecord } from "../src/types.js";
-import { parseJsonl } from "./live-bank-report.js";
+import { parseJsonl, snapshotIdentityLine } from "./live-bank-report.js";
 
 type Args = { dir: string; maxTokens: number; samples: boolean; list: boolean };
 
@@ -183,6 +183,7 @@ function main(): void {
 		console.log(`no snapshot directory at ${dir} — run dev/live-bank-report.ts --snapshot first`);
 		return;
 	}
+	console.log(`   ${snapshotIdentityLine(dir)}`);
 	const ledgerBySession = new Map<string, { writes: number }>();
 	for (const id of sessionIds(dir)) {
 		const path = join(dir, `${id}.ledger.jsonl`);

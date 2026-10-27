@@ -21,12 +21,12 @@ import { Type } from "@earendil-works/pi-ai";
 import type { ExtensionAPI, ExtensionContext, SessionEntry } from "@earendil-works/pi-coding-agent";
 
 import { enforceBudget, foldLedger } from "./bank.js";
+import { COMPACT_OVERHEAD_TOKENS, DIGEST_ENTRY_CHARS, resolveBudget } from "./budget.js";
 import { IDLE_DRAIN_TRIGGER_FACTOR, shouldChainWrite, shouldFlushWrite, shouldIdleDrain } from "./chain.js";
 import { EXTRACT_RECORD, highestChunkSeq, nextChunkId } from "./chunks.js";
 import { type HyConfig, legacyKeys, SETTING_DEFAULTS } from "./config.js";
 import {
 	type ChunkBuild,
-	compactionBoundary,
 	coverageWindow,
 	entryTokens,
 	fileOperations,
@@ -74,22 +74,6 @@ const SESSIONS_DIR = join(STATE_DIR, "sessions");
 const OPS_RECORD = "hy.ops";
 const GAP_RECORD = "hy.gap";
 const EVICT_RECORD = "hy.evict";
-/**
- * The floor on what a compaction budget cannot see: the system prompt and tool schemas are not ours
- * to render, and pi counts tokens with a real tokenizer while this file estimates them from
- * characters. Measured overhead is used when pi has counted a request; this is what is left for a
- * session it has not.
- */
-const COMPACT_OVERHEAD_TOKENS = 2000;
-/**
- * Room a compaction leaves below the threshold rather than filling it. A budget spent exactly to
- * `window − reserve` puts the next request back at the trigger, so pi compacts again on the turn
- * that follows — a compaction that trims the working set every turn is worse than one that trims
- * less and holds.
- */
-const COMPACT_SLACK_TOKENS = 1500;
-/** The kept tail never goes below this, so a compaction cannot leave the model with nothing to work from. */
-const COMPACT_KEEP_MIN_TOKENS = 1000;
 
 /**
  * The wait for a write that lands during a compaction is polled, not hung on: a slice this short
@@ -1151,42 +1135,30 @@ export default function piHyMemory(pi: ExtensionAPI): void {
 				COMPACT_OVERHEAD_TOKENS,
 				Math.min(measured, Math.floor(windowTokens * 0.3)),
 			);
-			const available =
-				windowTokens > 0
-					? Math.max(0, windowTokens - reserve - overheadTokens - COMPACT_SLACK_TOKENS)
-					: undefined;
-			const digestBudget =
-				available === undefined
-					? config.overflowDigestTokens
-					: Math.min(config.overflowDigestTokens, Math.floor(available / 4));
-			// The tail keeps a floor so a compaction never leaves the model with nothing to work from;
-			// the summary gives up its configured maximum before the tail gives up its entries.
-			const summaryTokenBudget =
-				available === undefined
-					? config.summaryMaxTokens
-					: Math.max(
-							500,
-							Math.min(config.summaryMaxTokens, available - digestBudget - COMPACT_KEEP_MIN_TOKENS),
-						);
-			const maxKeepTokens =
-				available === undefined ? undefined : Math.max(0, available - digestBudget - summaryTokenBudget);
+			// Ask first, then reserve: probe the cut with no digest room, price what it would
+			// actually drop, and only then spend room on the digest. A compaction that trims
+			// nothing pays nothing for it.
+			const resolved = resolveBudget({
+				base: {
+					windowTokens,
+					reserveTokens: reserve,
+					overheadTokens,
+					keepRecentTokens: config.keepRecentTokens,
+					summaryMaxTokens: config.summaryMaxTokens,
+					overflowDigestTokens: config.overflowDigestTokens,
+				},
+				entries: list,
+				cursorId: state?.cursorId,
+				proposedId: event.preparation?.firstKeptEntryId,
+				maxUncoveredTokens: config.maxChunkTokens,
+			});
 			// pi's own cut point and its real token count: the boundary is only worth keeping if
 			// holding the backlog does not defeat the compaction entirely.
 			return {
 				branchTokens,
 				windowTokens,
 				overheadTokens,
-				available,
-				digestBudget,
-				summaryTokenBudget,
-				maxKeepTokens,
-				choice: compactionBoundary(list, {
-					cursorId: state?.cursorId,
-					keepRecentTokens: config.keepRecentTokens,
-					proposedId: event.preparation?.firstKeptEntryId,
-					maxUncoveredTokens: config.maxChunkTokens,
-					maxKeepTokens,
-				}),
+				...resolved,
 			};
 		};
 		type Boundary = ReturnType<typeof boundaryFor>;
@@ -1385,8 +1357,11 @@ export default function piHyMemory(pi: ExtensionAPI): void {
 
 		// Everything downstream is read from the boundary that survived the wait, so the numbers
 		// reported are the ones the cut was actually made with.
-		const { choice, digestBudget, summaryTokenBudget, maxKeepTokens, overheadTokens, windowTokens, available } =
-			boundary;
+		const { choice, split, unread, lookupMissed, passes, converged, overheadTokens, windowTokens } = boundary;
+		const digestBudget = split.digestTokens;
+		const summaryTokenBudget = split.summaryTokenBudget;
+		const maxKeepTokens = split.tailTokens;
+		const available = split.available;
 		const firstKeptIndex = choice.firstKeptIndex;
 
 		// The trim cut past the writer's watermark, so material the bank never learned is leaving the
@@ -1398,16 +1373,18 @@ export default function piHyMemory(pi: ExtensionAPI): void {
 		let digest = "";
 		let digestEntries = 0;
 		if (choice.trimmed) {
-			const trimmedFrom = entries.findIndex((e) => e.id === choice.trimmed?.fromId);
-			const watermarkId = state.cursorId;
-			const watermark = watermarkId ? entries.findIndex((e) => e.id === watermarkId) : -1;
-			const unread = entries.slice(Math.max(trimmedFrom, watermark + 1), firstKeptIndex);
 			digestEntries = unread.length;
 			if (unread.length > 0) {
 				const unreadTokens = unread.reduce((sum, e) => sum + entryTokens(e), 0);
 				if (digestBudget > 0) {
-					const rendered = serializeEntries(unread, { maxTokens: digestBudget, maxEntryChars: 240 });
-					digest = `\n\nDropped to fit the context window — ${unread.length} entries, ~${unreadTokens} tokens, never written to the fact bank:\n${rendered.text}`;
+					const rendered = serializeEntries(unread, {
+						maxTokens: digestBudget,
+						maxEntryChars: DIGEST_ENTRY_CHARS,
+					});
+					// The header counts the range; the text holds only what fit. Saying "N entries"
+					// over a shorter list would be the one lie this digest exists to prevent.
+					const clipped = rendered.droppedEntries > 0 ? ` (${rendered.droppedEntries} not shown)` : "";
+					digest = `\n\nDropped to fit the context window — ${unread.length} entries, ~${unreadTokens} tokens${clipped}, never written to the fact bank:\n${rendered.text}`;
 				}
 				state.ledger.push({
 					type: "hy.gap",
@@ -1435,6 +1412,14 @@ export default function piHyMemory(pi: ExtensionAPI): void {
 				maxKeepTokens,
 				digestEntries,
 				digestTokens: digest ? estimateTokens(digest) : 0,
+				/** The reservation settled by probing the cut, not by a constant. */
+				digestBudget,
+				summaryTokens: summaryTokenBudget,
+				probePasses: passes,
+				probeConverged: converged,
+				/** The watermark or trim id was not found in this branch; coverage unknown. */
+				coverageLookupMissed: lookupMissed,
+				underprovisioned: split.underprovisioned,
 			});
 		}
 
