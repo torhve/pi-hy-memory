@@ -216,8 +216,7 @@ export type CompactionBoundary = {
 	used: number;
 	/** "cursor": the safe window. "proposed": pi's cut, accepted to let compaction work. */
 	boundary: "cursor" | "proposed";
-	/** Set when honouring the summary here would drop entries the writer never read. */
-	/** Set when honouring the summary here would drop entries the writer never read. */
+	/** Set when honouring pi's cut would drop entries past the watermark that the writer never read. */
 	wouldDrop?: { fromId: string; toId: string; entries: number; tokens: number };
 	/** Set when the kept tail had to be cut further to fit the model's context window. */
 	trimmed?: { fromId: string; toId: string; entries: number; tokens: number };
@@ -270,6 +269,15 @@ function trimKeptTail(
  * one chunk's worth, pi's boundary wins and the lost range is reported as a gap. The
  * caller writes that gap to the ledger, which is what stops the writer from claiming
  * coverage it never had.
+ *
+ * The backlog is measured strictly *past* the watermark. `compactionWindow` clamps the
+ * safe window to the cursor index, and `coversUpToId` names that entry, so the entry at
+ * the watermark is covered like any other and is droppable like any other. Counting it
+ * as at risk made a large entry sitting exactly at the watermark disable this extension's
+ * compaction outright: measured on session 01a17310 (2026-10-27), a 25 724-token tool
+ * result was the watermark, pi's cut landed one entry past it, and every `/compact` and
+ * every threshold compaction handed back to pi's summariser — permanently, because the
+ * writer was caught up and nothing was going to move the cursor.
  */
 export function compactionBoundary(
 	entries: SessionEntry[],
@@ -304,8 +312,12 @@ export function compactionBoundary(
 		};
 	}
 
+	// Covered material starts at the watermark entry itself, so the risk range begins one
+	// past it — see the note above. `safe.firstKeptIndex` is the walk's own start when the
+	// walk stopped later than the watermark, and everything from there is genuinely unread.
+	const riskStart = Math.max(cursorIndex + 1, safe.firstKeptIndex);
 	let atRisk = 0;
-	for (let i = safe.firstKeptIndex; i < proposedIndex; i++) atRisk += entryTokens(entries[i]);
+	for (let i = riskStart; i < proposedIndex; i++) atRisk += entryTokens(entries[i]);
 	if (atRisk <= options.maxUncoveredTokens)
 		return {
 			...trimKeptTail(entries, safe.firstKeptIndex, safe.used, options.maxKeepTokens),
@@ -320,8 +332,8 @@ export function compactionBoundary(
 		boundary: "proposed",
 		wouldDrop: {
 			fromId: entries[proposedIndex].id,
-			toId: entries[safe.firstKeptIndex].id,
-			entries: proposedIndex - safe.firstKeptIndex,
+			toId: entries[riskStart]?.id ?? entries[proposedIndex].id,
+			entries: proposedIndex - riskStart,
 			tokens: atRisk,
 		},
 	};

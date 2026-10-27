@@ -1354,7 +1354,19 @@ export default function piHyMemory(pi: ExtensionAPI): void {
 				tokens: boundary.choice.wouldDrop.tokens,
 				facts: active.length,
 			});
-			void ctx;
+			// The deferral has to be visible: without it a `/compact` that pi did on its own
+			// reads as an extension that is not loaded at all, which is how this session's
+			// eleven deferrals were reported (2026-10-27, session 01a17310).
+			try {
+				ctx.ui.notify(
+					`pi-hy-memory: compaction handed to pi — ${boundary.choice.wouldDrop.entries} entries ` +
+						`(~${boundary.choice.wouldDrop.tokens} tok) the writer has not read yet; pi's ` +
+						`summariser keeps them, the bank holds ${active.length} facts. /hy status shows the backlog.`,
+					"info",
+				);
+			} catch {
+				/* ctx is stale; the audit line is the record */
+			}
 			return undefined;
 		}
 

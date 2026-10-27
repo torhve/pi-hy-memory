@@ -97,8 +97,10 @@ export type HyConfig = {
 	 * *before* `agent_before_settle`, so the backlog that would be dropped is very often a write
 	 * started at `turn_end` that is seconds from landing: on session `01a17818` two deferrals
 	 * covered a write that finished 39 s after the first one. The wait is bounded by
-	 * `compactWaitMs`, stage-aware, and never applies to overflow. `false` is the rollback: the
-	 * deferral and its notification go away and pi summarises as before.
+	 * `compactWaitMs`, stage-aware, and never applies to overflow. `false` is the rollback: the wait
+	 * and its notice go away. The deferral itself still happens, and so does the notice that says
+	 * pi is doing the compaction — that one exists precisely because a silent hand-off reads as an
+	 * extension that never loaded.
 	 */
 	waitForWriterBeforeCompact: boolean;
 	/**

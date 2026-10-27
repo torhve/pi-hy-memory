@@ -484,7 +484,12 @@ const runScenario = async (scenario: Scenario): Promise<Run> => {
 
 	check("S7 the skip is audited", skipLines(sessionId).at(-1)?.reason, "disabled");
 	check("S7 no wait happened", waitLines(sessionId).length, 0);
-	check("S7 no notification", run.notices.length, 0);
+	check("S7 no waiting notification", run.notices.filter((n) => n.text.includes("waiting up to")).length, 0);
+	check(
+		"S7 the hand-off is announced anyway",
+		run.notices.some((n) => n.text.includes("handed to pi")),
+		true,
+	);
 	check("S7 the old deferral stands", out, undefined);
 	check("S7 deferred once", deferredLines(sessionId).length, 1);
 }
@@ -501,7 +506,12 @@ const runScenario = async (scenario: Scenario): Promise<Run> => {
 	check("S8 the reason is the ETA", skipped?.reason, "eta over budget");
 	check("S8 the ETA that caused it is recorded", skipped?.etaS, 30);
 	check("S8 no wait happened", waitLines(sessionId).length, 0);
-	check("S8 no notification", run.notices.length, 0);
+	check("S8 no waiting notification", run.notices.filter((n) => n.text.includes("waiting up to")).length, 0);
+	check(
+		"S8 the hand-off is announced anyway",
+		run.notices.some((n) => n.text.includes("handed to pi")),
+		true,
+	);
 	check("S8 it deferred instead", out, undefined);
 }
 

@@ -120,9 +120,9 @@ function assertTight(name: string, entries: SessionEntry[], firstKeptIndex: numb
 	check(
 		"large backlog reports the gap",
 		{ from: choice.wouldDrop?.fromId, after: choice.wouldDrop?.toId },
-		{ from: "m300", after: "m100" },
+		{ from: "m300", after: "t101" },
 	);
-	check("large backlog gap counts dropped entries", choice.wouldDrop?.entries, 200);
+	check("large backlog gap counts the unread range only", choice.wouldDrop?.entries, 199);
 	// The point of the switch: the tail pi keeps is smaller than the safe window
 	// would have kept, so the post-compaction context can fall below the threshold.
 	check("proposed keeps less than the safe window", choice.used < compactionWindow(entries, "m100", 600).used, true);
@@ -168,5 +168,39 @@ function assertTight(name: string, entries: SessionEntry[], firstKeptIndex: numb
 	check("the chunk still clips it", chunk.chars < 1200, true);
 }
 
+// 11) The watermark entry is covered, so it is never "at risk". Session 01a17310
+//     (2026-10-27): a 25 724-token tool result sat exactly at the watermark, pi's cut
+//     landed one entry past it, and every `/compact` deferred to pi's own summariser
+//     because that covered entry was counted as an unread backlog past `maxChunkTokens`.
+{
+	const entries: SessionEntry[] = [];
+	for (let i = 0; i < 400; i++) entries.push(message(`m${i}`, 200));
+	entries.push(toolResult("cursor", 7000)); // bigger than maxUncoveredTokens on its own
+	entries.push(message("after", 1));
+	const covered = compactionBoundary(entries, {
+		cursorId: "cursor",
+		keepRecentTokens: 600,
+		proposedId: "after",
+		maxUncoveredTokens: 5000,
+	});
+	check("a covered watermark is not a backlog", covered.boundary, "cursor");
+	check("a covered watermark defers nothing", covered.wouldDrop, undefined);
+	check("a covered watermark clamps the window to itself", entries[covered.firstKeptIndex].id, "cursor");
+
+	// The rule still bites where it should: unread material past the watermark defers.
+	const past = [toolResult("cursor", 7000), toolResult("u1", 4000), toolResult("u2", 4000), message("cut", 200)];
+	const deferred = compactionBoundary(past, {
+		cursorId: "cursor",
+		keepRecentTokens: 600,
+		proposedId: "cut",
+		maxUncoveredTokens: 5000,
+	});
+	check("unread past a covered watermark still defers", deferred.boundary, "proposed");
+	check(
+		"the deferral counts only the unread entries",
+		{ entries: deferred.wouldDrop?.entries, from: deferred.wouldDrop?.toId },
+		{ entries: 2, from: "u1" },
+	);
+}
 console.log(failures === 0 ? "ok: compaction window" : `${failures} failure(s)`);
 process.exit(failures === 0 ? 0 : 1);

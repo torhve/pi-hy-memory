@@ -88,6 +88,8 @@ function branchWith(pending: number): unknown[] {
 	];
 }
 
+/** What the hook told the user. A deferral that nobody sees reads as a broken extension. */
+const notices: string[] = [];
 const start = (sessionId: string, branch: unknown[]) => {
 	const ctx = {
 		sessionManager: {
@@ -95,7 +97,11 @@ const start = (sessionId: string, branch: unknown[]) => {
 			getBranch: () => branch,
 			getEntry: () => undefined,
 		},
-		ui: { setStatus: () => {}, notify: () => {}, theme: { fg: (_c: string, t: string) => t } },
+		ui: {
+			setStatus: () => {},
+			notify: (t: string) => notices.push(String(t)),
+			theme: { fg: (_c: string, t: string) => t },
+		},
 	};
 	(handlers.get("session_start") as (e: unknown, c: unknown) => unknown)({}, ctx);
 	return ctx;
@@ -152,7 +158,14 @@ check(
 		.filter((r) => r.event === "compact_deferred")
 		.at(-1) as Record<string, unknown>;
 	check("deferral is audited", deferred?.event, "compact_deferred");
-	check("deferral counts the unread entries", deferred?.entries, 370);
+	// The watermark entry (`e-src-1`) is covered, so it is not in the count: pi's cut at
+	// `p367` drops 369 entries past it, not 370 including the watermark.
+	check("deferral counts the entries past the watermark", deferred?.entries, 369);
+	check(
+		"the deferral is announced",
+		notices.some((n) => n.includes("handed to pi")),
+		true,
+	);
 	check(
 		"deferral keeps no ledger gap",
 		readLedger(sessionId).some((r) => r.type === "hy.gap"),
@@ -166,6 +179,7 @@ check(
 	const sessionId = "89abcdef";
 	const branch = branchWith(10); // ~2 000 tokens pending, under maxChunkTokens
 	const ctx = start(sessionId, branch);
+	const noticesBefore = notices.length;
 	const out = await compact(ctx, branch, "p3", 4242);
 	check("small backlog clamps to the watermark", out?.compaction.firstKeptEntryId, "e-src-1");
 	check(
@@ -173,6 +187,7 @@ check(
 		readLedger(sessionId).some((r) => r.type === "hy.gap"),
 		false,
 	);
+	check("a compaction that ran announces nothing", notices.slice(noticesBefore).length, 0);
 }
 
 console.log(failures === 0 ? "ok: compaction hook" : `${failures} failure(s)`);

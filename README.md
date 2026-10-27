@@ -174,6 +174,11 @@ nothing and pi summarises with its own model.
 That cut is pi's, with one adjustment: it is clamped back to the write watermark so
 entries the writer has not read yet are not dropped from the branch. The clamp is
 bounded by `maxChunkTokens` — one chunk's worth of backlog is worth holding, more is not.
+The backlog is measured strictly *past* the watermark entry: `coversUpToId` names that entry,
+so it is covered and droppable like any other, and it is never counted as unread. Counting it
+was a bug: on session `01a17310` (2026-10-27) a 25 724-token tool result sat exactly at the
+watermark, pi's cut landed one entry past it, and every `/compact` handed back to pi forever —
+the writer was caught up, so nothing was going to move the cursor.
 
 Past that bound the extension **waits first, then hands the compaction back to pi**. The
 wait comes first because of where pi asks: `_checkCompaction` runs *before*
@@ -197,9 +202,14 @@ moved, and the chunk's own `hy.extract` / `hy.ops` records were appended — and
 compacts as usual. When it does not, the extension **hands the compaction back to pi**
 (`return undefined`): pi's own summariser compresses the unread entries into prose, which is
 what would happen without this extension, instead of the entries disappearing from the live
-context unread. The audit lines are `compact_wait { stage, entries, tokens, etaS, budgetMs,
-waitedMs, cursorAdvanced, chainDepth, outcome }` and `compact_wait_skipped { reason, etaS }`,
-ahead of the existing `compact_deferred { entries, tokens }`. Deferring is still the case a
+context unread. The hand-off is announced too, in the shape `pi-hy-memory: compaction handed
+to pi — 184 entries (~60 702 tok) the writer has not read yet; pi's summariser keeps them, the
+bank holds 42 facts.` — announced whether or not a wait was attempted, so a session running
+`waitForWriterBeforeCompact: false` still says who did the compaction rather than looking like
+an extension that never loaded. The audit lines are `compact_wait { stage, entries, tokens,
+etaS, budgetMs, waitedMs, cursorAdvanced, chainDepth, outcome }` and `compact_wait_skipped
+{ reason, etaS }`, ahead of the existing `compact_deferred { entries, tokens }`. Deferring is
+still the case a
 writer outage creates — measured on 2026-10-19, a 36-minute 502 storm left 477 unread entries
 and the older behaviour dropped 53 459 tokens of history that no chunk had ever read. The
 extension renders a summary for free; when it cannot do that faithfully, paying pi's model
