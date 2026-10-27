@@ -294,9 +294,10 @@ settled turn at a time.
 That is a behaviour change: the live cadence run showed a listing plus a flush on nearly every
 settled turn, which is exactly the cadence this floor stops.
 
-**Still unproven:** whether earlier coverage survives a reload; retrieval precision on a larger bank
-(more facts may help recall and hurt precision); and whether the floor keeps real sessions near
-threshold-sized chunks rather than merely refusing the thin ones.
+**Answered since:** whether earlier coverage survives a compaction — no advantage, in the section
+below, and the verdict on the offer closes the thread. **Still unproven:** retrieval precision on a
+larger bank (more facts may help recall and hurt precision); and whether the floor keeps real sessions
+near threshold-sized chunks rather than merely refusing the thin ones.
 
 ## Does a flushed fact survive compaction better than pi's summary? (2026-10-21, live, negative)
 
@@ -356,6 +357,36 @@ env var names), and whether a session model uses what `hy_recall` hands it.
 4-bit 4B model dropping facts it was given; sessions long enough that pi's prose has more specifics to
 lose than two; and reload survival (`/compact` then a fresh process), which this harness measures as
 compaction within one process rather than a restart.
+
+## Verdict on the offer (2026-10-27, closing the `hy_flush` thread)
+
+Three arms measured the same claim from three sides, and they agree.
+
+| what was claimed | arm | what came back |
+|---|---|---|
+| a boundary where work settled writes a better bank | 12 whole writes vs 24 settled writes | specificity flat, durable share 60 % → 51 %, bank +53 % — finer granularity, not better memory |
+| a fact folded in before a compaction survives it | reload pilot, 3 runs per arm | both arms kept 7/8 in the summary; answers 7/8, 6/8, 5/8 against the control's 7/8, 7/8 |
+| offering the tool is cheap | cadence, 3 runs × 3 arms | +28 % writer tokens and +13 s per session, and the extra write was threshold-triggered, not a flush |
+
+The call profile decides it. Seven of nine ranged calls were refused at the 2 000-token floor, and
+the flush-only arm left one session of three with **no write at all**: coverage is guaranteed by the
+threshold, and the tool cannot replace it. So the honest reading is not that `hy_flush` hurt retention
+— it is **no measured benefit, measurable overhead, and a call profile that mostly refuses** at the
+floor that exists to stop fragmentation.
+
+It ships `flushTool: false`, and that is the answer to "should it exist": as an opt-in seam, off, with
+its cost written down where anyone turning it on will read it. What the experiment left behind is not
+the tool but the machinery it forced into being — monotone coverage, a floor on a model-initiated
+write, a queue that drains, refusal copy that says whether to ask again — and the threshold path uses
+all of it. The one real win found here belongs to the *rendered* summary, not to the tool: the control
+lost a run to pi's generated summary hitting its output cap, and a render cannot.
+
+**Re-entry trigger.** The class this instrument could not reach is `/compact` followed by a **fresh
+process**, where whatever landed before the restart is all a new process can read. That is a coverage
+question, and the lever for it is `observeAfterTokens`, not a tool. If it is ever measured as a real
+gap, `flushTool: true` is already the switch and the surface is pinned by `tools/flush-check.ts`,
+`tools/flush-tool-check.ts` and `tools/flush-write-check.ts` — the choice then is whether the measured
+gap repays the writer tax, not whether the code still works.
 
 ## Does the writer propose short enumerables at all? (2026-10-22, offline, item 6.10)
 

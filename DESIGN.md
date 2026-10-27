@@ -1175,9 +1175,12 @@ Results and judge verdicts are in `RESULTS.md`.
 5. **Compaction takeover at scale.** `dev/compact-test.py` exercises
    `session_before_compact` in a real RPC session, but at n=1; sessions that compact
    repeatedly with a live bank are not yet measured.
-6. **Model-named boundaries have no measured gain yet.** `hy_flush` gives the session model the
-   boundary, and `tools/flush-check.ts` pins the rules it must obey (front always included, clamped
-   `to`, bounded queue). Whether a boundary chosen where work settled produces more UPDATEs and more
-   specific facts than one chosen by the token threshold needs a session-level replay with a real
-   session model: every capture in `dev/corpus-extended.json` already arrived with its boundary
-   fixed, so the corpus runs cannot answer it.
+6. **Model-named boundaries: measured, and settled off.** `hy_flush` gives the session model the
+   boundary and `tools/flush-check.ts` pins the rules it must obey (front always included, clamped
+   `to`, bounded queue). The three arms in `RESULTS.md` came back with no measured benefit — flat
+   specificity at a 53 % larger bank, 7/8 specifics retained in both arms of the compaction pilot,
+   and +28 % writer tokens just to offer it — so `flushTool` stays `false` and the offer is not
+   presented as a retention win. The class none of them reached is `/compact` followed by a fresh
+   process; the lever there is `observeAfterTokens`, and re-opening the tool needs that gap measured
+   first — every capture in `dev/corpus-extended.json` arrived with its boundary already fixed, so the
+   corpus runs could not answer it either.
