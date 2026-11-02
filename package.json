@@ -1,6 +1,6 @@
 {
   "name": "pi-hy-memory",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Pi memory extension designed around Hy-Memory-30B-A3B as a memory-bank writer: two single-shot JSON calls plus deterministic bank maintenance.",
   "keywords": [
     "pi-package",
@@ -25,6 +25,7 @@
     "src",
     "tools",
     "README.md",
+    "CHANGELOG.md",
     "DESIGN.md",
     "RESULTS.md",
     "LICENSE"
@@ -45,13 +46,15 @@
   },
   "peerDependencies": {
     "@earendil-works/pi-ai": "*",
-    "@earendil-works/pi-coding-agent": "*"
+    "@earendil-works/pi-coding-agent": "*",
+    "typebox": "*"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.5.15",
-    "@earendil-works/pi-ai": "^1.3.0",
-    "@earendil-works/pi-coding-agent": "^1.3.0",
+    "@earendil-works/pi-ai": "^1.5.0",
+    "@earendil-works/pi-coding-agent": "^1.5.0",
     "@types/node": "^26.6.5",
+    "typebox": "^1.3.27",
     "tsx": "^4.19.0",
     "undici": "^8.12.3"
   }

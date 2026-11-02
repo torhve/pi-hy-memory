@@ -4,6 +4,8 @@ Design and proof of concept for a pi memory extension built around
 **Hy-Memory-30B-A3B** as what it actually is — a memory-bank writer — rather than as an
 agent with tools.
 
+- [`CHANGELOG.md`](CHANGELOG.md) — what changed in each version. Pi prints these entries after a
+  package update.
 - [`DESIGN.md`](DESIGN.md) — the design, the measured evidence behind every choice, and
   what is carried over from
   [`pi-observational-memory`](https://github.com/elpapi42/pi-observational-memory) V3.

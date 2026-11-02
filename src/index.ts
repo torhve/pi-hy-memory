@@ -17,8 +17,8 @@
 import { appendFileSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import { join } from "node:path";
-import { Type } from "@earendil-works/pi-ai";
 import type { ExtensionAPI, ExtensionContext, SessionEntry } from "@earendil-works/pi-coding-agent";
+import { Type } from "typebox";
 
 import { enforceBudget, foldLedger } from "./bank.js";
 import { COMPACT_OVERHEAD_TOKENS, DIGEST_ENTRY_CHARS, resolveBudget } from "./budget.js";
