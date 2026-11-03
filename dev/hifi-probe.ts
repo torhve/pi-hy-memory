@@ -20,13 +20,13 @@
 
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { basename, join } from "node:path";
-import type { Model } from "@earendil-works/pi-ai";
 import type { SessionEntry } from "@earendil-works/pi-coding-agent";
 import { foldLedger } from "../src/bank.js";
 import { SETTING_DEFAULTS } from "../src/config.js";
 import { fileOperations, renderEntry, selectTail } from "../src/entries.js";
 import { buildHifiPrompt, checkHifi, hifiFacts, hifiSummary } from "../src/hifi.js";
 import { estimateTokens } from "../src/types.js";
+import { probeModel } from "./probe-model.js";
 import { resolveRoute } from "./run.js";
 
 const args = process.argv.slice(2);
@@ -95,32 +95,7 @@ const files = fileOperations(branch);
 const prompt = buildHifiPrompt({ previous, facts, tail: tail.join("\n"), files, budgetTokens: maxTokens });
 
 const route = await resolveRoute(arg("--model", "hy-memory/hy-memory-30b-a3b"));
-const model: Model<any> = {
-	id: route.model,
-	name: route.model,
-	api: "openai-completions",
-	provider: "probe",
-	baseUrl: route.origin,
-	input: ["text"],
-	cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-	// Declared as a reasoning model so pi's reasoning machinery runs at all: with
-	// reasoning:false it sends no reasoning field whatever the caller asks, which is how
-	// the server ends up thinking by default.
-	reasoning: true,
-	...(offValue ? { thinkingLevelMap: { off: offValue } } : {}),
-	compat: {
-		...(thinkingFormat ? { thinkingFormat: thinkingFormat as "qwen" } : {}),
-		...(offValue ? { supportsReasoningEffort: true } : {}),
-		...(budgetField ? { thinkingTokenBudgetField: budgetField as "thinking_budget" } : {}),
-		// Deliberately without omitWhenOff: with reasoning off this resolves to an explicit
-		// false. Omitting the field is exactly what let the server think by default.
-		...(thinkingFormat.includes("chat-template")
-			? { chatTemplateKwargs: { enable_thinking: { $var: "thinking.enabled" } } }
-			: {}),
-	} as Model<any>["compat"],
-	contextWindow: 131072,
-	maxTokens,
-};
+const model = probeModel(route, { maxTokens, thinkingFormat, offValue, budgetField });
 
 console.log(
 	`session ${sessionId}: ${branch.length} branch entries, ${active.length} active facts, ` +

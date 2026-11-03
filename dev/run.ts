@@ -71,15 +71,17 @@ export async function resolveRoute(modelSpec: string): Promise<{ origin: string;
 		};
 		for (const instance of cfg.instances ?? []) {
 			const url = `${instance.origin.replace(/\/+$/, "")}${instance.port && instance.port !== 443 && instance.port !== 80 ? `:${instance.port}` : ""}`;
+			// The instance config stores bare origins; llama-swap answers the OpenAI API under /v1.
+			const api = url.endsWith("/v1") ? url : `${url}/v1`;
 			try {
-				const res = await fetch(`${url}/v1/models`, {
+				const res = await fetch(`${api}/models`, {
 					headers: instance.apiKey ? { Authorization: `Bearer ${instance.apiKey}` } : {},
 					signal: AbortSignal.timeout(10_000),
 				});
 				if (!res.ok) continue;
 				const data = (await res.json()) as { data?: { id: string }[] };
 				if ((data.data ?? []).some((m) => m.id === modelSpec)) {
-					return { origin: url, apiKey: instance.apiKey, model: modelSpec };
+					return { origin: api, apiKey: instance.apiKey, model: modelSpec };
 				}
 			} catch {
 				/* instance unreachable; try the next */
