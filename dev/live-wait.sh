@@ -111,7 +111,6 @@ cat > "$ROOT/config.json" <<EOF
 	"busyRetries": 0,
 	"writeCooldownS": 0,
 	"idleDrainAfterMs": 900000,
-	"flushTool": false,
 	"hifiCompaction": false,
 	"waitForWriteOnSettle": false,
 	"waitForWriterBeforeCompact": true,

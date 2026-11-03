@@ -10,7 +10,7 @@
  */
 
 import { readFileSync } from "node:fs";
-import { SETTING_DEFAULTS } from "../src/config.js";
+import { REMOVED_KEYS, SETTING_DEFAULTS } from "../src/config.js";
 
 let failures = 0;
 const check = (name: string, ok: boolean, detail = ""): void => {
@@ -43,6 +43,11 @@ check("every setting is documented", missing.length === 0, missing.join(", "));
 
 const stale = [...documented.keys()].filter((key) => !configKeys.includes(key));
 check("no documented setting is gone from the code", stale.length === 0, stale.join(", "));
+
+// A removed key has to stay out of both sides: the code may not start defaulting it again,
+// and the table may not document a setting the code no longer reads. `hy_flush` left three.
+const revived = REMOVED_KEYS.filter((key) => configKeys.includes(key) || documented.has(key));
+check("removed settings stay removed", revived.length === 0, revived.join(", "));
 
 /** `false`/`true`/numbers compare loosely; objects and "none" are only presence-checked. */
 const expected = (key: string): string => {

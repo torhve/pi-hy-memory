@@ -152,23 +152,6 @@ export type HyConfig = {
 	 * trigger. 0 disables it.
 	 */
 	idleDrainAfterMs: number;
-	/**
-	 * Offer the session model a `hy_flush` tool so it can name the range the writer
-	 * should read instead of waiting for the token threshold. On by default: the cost
-	 * is the tool's prompt surface, and the payoff is a chunk boundary chosen where
-	 * work settled rather than where 6 000 estimated tokens landed.
-	 */
-	flushTool: boolean;
-	/** How many unwritten entries the listing shows before it summarises the rest. */
-	flushListEntries: number;
-	/**
-	 * Refuse a model-initiated write while less than this much is unwritten. A boundary
-	 * experiment on identical content (24 pieces against 12 whole captures, same writer and
-	 * judge) found finer boundaries do not raise statement quality — specificity stayed flat
-	 * and the durable share fell from 60 % to 51 % — while the writes doubled. A floor keeps a
-	 * flush near threshold-sized instead of one chunk per settled turn.
-	 */
-	flushMinTokens: number;
 };
 
 /**
@@ -181,6 +164,15 @@ export function legacyKeys(config: Record<string, unknown>): string[] {
 		(key) => config[key] !== undefined,
 	);
 }
+
+/**
+ * Keys a config may still carry from a feature that was removed. They are no longer
+ * settings: the config file is merged over the defaults, so a stale key lands in the
+ * loaded object and changes nothing. `hy_flush` left these three, and a session that
+ * set `flushTool: true` should be told the tool is gone rather than notice it missing.
+ * This list is meant to be deleted once no config sets them.
+ */
+export const REMOVED_KEYS = ["flushTool", "flushListEntries", "flushMinTokens"];
 
 /** The documented defaults. Every key in `HyConfig` belongs here. */
 export const SETTING_DEFAULTS: HyConfig = {
@@ -221,11 +213,6 @@ export const SETTING_DEFAULTS: HyConfig = {
 	busyBackoffMs: 4000,
 	writeCooldownS: 30,
 	idleDrainAfterMs: 180_000,
-	// Off by default. The compaction-survival pilot measured no retention advantage while the tool
-	// costs extra writer work and a prompt surface (`RESULTS.md`, item 6.4); opt in per session.
-	flushTool: false,
-	flushListEntries: 24,
-	flushMinTokens: 2000,
 	pruneAfterDays: 30,
 	shutdownWaitMs: 5000,
 	statusBar: true,

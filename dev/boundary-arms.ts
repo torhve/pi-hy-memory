@@ -2,11 +2,10 @@
 /**
  * dev/boundary-arms.ts — does the position of a chunk boundary change what the bank keeps?
  *
- * `hy_flush` exists on the argument that a chunk cut *inside* a transition costs
- * updates: each write then sees a smaller slice of the transition it has to
- * reconcile. That has never been measured. The corpus cannot measure it, because every
- * capture in `dev/corpus-extended.json` arrived with its boundary already fixed by the
- * observer's threshold — replaying them is the same cut twice.
+ * The claim this tests: a chunk cut *inside* a transition costs updates, because each
+ * write then sees a smaller slice of the transition it has to reconcile. The corpus cannot
+ * measure it, because every capture in `dev/corpus-extended.json` arrived with its boundary
+ * already fixed by the observer's threshold — replaying them is the same cut twice.
  *
  * So this harness moves the cut over identical content. The control is one capture per
  * write, which is the shipped behaviour and is what the baseline run already produced.
@@ -14,6 +13,10 @@
  * sees a smaller slice of the same stretch — one boundary per piece, and one of them
  * necessarily falls mid-transition. Same writer, temperature 0, bank path and candidate
  * selection; only the cut moves.
+ *
+ * The arm ran on 2026-10-21 and the answer was no: specificity stayed flat, the bank grew
+ * 53 % and its durable share fell from 60 % to 51 %, at twice the writes (`RESULTS.md`).
+ * The harness stays so those numbers can be re-run.
  *
  * Merging instead of splitting was the first idea — a wider range, cut where a stretch
  * ended — but these captures are 13 000–20 000 estimated tokens each, so a merged pair

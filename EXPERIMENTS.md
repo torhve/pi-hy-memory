@@ -2115,8 +2115,8 @@ cost to render? The two halves are measured separately, because they need differ
 never clipped.
 
 **The knob.** `serializeEntries` now takes `maxArgChars`, and `renderEntry` takes the argument window as an
-argument, both defaulting to `ARGS_WINDOW`. No shipped caller sets it — `src/index.ts`, `src/flush.ts` and
-`src/pipeline.ts` call `serializeEntries` with `maxTokens` and `maxEntryChars` only, which `tools/clip-check.ts`
+argument, both defaulting to `ARGS_WINDOW`. No shipped caller sets it — `src/index.ts` and `src/pipeline.ts`
+call `serializeEntries` with `maxTokens` and `maxEntryChars` only, which `tools/clip-check.ts`
 and `tools/clip-window-check.ts` both assert, so the shipped path is the narrow one by default.
 
 **The harness** (`dev/clip-window-report.ts`) authors four chunks as entries and renders them twice through the

@@ -92,6 +92,11 @@ offered to the writer, which measurably refuses to call tools at all
 
 The tool description is the whole feature: see `plan-hy-flush.md` for the drafting plan.
 
+**Outcome (2026-11-03).** This shipped as `hy_flush` and was removed. Three arms measured no benefit:
+specificity stayed flat at a 53 % larger bank, both arms of the compaction pilot kept the same
+specifics, and offering the tool cost +28 % writer tokens (`RESULTS.md`, "Verdict on the offer"). Read
+those measurements before reviving the idea.
+
 ### 5. A repetition guard on writer output
 
 ACP fingerprints each call as `sha1(toolName + canonical-JSON(args))` and escalates

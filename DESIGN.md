@@ -240,10 +240,6 @@ session_start
 
 recall tool
   └─ id -> entry -> sourceEntryIds -> exact source text from the session ledger
-hy_flush (the session model names the boundary)
-  ├─ bare        -> list the unwritten entries: [n] role: preview  (cap flushListEntries)
-  └─ { to }      -> queue the write path above over entries [0]..[to]; the front is always
-                   included, because coverage cannot skip
 ```
 
 Two model calls per chunk. No turn budget, no completion signal, no third agent.
@@ -295,65 +291,6 @@ tries again — the cooldown ladder is what protects a dead endpoint, not the ve
 The chain rule then decides whether to follow the drain, so an idle catch-up is bounded at three
 writes per tick. The timer is `unref()`'d so it never holds a process open, and it is cleared
 on `session_shutdown`. (`tools/idle-drain-check.ts`)
-
-**A model that knows the work settled can name the boundary.** Every path above cuts a chunk where
-`observeAfterTokens` lands, and a boundary that falls inside a transition costs updates: each write
-sees a smaller slice of it. The session model knows when a stretch finished and does not know how
-many tokens it was, so `hy_flush` (`src/flush.ts`) offers it that seam. A bare call lists the
-unwritten entries under this tool's own positional refs — pi never shows the model session entry
-ids, and `src/serialize.ts` hides them because the writer was measured copying rendered id labels
-into fact text — and `hy_flush({ to })` queues a write up to that ref.
-
-`to` names the end and nothing else, because coverage is monotone: a flush that skipped front
-entries would advance a watermark the ledger can never honour. The front of the unwritten window is
-always included, a `to` past the last ref is clamped rather than rejected (a model counting entries
-is estimating, not indexing), and the answer says which of the two happened. The write is queued
-rather than synchronous: extract is 28–52 s on a local writer and `timeoutMs` is 480 000, so a tool
-that waited for the write could hold a turn for eight minutes.
-
-`shouldFlushWrite` (`src/chain.ts`) skips the token threshold on purpose — that is the whole point —
-and keeps the guards that make a write wrong or wasteful: `/hy off`, a write in flight, a persisted
-extract awaiting its reconcile, a held primary, an active cooldown, a window thinner than
-`flushMinTokens`, and a queue bounded at
-`MAX_PENDING_FLUSH = 2`, because a model that flushes after every edit pays ~25 s and 9 000 tokens
-per call. An active cooldown refuses the calls made inside its window — measured live, one failed
-write turned the next three calls into `write cooling down` refusals — but it does not bound how
-often a model asks across a long session, and `failures` is not a veto here, for
-the same reason the idle drain does not veto it. The prompt surface is short for the same reason it
-is short for the same reason it is short for the writer: one clause of when, one of what, and no
-JSON example, because a quantized model restates an example as prose instead of calling the tool.
-The whole surface — description, snippet, two guidelines, the `to` description — is 803 characters,
-about 200 estimated tokens. The listing caps at
-`flushListEntries = 24` rows of 120 characters — enough to choose a range, and a preview is never
-re-serialized into the writer's prompt. Registration is conditional on `flushTool`, which defaults to
-off after the compaction-survival pilot found no advantage (item 6.4 in `RESULTS.md`), so an off
-session pays nothing for a tool it cannot use
-(`tools/flush-check.ts` for the rules, `tools/flush-tool-check.ts` for the surface against an
-unreachable writer, `tools/flush-write-check.ts` for the half that matters: a stub registry that
-answers both stages, so a queued flush is shown to land a fact in the bank, advance the watermark and
-be answered by `hy_recall`, while a call during the in-flight write is refused and queues nothing).
-
-**The floor is measured, not cautious.** Cutting the same 12 captures into 24 pieces — one write per
-piece, same writer, same judge, identical content — produced 240 active facts against 157 and 52
-updates against 26, while judged specificity stayed flat (2.459 / 2.473 against 2.519 / 2.563, a gap
-inside the judge's own ±0.05 spread) and the durable share fell from 60 % to 51 %. Duplication per
-entry did *not* rise, so the extra facts are finer granularity rather than repetition: a smaller
-window makes the writer state more, shorter, more marginal things. A write therefore has to carry
-`flushMinTokens` — measured on the range the model names, not on the size of the window, because a
-thin slice of a fat window is still a thin chunk — and the refusal names the amount it would have
-carried, while the listing states the floor, because in the live
-cadence run a model that was refused three times in a row asked again anyway — the refusal alone
-does not teach it anything.
-does not teach it anything.
-
-**Which version of the floor the live numbers were taken against.** The first shipped floor compared
-the size of the *unwritten window*, and the cadence run that produced refusals at 781–1922 tokens ran
-that version. It also accepted a write carrying 1 429 tokens out of a 2 040-token window, which is
-what showed the window is the wrong thing to measure. The payload version that replaced it briefly
-read `chunk.tokens`, a field `SerializedChunk` does not have — `undefined < floor` is false, so for
-the length of that edit the floor could not fire at all, and that interim version never ran against a
-live session. The gate now compares `estimateTokens(chunk.text)`, the same number the refusal quotes,
-and the cadence run is repeated against that code before its numbers count as evidence for it.
 
 **Coverage is a position, not an id.** The watermark is stored as an entry id, and pi can move
 the leaf: a rewind, a resumed checkpoint, or a compaction that re-parents the branch leaves
@@ -1078,7 +1015,7 @@ its failures were ours to fix (all in `EXPERIMENTS.md` with sources):
 
 `src/` is the full extension: the write path above, wired into pi in `src/index.ts`
 (`turn_end` trigger, `agent_before_settle` write wait, `session_before_compact` fold,
-`session_shutdown`, `pi.appendEntry`, the `hy_recall` and `hy_flush` tools, the `/hy` command, the
+`session_shutdown`, `pi.appendEntry`, the `hy_recall` tool, the `/hy` command, the
 footer bar). The harnesses in `dev/` replay the four real captured observer chunks
 through the same `writeChunk` path the extension uses. Run from the repository root:
 
@@ -1175,12 +1112,8 @@ Results and judge verdicts are in `RESULTS.md`.
 5. **Compaction takeover at scale.** `dev/compact-test.py` exercises
    `session_before_compact` in a real RPC session, but at n=1; sessions that compact
    repeatedly with a live bank are not yet measured.
-6. **Model-named boundaries: measured, and settled off.** `hy_flush` gives the session model the
-   boundary and `tools/flush-check.ts` pins the rules it must obey (front always included, clamped
-   `to`, bounded queue). The three arms in `RESULTS.md` came back with no measured benefit — flat
-   specificity at a 53 % larger bank, 7/8 specifics retained in both arms of the compaction pilot,
-   and +28 % writer tokens just to offer it — so `flushTool` stays `false` and the offer is not
-   presented as a retention win. The class none of them reached is `/compact` followed by a fresh
-   process; the lever there is `observeAfterTokens`, and re-opening the tool needs that gap measured
-   first — every capture in `dev/corpus-extended.json` arrived with its boundary already fixed, so the
-   corpus runs could not answer it either.
+6. **Coverage before a fresh process.** The class no arm reached is `/compact` followed by a fresh
+   process: after a restart, whatever landed before it is all a new process can read. The lever there
+   is `observeAfterTokens`. A model-named boundary was tried against this and removed — three arms
+   measured no benefit (`RESULTS.md`). Every capture in `dev/corpus-extended.json` arrived with its
+   boundary already fixed by the observer's threshold, so the corpus runs could not answer it either.

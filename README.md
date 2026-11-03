@@ -103,9 +103,6 @@ nothing backs off between turns. The audit records `write_cooldown { waitS }` an
 | `fallbackCooldownS` | `300` | stay on the fallback this long after a failover (cleared only by a **primary** answer) |
 | `writeCooldownS` | `30` | wait before writing again after a failed attempt, doubling while it keeps failing (capped at 10 min); `0` disables. A dead endpoint otherwise costs one request per turn |
 | `idleDrainAfterMs` | `180000` | drain a session that is doing nothing: after this much quiet, one write starts if the unread window is at least **4×** `observeAfterTokens`. A write is otherwise only ever started by `turn_end`, so a session left open never pays down its backlog. `0` disables it. A writer that has failed is probed, not vetoed: at most 3 attempts spaced by `writeCooldownS`, then it waits for a turn |
-| `flushTool` | `false` | opt in to let the session model name the range the writer reads: `hy_flush` with no arguments lists the unwritten entries, `hy_flush({to})` queues a write up to that ref. The front of the window is always included — coverage is monotone, so a skipped front would be a hole the ledger can never mark. Refuses on `/hy off`, a write in flight, a pending extract, a held primary, an active cooldown, and a queue of 2. Off costs no prompt tokens, and off is the default on measurement rather than caution: three arms found no retention benefit (both arms kept 7/8 specifics through a compaction), offering the tool cost +28 % writer tokens and +13 s per session, and 7 of 9 ranged calls were refused at `flushMinTokens` — `RESULTS.md` holds the verdict and the one class that could reopen it |
-| `flushListEntries` | `24` | how many unwritten entries that listing shows before summarising the rest; previews are 120 characters, never re-serialized into the writer's prompt |
-| `flushMinTokens` | `2000` | refuse a model-initiated write whose named range carries less than this much, and answer with the amount it would have carried. The floor is on the write, not the window: naming `to` a quarter of the way up a fat window is still a thin chunk. Cutting the same content into finer pieces than the threshold wrote 53 % more facts at flat specificity and a lower durable share, so a thin flush is refused rather than paid for. 2000 is tuned against that arm (about a third of `maxChunkTokens`), not derived; `0` accepts any flush |
 | `busyRetries` / `busyBackoffMs` | `3` / `4000` | 429 handling: llama-swap rejects a concurrent request to a single-slot model *instantly* instead of queueing. Waits double, capped at 60 s each and at a quarter of `timeoutMs` in total; after that the fallback is used instead of sleeping through the write |
 | `pruneAfterDays` | `30` | delete per-session state older than this; `0` disables. The 10 newest sessions and the running one are always kept |
 | `waitForWriteOnSettle` | `true` | block the end of a turn on an in-flight write. A write that completes with the window still over the trigger is followed by another, at most twice per turn and only while the writer is healthy |
@@ -113,6 +110,11 @@ nothing backs off between turns. The audit records `write_cooldown { waitS }` an
 | `compactWaitMs` | `60000` | ceiling on that wait, shared by the running write and its chained follow-ups — not per write, or a backlog could pin compaction. 60 000 covers the reconcile p75 (~55 s) and both deferrals in the live audit (2 s and 11 s left); it deliberately does not cover most extract-stage waits, where the ETA says do not bother |
 | `shutdownWaitMs` | `5000` | cap on how long `session_shutdown` waits for a write |
 | `statusBar` | `true` | footer bar: window fill, bank fill, spinner, `✓ +N ~M` |
+
+Keys the extension no longer reads are named at startup rather than ignored in silence.
+`flushTool`, `flushListEntries` and `flushMinTokens` went with `hy_flush`, which was removed
+on measurement (`RESULTS.md`): a config that still sets them gets one warning line at
+`session_start` and the keys land in the audit (`tools/removed-keys-check.ts`).
 
 ## Commands
 
@@ -145,26 +147,6 @@ watermark to the newest entry and records a `hy.gap` with `reason: "disabled"` �
 otherwise a session that was off for hours pays for the whole backlog in a burst of writes on
 re-enable. The config's `enabled: false` is the global kill switch and wins over `/hy on`;
 the command says so rather than pretending.
-
-**`hy_flush` — the model can name the boundary.** Memory work normally starts on a turn once the
-unread window passes `observeAfterTokens`, so a chunk ends wherever that estimate landed. With
-`flushTool: true` the session model is also offered a `hy_flush` tool: a bare call lists the entries
-the writer has not read (`[n] role: first 120 characters`), and `hy_flush({ to: n })` queues a write
-over entries `[0]..[n]`. The front of the unwritten window is always included — coverage along a
-branch is monotone, so a flush that skipped the front would leave entries no later write can mark as
-covered — and a `to` past the last entry is clamped and reported. The write is queued, so the turn
-keeps going: the facts land when it finishes and are readable with `hy_recall`. It refuses when the
-session is off, a write is in flight, an extract is awaiting its reconcile, the primary writer is
-held, a cooldown is active, two flushes are already queued, or the unwritten window is below
-`flushMinTokens` — in which case the listing itself says how much a write needs, because a model
-that keeps flushing thin stretches was measured ignoring the refusals.
-It is off by default because that pilot measured no compaction-survival advantage — the bank-rendered
-summary kept the same 7 of 8 settled specifics as pi's own prose summary, while the extra writes cost
-about 28 % more writer tokens — and the misses that did happen were extraction and retrieval use, not
-the timing of the write. The tool stays available as an opt-in for sessions that want to choose the
-boundary themselves, and the reading is provisional: three runs, one weak session model, one
-conversation shape, and no measurement of the class it could not reach — `/compact` followed by a fresh
-process, where the lever is `observeAfterTokens` rather than a tool (`RESULTS.md`).
 
 ## Compaction: who decides when
 
@@ -487,11 +469,10 @@ it, which is.
 | `src/stats.ts` | what the footer and `stats.json` count, and how those counters are recovered from the session's own ledger at load instead of restarting at zero (pinned by `tools/stats-counter-check.ts`) |
 | `src/config.ts` | every setting and its default |
 | `src/entries.ts` | coverage window, entry rendering, chunk building from session entries |
-| `src/chain.ts` | when a finished write is followed by another, and when a flush is accepted |
+| `src/chain.ts` | when a finished write is followed by another, and when an idle session drains |
 | `src/failures.ts` | failure class, cooldown ladder, whether a chunk should shrink |
 | `src/lag.ts` | how far behind the writer is, and whether a compaction should wait for it: stage-aware ETA from the last eight writes, and the gates that make it skip (overflow, unhealthy writer, backoff, no history, ETA past the budget). Pure — pinned by `tools/lag-check.ts`, and its wiring by `tools/compaction-wait-check.ts` |
 | `src/budget.ts` | how a compaction splits the room the next request has — tail, digest, note — including who gives way (the tail asks for `keepRecentShare` of the room and is held at `COMPACT_KEEP_MIN_TOKENS` while the room can pay one; the note takes what is left up to `summaryMaxTokens`, and below 1 500 tokens of room the tail is the half that goes under its floor, which `underprovisioned` reports), a digest reserved at a ceiling and then priced down by a boundary probe, and the difference between a cut the backward walk made and a cut the request cap made. Pure — pinned by `tools/budget-split-check.ts` |
-| `src/flush.ts` | `hy_flush`: list the unwritten entries, resolve a `to` into a monotone range |
 | `src/hifi.ts` | the optional model-written checkpoint and its fact guard |
 | `src/llm.ts` | the writer client used by the extension |
 | `src/index.ts` | the wiring: triggers, tools, command, footer |
@@ -501,12 +482,10 @@ it, which is.
 | `dev/run.ts` | replay a corpus of captures through the shipped write path (`--bank-index` runs the bank-aware extract arm and `--extract-prompt actorframe` the actor-frame prompt arm; both are off by default, so baselines are the flagless path). Captured text is normalized to the indices the shipped path shows, and a chunk it gives up on after all attempts is listed in `metrics.json` as `droppedChunks` instead of vanishing from the ledger |
 | `dev/prompts-actorframe.ts` | the actor-frame extract prompt: the shipped prompt plus the clauses upstream Hy-Memory puts at the top of its own coding extract prompt — who a statement is about, restraint as budget reallocation rather than abstention, evidence fidelity. Experiment-only; `tools/extract-prompt-check.ts` pins that it is additive, reaches only the extract call, and is never set by the shipped extension |
 | `dev/judge.ts` | blind quality judge for one run's writes, rubric in `dev/rubric.md` |
-| `dev/boundary-arms.ts` | move the chunk boundary over identical content, compare runs, emit the pieces for the judge |
+| `dev/boundary-arms.ts` | move the chunk boundary over identical content, compare runs, emit the pieces for the judge; this is the arm that measured finer boundaries and found no gain (`RESULTS.md`) |
 | `dev/live-wait-replay.ts` | replay the live audit through the compaction wait policy: for every past `compact_deferred`, what the hook would have seen, whether it would have waited, and whether the write landed inside the budget. Read-only; it is how `compactWaitMs` was chosen rather than guessed |
 | `dev/live-wait.sh` | watch a live session wait: one headless pi session over RPC, first prompt allowed to finish its write (an ETA needs a completed write to price), second prompt leaves a chunk running, compaction requested while that chunk is in flight. Asks each provider instance what it actually serves before anything runs and drops the ones that do not answer, because a model list broken by a dead instance is what lost two earlier probes their runs mid-session. Prints the audit lines it produced and pi's own answer. `LIVE_MODEL=<provider/modelId>`; scratch HOME, scratch state, scratch provider config so the writer really resolves |
 | `dev/live-wait-driver.py` | the RPC client behind it: JSONL over stdin/stdout, keeps `extension_ui_request` notices as evidence, follows the audit filtered to that session, and says whether the wait happened or was skipped and why. The compaction line is read from the audit rather than from pi's event stream — a manual compaction is not an agent run and never says it has settled, and waiting for that is what discarded an earlier probe's verdict |
-| `dev/live-flush.sh` | run pi headless with the extension loaded and ask whether the model calls `hy_flush` |
-| `dev/live-cadence.sh` | compare model-initiated writes against the token threshold in one live session |
 | `dev/corpus-restraint.json` | authored contrast pairs with known-correct output: 8 attribution pairs, 10 empty chunks (contract enforced by `tools/restraint-corpus-check.ts`) |
 | `dev/restraint-report.ts` | score a run against those pairs: abstention, speaker attribution at the draft gate and the bank gate, and the `tool_output` axis — what each tool chunk banked, including which facts repeat a declared value, which carry neither half, which a later merge carried in from another chunk, which declared values never reached the bank, which banked statements open with a person or with the agent's own voice, what became of each rule text the chunk declares (kept verbatim in a bank fact / kept only as its content words rearranged / reaching no bank fact — a keep means the wording sits in a banked fact, not that the rule was followed), which banked facts carry a token of a hidden value that no chunk in the corpus shows, and which banked chatter possibly arrived reworded rather than quoted (word matching, so a synonym substitution slips past it; reported columns, not gates) |
 | `dev/corpus-restraint2.json` | the second cut, its own gate: 8 new attribution pairs, 6 `nothing_work` chunks, 6 `tool_output` chunks (same contract check, plus `tools/restraint-corpus-mutation-check.ts` proving it rejects a broken corpus) |

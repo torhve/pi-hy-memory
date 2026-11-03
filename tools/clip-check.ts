@@ -161,7 +161,7 @@ assert(
 	renderEntry(assistantEntry, MAX_ENTRY_CHARS) === shown,
 	"leaving the window unset reproduces the shipped render exactly",
 );
-const shippedCallers = ["src/index.ts", "src/flush.ts"]
+const shippedCallers = ["src/index.ts"]
 	.map((f) => readFileSync(new URL(`../${f}`, import.meta.url), "utf8"))
 	.join("\n");
 assert(!shippedCallers.includes("maxArgChars"), "no shipped caller sets the window — only a measurement harness may");

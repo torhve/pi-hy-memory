@@ -9,6 +9,12 @@ an entry: it is staging for the next release. See `AGENTS.md` for the rules.
 - Internal: the package takes `Type` from `typebox` instead of from `@earendil-works/pi-ai`, declares
   `typebox` as a host-provided peer dependency, and now builds against the 1.5 host packages. pi-ai 1.5 no
   longer re-exports TypeBox, so the old import type-checked only against the 1.3 packages it was pinned to.
+- Removed `hy_flush`, the tool that let the session model name the range the writer reads, and with it
+  the settings `flushTool`, `flushListEntries` and `flushMinTokens`. Three arms measured no benefit:
+  specificity stayed flat at a 53 % larger bank, both arms of the compaction pilot kept the same 7 of
+  8 specifics, and offering the tool cost +28 % writer tokens. A config that still sets those keys is
+  named at startup and ignored, so remove them. `RESULTS.md` keeps the measurements and
+  stays, so the corpus arm can be re-run.
 
 ## 0.2.0 — 2026-11-02
 

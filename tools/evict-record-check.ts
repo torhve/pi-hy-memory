@@ -13,7 +13,7 @@
  *      still restores the dropped facts (the published reading: folded 1 451 facts against a store
  *      of 820). If folding read this record as a write it would permanently erase them;
  *   3. the record survives a reload. The mirror is rewritten from the in-memory ledger on every
- *      flush, so a reader that drops the record on reload would delete it from the copy that wins
+ *      write, so a reader that drops the record on reload would delete it from the copy that wins
  *      the next time.
  *
  * It also pins the reload claim `src/index.ts` makes in its audit comment: a reload re-applies the

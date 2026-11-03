@@ -191,7 +191,7 @@ refuses(
 );
 
 // 5: the knob stays unset where it ships.
-const shipped = ["src/index.ts", "src/flush.ts", "src/pipeline.ts"]
+const shipped = ["src/index.ts", "src/pipeline.ts"]
 	.map((f) => readFileSync(new URL(`../${f}`, import.meta.url), "utf8"))
 	.join("\n");
 assert(!shipped.includes("maxArgChars"), "no shipped caller sets maxArgChars");

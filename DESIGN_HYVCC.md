@@ -93,10 +93,6 @@ The four are orthogonal. hy has two of four.
   removal-bearing drafts. `recallHits` counts substring token overlap with no IDF
   (`src/render.ts:203-222`). pi-vcc scores with BM25 (`search-entries.ts:193-232`, `k1=1.2`,
   `b=0.75`, one-pass IDF, terms compiled once per search).
-- **`hy_flush` refs are window-relative.** `[n]` is an index into the *pending* list
-  (`src/flush.ts:79-88`, where a ref is a position among *renderable* rows), so a write that lands between the listing and
-  `hy_flush({to})` shifts every number. pi-vcc owns a session-global id→`#N` space that is
-  fail-closed on duplicate ids (`global-indices.ts:28-52`). **[measured]**
 - **Compaction accounting claims credit it may not have.** Pi runs *every*
   `session_before_compact` handler and keeps the **last non-undefined** result, `{cancel: true}`
   short-circuiting (`pi-coding-agent/dist/core/extensions/runner.js:813-838`, consumed at
@@ -481,8 +477,6 @@ measurement, not this.
   turns hy's transcript arm off. Until E proves recovery **and** bounded reads — including cache
   invalidation against a session file that is still being written — **off is the default**, and the
   bank scoring ships alone with the bank-only schema.
-- **`hy_flush` moves to the `#N` space** so a named range survives a write landing mid-call — and
-  keeps `[n]` when `recall.raw` is off, since there is then no transcript index to agree with.
 
 ### Vendoring discipline, or don't vendor
 
@@ -756,13 +750,11 @@ B and the starting point for F.
 5. **Retrieval stops being substring overlap.** [predicted] BM25/IDF on the bank against the
    documented 93/109 miss. Settled by: replay that corpus with the new scorer; the target is a
    material drop in misses with no wrong-entry retrievals added.
-6. **Named ranges stop going stale.** [measured hazard, predicted fix] `hy_flush({to})` against a
-   session-global index that is fail-closed on ambiguity.
-7. **The writer stops learning from boilerplate.** [measured hazard] Skill bodies fold to
+6. **The writer stops learning from boilerplate.** [measured hazard] Skill bodies fold to
    `[skill: name]`, `bashExecution` becomes a first-class line, `injected` messages stop
    counting as user-stated constraints. Settled by: replay a capture containing a skill load and
    count user-provenance facts about the skill.
-8. **Compaction accounting tells the truth about who compacted.** [measured hazard] Co-installed
+7. **Compaction accounting tells the truth about who compacted.** [measured hazard] Co-installed
    compactors silently discard one another by load order; hy would count and advance coverage
    only on an entry carrying its own marker.
 

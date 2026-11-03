@@ -56,3 +56,14 @@ The same control judged twice, `qwen3.8-flash-next-iq3_xxs`, `JUDGE_ATTEMPTS=3`:
 So the judge's own spread on identical writes is about **±0.05 specificity, ±1 noise, ±5 missed**.
 Reading rule for control vs halves, fixed here before the halves verdicts exist: a specificity gap
 under 0.1 and a missed gap under 8 are treated as no difference, not as a trend.
+
+## Outcome, written after the halves arm finished
+
+Prediction 1 failed. Mean specificity came back flat-to-lower at both seeds — 2.459 and 2.473 against
+the control's 2.519 and 2.563 — while the bank grew 53 % and its durable share fell from 60 % to 51 %
+at twice the writes. Missed per write fell (7.6 → 5.8) while total missed rose, because the arm made
+twice as many writes. That is the falsification named above: a finer boundary bought nothing on
+quality. `RESULTS.md` holds the arm.
+
+`hy_flush` shipped anyway on the timing claim, and was removed 2026-11-03 when that claim showed no
+benefit either.

@@ -134,6 +134,15 @@ Arm memory: `state/sessions/<sessionId>.{bank.json,summary.md,ledger.jsonl,stats
 pi-hy-memory; `om.observations.recorded` / `om.observations.dropped` / `om.reflections.recorded`
 custom entries in the session for pi-blackhole.
 
+## `hy_flush` — the closed thread (removed 2026-11-03)
+
+`hy_flush` let the session model name the range the writer reads. It is gone from `src/`: the tool,
+the settings `flushTool`, `flushListEntries` and `flushMinTokens`, the rules in `src/flush.ts`, the
+three checks that pinned them, and the live harnesses `dev/live-flush.sh`, `dev/live-cadence.sh` and
+`dev/live-reload.sh`. The code is in git history, and the reload pilot's capture stays at
+`dev/corpus-reload-5e8dab53.json`. The arms below stay as the reason for the removal, and the
+harnesses they name no longer run. `dev/boundary-arms.ts` is kept, so the corpus arm can be re-run.
+
 ## Does the session model use `hy_flush`? (2026-10-21, live)
 
 **Question:** a tool the session model is never told about in its prompt is either used or it is
@@ -286,13 +295,12 @@ control. The load-bearing columns are the durable share and the bank size, which
 the judge's spread; specificity itself moved by less than it, so it is reported as no difference
 rather than as a decline.
 
-**What this changes.** A finer boundary is not a quality win, so `hy_flush` is justified only by
-*timing* — a settled fact reaches the bank a turn earlier, which matters solely against a reload or
-compaction in that gap. `flushMinTokens` (default 2000) now refuses a write whose named range carries less than that, and
-the refusal states the amount it would have carried, so the model cannot fragment the bank one
-settled turn at a time.
-That is a behaviour change: the live cadence run showed a listing plus a flush on nearly every
-settled turn, which is exactly the cadence this floor stops.
+**What this changed.** A finer boundary is not a quality win, so `hy_flush` was left justified only by
+*timing* — a settled fact reaching the bank a turn earlier, which matters solely against a reload or a
+compaction in that gap. `flushMinTokens` (2 000 at the time) refused a write whose named range carried
+less than that and stated the amount it would have carried, so the model could not fragment the bank
+one settled turn at a time. The live cadence run had shown a listing plus a flush on nearly every
+settled turn, which is exactly the cadence that floor stopped.
 
 **Answered since:** whether earlier coverage survives a compaction — no advantage, in the section
 below, and the verdict on the offer closes the thread. **Still unproven:** retrieval precision on a
@@ -348,10 +356,10 @@ threshold fired mid-design, so nothing had been discarded at all. All four are f
 (`e7dc215`, `9b84a8f`, `83fa998`, `7cc36c4`, `7c016fc`) and the fix is visible per run: `settled 8/8`,
 `verbatim in kept tail 0`, and a named cause when a run produces no answer.
 
-**What this changes.** `flushTool` should not be presented as a retention win, and its default should
-stay off until something shows it buying durability. The two levers that could change the result are
-upstream of the flush and measurable without it: extraction coverage of short enumerables (exit codes,
-env var names), and whether a session model uses what `hy_recall` hands it.
+**What this changed.** `flushTool` was not presented as a retention win and its default stayed off,
+because nothing showed it buying durability. The two levers that could change the result sit upstream
+of the flush and are measurable without it: extraction coverage of short enumerables (exit codes, env
+var names), and whether a session model uses what `hy_recall` hands it.
 
 **Not proven by this:** a stronger session model, where the answer metric stops being dominated by a
 4-bit 4B model dropping facts it was given; sessions long enough that pi's prose has more specifics to
@@ -374,18 +382,20 @@ threshold, and the tool cannot replace it. So the honest reading is not that `hy
 — it is **no measured benefit, measurable overhead, and a call profile that mostly refuses** at the
 floor that exists to stop fragmentation.
 
-It ships `flushTool: false`, and that is the answer to "should it exist": as an opt-in seam, off, with
-its cost written down where anyone turning it on will read it. What the experiment left behind is not
-the tool but the machinery it forced into being — monotone coverage, a floor on a model-initiated
-write, a queue that drains, refusal copy that says whether to ask again — and the threshold path uses
-all of it. The one real win found here belongs to the *rendered* summary, not to the tool: the control
-lost a run to pi's generated summary hitting its output cap, and a render cannot.
+It shipped `flushTool: false`. That was the answer to "should it exist" at the time: an opt-in seam,
+off, with its cost written down where anyone turning it on would read it. An opt-in no arm showed a
+reason to turn on is a setting, a prompt surface and three checks that buy nothing, so the tool is
+removed. What the experiment left behind is the reading rather than the code: coverage is monotone, the
+token threshold is what guarantees it, and a second trigger has to repay what it costs. The one real win
+found here belongs to the *rendered* summary, not to the tool: the control lost a run to pi's generated
+summary hitting its output cap, and a render cannot.
 
-**Re-entry trigger.** The class this instrument could not reach is `/compact` followed by a **fresh
+**Re-entry cost.** The class this instrument could not reach is `/compact` followed by a **fresh
 process**, where whatever landed before the restart is all a new process can read. That is a coverage
-question, and the lever for it is `observeAfterTokens`, not a tool. If it is ever measured as a real
-gap, `flushTool: true` is already the switch and the surface is pinned by `tools/flush-check.ts`,
-`tools/flush-tool-check.ts` and `tools/flush-write-check.ts` — the choice then is whether the measured
+question, and the lever for it is `observeAfterTokens`, not a tool. If that gap is ever measured as
+real, the seam would have to be written again: `src/flush.ts`, `tools/flush-check.ts`,
+`tools/flush-tool-check.ts`, `tools/flush-write-check.ts` and the three live harnesses were deleted with
+it, and `git log --oneline -- src/flush.ts` is where they are. The choice then is whether the measured
 gap repays the writer tax, not whether the code still works.
 
 ## Does the writer propose short enumerables at all? (2026-10-22, offline, item 6.10)

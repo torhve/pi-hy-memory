@@ -22,9 +22,9 @@ import { Type } from "typebox";
 
 import { enforceBudget, foldLedger } from "./bank.js";
 import { COMPACT_OVERHEAD_TOKENS, DIGEST_ENTRY_CHARS, resolveBudget } from "./budget.js";
-import { IDLE_DRAIN_TRIGGER_FACTOR, shouldChainWrite, shouldFlushWrite, shouldIdleDrain } from "./chain.js";
+import { IDLE_DRAIN_TRIGGER_FACTOR, shouldChainWrite, shouldIdleDrain } from "./chain.js";
 import { EXTRACT_RECORD, highestChunkSeq, nextChunkId } from "./chunks.js";
-import { type HyConfig, legacyKeys, SETTING_DEFAULTS } from "./config.js";
+import { type HyConfig, legacyKeys, REMOVED_KEYS, SETTING_DEFAULTS } from "./config.js";
 import {
 	type ChunkBuild,
 	coverageWindow,
@@ -36,17 +36,6 @@ import {
 } from "./entries.js";
 import { nextFailoverState } from "./failover.js";
 import { failureClass, shrinksChunk, writeCooldownMs } from "./failures.js";
-import {
-	FLUSH_DESCRIPTION,
-	FLUSH_GUIDELINES,
-	FLUSH_PARAM_TO,
-	FLUSH_SNIPPET,
-	flushQueuedText,
-	flushRows,
-	rangeEntries,
-	renderUnwritten,
-	unwrittenRange,
-} from "./flush.js";
 import {
 	buildHifiPrompt,
 	checkHifi,
@@ -87,20 +76,6 @@ const WAIT_GRACE_MS = 250;
 function sleep(ms: number): Promise<void> {
 	return new Promise((resolve) => setTimeout(resolve, ms));
 }
-
-/**
- * What a refused `hy_flush` answers with. The wording differs by reason because the useful next step
- * differs: a thin write should be asked again later with a larger range, a write that is already
- * running must not be asked again at all, and anything else is just the bank staying as it is.
- */
-function flushRefusal(reason: string, tokens: number, minTokens: number): string {
-	if (reason === "under flush token floor")
-		return `hy_flush: not written, this write would carry ${tokens} tokens and a write needs ${minTokens}. Ask again with a larger \`to\`, or keep working: the threshold folds these entries shortly and hy_recall answers what is already in the bank.`;
-	if (reason === "write in flight" || reason === "extract awaiting reconcile" || reason === "write cooling down")
-		return `hy_flush: not written (${reason}). A write over this window is already running or queued, and coverage is monotone, so calling again for the same range adds nothing. Answer from hy_recall; the bank grows when that write lands.`;
-	return `hy_flush: not written (${reason}). The bank is unchanged; hy_recall still answers what it holds.`;
-}
-
 /**
  * The config file is optional, but a *malformed* file is not: falling back to
  * defaults in silence would run a different writer model than the one the user
@@ -197,7 +172,7 @@ export function ledgerFromSession(entries: SessionEntry[]): LedgerRecord[] {
 			continue;
 		}
 		// A ceiling record is not a write, but it has to be read back: the mirror is
-		// rewritten from the ledger on every flush, so a record reload drops would be
+		// rewritten from the ledger on every write, so a record reload drops would be
 		// erased from the copy that wins on the next reload.
 		if (entry.customType === EVICT_RECORD) {
 			const droppedIds = (data as { droppedIds?: unknown }).droppedIds;
@@ -243,10 +218,6 @@ export default function piHyMemory(pi: ExtensionAPI): void {
 	let chained = 0;
 	/** Whether the write that just finished failed, for the chain gate. */
 	let lastAttemptFailed = false;
-	/** Model-initiated writes queued but not finished; bounded by MAX_PENDING_FLUSH. */
-	let flushQueued = 0;
-	/** Chunk ids started by `hy_flush`, so the queue drains when each one lands. */
-	const flushChunks = new Set<string>();
 	/** Idle-drain bookkeeping: the last turn that ran, and the timer watching it. */
 	let lastActivityAt = Date.now();
 	let idleTimer: ReturnType<typeof setInterval> | null = null;
@@ -499,8 +470,6 @@ export default function piHyMemory(pi: ExtensionAPI): void {
 			/* no checkpoint yet */
 		}
 		chained = 0;
-		flushQueued = 0;
-		flushChunks.clear();
 		const offForSession = isOffForSession(sessionId);
 		state = {
 			sessionId,
@@ -553,12 +522,18 @@ export default function piHyMemory(pi: ExtensionAPI): void {
 			audit("config_parse_failed", { file: CONFIG_FILE, error: configParseError.slice(0, 200) });
 			warn(ctx, `config ${CONFIG_FILE} could not be parsed, using defaults: ${configParseError.slice(0, 160)}`);
 		}
-		// The writer is a model from pi's list now; an endpoint pair left in the
-		// config would otherwise be ignored in silence.
-		const legacy = legacyKeys(config as unknown as Record<string, unknown>);
-		if (legacy.length > 0) {
-			audit("legacy_config", { keys: legacy });
-			warn(ctx, `ignoring ${legacy.join(", ")}: set "model": "provider/modelId" from your pi model list`);
+		// Two config cleanups left keys behind: the writer is a model from pi's list now, and
+		// `hy_flush` was removed on measurement. A session has to be told about both, and
+		// `warn` notifies once per process, so one message carries the two groups.
+		const rawConfig = config as unknown as Record<string, unknown>;
+		const legacy = legacyKeys(rawConfig);
+		const stale = REMOVED_KEYS.filter((key) => rawConfig[key] !== undefined);
+		if (legacy.length > 0 || stale.length > 0) {
+			audit("legacy_config", { keys: [...legacy, ...stale] });
+			const notes: string[] = [];
+			if (legacy.length > 0) notes.push(`ignoring ${legacy.join(", ")}: set "model" from your pi model list`);
+			if (stale.length > 0) notes.push(`ignoring ${stale.join(", ")}: hy_flush was removed, delete these keys`);
+			warn(ctx, notes.join("; "));
 		}
 		try {
 			reset(ctx);
@@ -899,8 +874,6 @@ export default function piHyMemory(pi: ExtensionAPI): void {
 		const promise = runWrite(ctx, chunk, chunkId, sessionId).finally(() => {
 			if (!state) return;
 			state.pending = null;
-			// A flush occupies the queue until its write lands; a chained follow-up does not.
-			if (flushChunks.delete(chunkId)) flushQueued = Math.max(0, flushQueued - 1);
 			maybeChainWrite(ctx, sessionId);
 		});
 		state.pending = promise;
@@ -1788,152 +1761,6 @@ export default function piHyMemory(pi: ExtensionAPI): void {
 		audit("skipped_while_off", { sessionId: live.sessionId, entries: pending.length, tokens });
 		return { entries: pending.length, tokens };
 	};
-
-	/**
-	 * `hy_flush`: the session model names the range the writer should read.
-	 *
-	 * Two calls, deliberately. Bare lists the unwritten entries, because pi never
-	 * shows the model entry ids and it cannot name a range it has not seen; `to`
-	 * queues a write up to that ref. Queued rather than synchronous: extract is
-	 * 28–52 s on a local writer and `timeoutMs` is 480 000, so a synchronous tool
-	 * could stall a turn for eight minutes.
-	 */
-	// Off means no prompt surface at all: a tool the model is not allowed to use still
-	// costs its description and its guidelines in every session's prompt.
-	if (config.flushTool)
-		pi.registerTool({
-			name: "hy_flush",
-			label: "Hy flush",
-			description: FLUSH_DESCRIPTION,
-			promptSnippet: FLUSH_SNIPPET,
-			promptGuidelines: FLUSH_GUIDELINES,
-			parameters: Type.Object({
-				to: Type.Optional(Type.Number({ description: FLUSH_PARAM_TO })),
-			}),
-			async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
-				const live = state;
-				if (!live)
-					return {
-						content: [{ type: "text", text: "pi-hy-memory: no bank for this session yet." }],
-						details: undefined,
-					};
-				markActivity(ctx);
-
-				let branch: SessionEntry[];
-				let sessionId: string;
-				try {
-					branch = ctx.sessionManager.getBranch();
-					sessionId = ctx.sessionManager.getSessionId();
-				} catch {
-					return {
-						content: [{ type: "text", text: "pi-hy-memory: the session changed; call hy_flush again." }],
-						details: undefined,
-					};
-				}
-				if (sessionId !== live.sessionId)
-					return {
-						content: [
-							{ type: "text", text: "pi-hy-memory: this session was replaced; call hy_flush again." },
-						],
-						details: undefined,
-					};
-
-				const window = coverageWindow(branch, live.ledger, live.cursorId, live.resumeFromId);
-				const rows = flushRows(window.pending);
-
-				// No `to` is the listing, not a write.
-				if (params.to === undefined || params.to === null)
-					return {
-						content: [
-							{
-								type: "text",
-								text: renderUnwritten(
-									rows,
-									config.flushListEntries ?? 24,
-									window.tokens,
-									config.flushMinTokens,
-								),
-							},
-						],
-						details: { unwritten: rows.length, pendingTokens: window.tokens },
-					};
-
-				const range = unwrittenRange(rows, params.to);
-				if (range.empty) {
-					const why =
-						range.empty === "no-entries"
-							? "nothing is unwritten"
-							: range.empty === "to-before-start"
-								? `to=${params.to} is before the start of the window`
-								: `to=${params.to} is not a number`;
-					audit("flush_skipped", { sessionId, reason: range.empty, to: params.to, unwritten: rows.length });
-					return {
-						content: [{ type: "text", text: `hy_flush: ${why}. ${rows.length} entries unwritten.` }],
-						details: undefined,
-					};
-				}
-
-				const chunk = serializeEntries(rangeEntries(window.pending, rows, range), {
-					maxTokens: chunkBudget(),
-					maxEntryChars: config.maxEntryChars,
-				});
-				// The gated amount and the reported amount have to be the same number, or a refusal
-				// names a figure the model cannot reconcile with the listing.
-				const tokens = estimateTokens(chunk.text);
-				const decision = shouldFlushWrite({
-					sessionActive: sessionActive(),
-					inFlight: live.pending !== null,
-					pendingExtract: live.pendingExtract !== null,
-					primaryDown: live.primaryDownUntil > Date.now(),
-					coolingDown: live.writeCooldownUntil > Date.now(),
-					entryCount: chunk.entryCount,
-					pendingFlushes: flushQueued,
-					writeTokens: tokens,
-					minTokens: config.flushMinTokens,
-				});
-				if (!decision.flush) {
-					audit("flush_skipped", {
-						sessionId,
-						reason: decision.reason,
-						to: params.to,
-						end: range.end,
-						pendingTokens: window.tokens,
-					});
-					return {
-						content: [
-							{
-								type: "text",
-								text: flushRefusal(decision.reason, tokens, config.flushMinTokens),
-							},
-						],
-						details: undefined,
-					};
-				}
-
-				const chunkId = nextChunkId(live.sessionId, live.ledger, () => ++live.chunkSeq);
-				flushChunks.add(chunkId);
-				flushQueued++;
-				chained = 0;
-				lastAttemptFailed = false;
-				audit("hy_flush", {
-					sessionId,
-					chunkId,
-					requestedTo: params.to,
-					applied: { from: range.start, to: range.end },
-					clampedTo: range.clampedTo ?? null,
-					entries: chunk.entryCount,
-					droppedEntries: chunk.droppedEntries,
-					chunkTokens: tokens,
-					windowTokens: window.tokens,
-					queued: flushQueued,
-				});
-				startWrite(ctx, chunk, chunkId, sessionId);
-				return {
-					content: [{ type: "text", text: flushQueuedText(range, chunk.entryCount, tokens, chunkId) }],
-					details: { chunkId, entries: chunk.entryCount, tokens },
-				};
-			},
-		});
 
 	pi.registerCommand("hy", {
 		description:

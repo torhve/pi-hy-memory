@@ -166,12 +166,9 @@ const ctx = {
 	ui: { setStatus: () => {}, notify: () => {}, theme: { fg: (_c: string, t: string) => t } },
 };
 
-// Registration needs the opt-in: `flushTool` defaults to off after item 6.4 in `RESULTS.md`, so a
-// config left unset here would register no `hy_flush` and this check would assert a tool that isn't there.
-writeFileSync(configPath, JSON.stringify({ model: "test/writer", bankMaxTokens: 9999, flushTool: true }));
+writeFileSync(configPath, JSON.stringify({ model: "test/writer", bankMaxTokens: 9999 }));
 piHyMemory(pi as never);
 check("hy_recall registered", tools.has("hy_recall"), true);
-check("hy_flush registered", tools.has("hy_flush"), true);
 const recall = async (params: Record<string, unknown>): Promise<string> => {
 	const result = await (tools.get("hy_recall") as ToolDef).execute("t1", params, undefined, undefined, ctx);
 	return result.content.map((b) => b.text).join("\n");
