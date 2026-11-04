@@ -72,6 +72,63 @@ check(
 	shape("docs/CHANGELOG.md line 12 claims 214 checks passed"),
 	["offline 214 record"],
 );
+// A file named near a current count is the shape that fooled the classifier once: the entry names the file that
+// changed, not a document that records the number.
+check(
+	"a file named in the same sentence as a current count is still an assertion",
+	shape(
+		"the offline test suite currently passes 402 checks after the lease module section was added to test/run.mjs",
+	),
+	["offline 402 assert"],
+);
+check(
+	"a file named in a different sentence does not make this count a record",
+	shape("The offline test suite currently passes 402 checks. test/run.mjs was extended with a lease module."),
+	["offline 402 assert"],
+);
+// The real bank entries that an earlier version of this parser read wrong, kept as they were written.
+check(
+	"a README bug report records the wrong number and asserts the live one",
+	shape(
+		"README.md lines 22 and 23 incorrectly claim 238 checks while the suite reports 251; the user instructed to leave the README unchanged for now but noted it is wrong.",
+	),
+	["offline 238 record", "offline 251 assert"],
+);
+check(
+	"a log file reporting an old run is a record",
+	shape(
+		"The logs/release-14.log file reports 238 passing checks and 0 failing checks with a warm cache, reflecting the test suite state before the cache fix was applied.",
+	),
+	["offline 238 record"],
+);
+check(
+	"running a script and reporting its result is an assertion",
+	shape(
+		"Running `node test/run.mjs --offline` after fixing handshake assumptions resulted in 262 checks passed and 0 failed.",
+	),
+	["offline 262 assert"],
+);
+check(
+	"a changelog line calls its own number outdated and names the live one",
+	shape(
+		"docs/CHANGELOG.md line 12 currently reports 214 checks passed, which is stale relative to the current offline test suite results of 358.",
+	),
+	["offline 214 record", "offline 358 assert"],
+);
+// One entry stating both counts: each number takes the marker in its own half of the sentence.
+check(
+	"dry mode and LAN in one entry split by which half each number sits in",
+	shape(
+		"The test suite passes 358 checks in dry mode (TCTL_DRY=1) and 371 checks when including the LAN section (TCTL_LAN=1).",
+	),
+	["offline 358 assert", "lan 371 assert"],
+);
+check("a LAN count with the marker after the number", shape("371 checks passed with TCTL_LAN=1"), ["lan 371 assert"]);
+check(
+	"a run command carrying both flags is the LAN run it flags",
+	shape("TCTL_LAN=1 TCTL_DRY=1 node test/run.mjs reports 241 checks passed and 0 failed"),
+	["lan 241 assert"],
+);
 // The same number stated twice in one entry, once as a record and once as the current count: the assertion wins.
 check(
 	"the assertion wins when a number appears as both",

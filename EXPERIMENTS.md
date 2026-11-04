@@ -3085,14 +3085,14 @@ run against the right answer the corpus declares: the count each mode must end o
 current, and no count the corpus never stated.
 | arm | writes | active of written | active count claims | superseded counts still **asserted** as current | held only as records the corpus says stay | DELETEs | UPDATEs aimed at the current count | counts held by more than one entry | verdict |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| tree before the age lines | 33 | 29 of 30 | 9 | 4 | 3 | 0 | 1 of 1 | 1 | FAIL |
-| age lines landed (first run) | 32 | 28 of 30 | 9 | 4 | 3 | 0 | 1 of 2 | 1 | FAIL |
-| age lines landed (repeat) | 32 | 28 of 29 | 9 | 4 | 3 | 0 | 1 of 1 | 1 | FAIL |
-| age lines plus merge value gate | 32 | 30 of 31 | 11 | 5 | 2 | 0 | 0 of 1 | 3 | FAIL |
+| tree before the age lines | 33 | 29 of 30 | 9 | 5 | 2 | 0 | 1 of 1 | 1 | FAIL |
+| age lines landed (first run) | 32 | 28 of 30 | 9 | 5 | 2 | 0 | 1 of 2 | 1 | FAIL |
+| age lines landed (repeat) | 32 | 28 of 29 | 9 | 5 | 2 | 0 | 1 of 1 | 1 | FAIL |
+| age lines plus merge value gate | 32 | 30 of 31 | 11 | 6 | 1 | 0 | 0 of 1 | 3 | FAIL |
 
 Reading:
 
-- **The age lines changed nothing that this corpus can measure.** Every arm ends with 9 active count claims, 4 of
+- **The age lines changed nothing that this corpus can measure.** Every arm ends with 9 active count claims, 5 of
   them superseded numbers still asserted as current, and zero `DELETE`s. Only one or two `UPDATE`s fire across a
   30-chunk run, so the target question barely arises. On the easier corpus the age arm did retire two claims the
   no-age arm left active; on the crowded one it did not.
@@ -3144,24 +3144,24 @@ capped in tokens. The runs are `supersed-base`, `supersed-aged`, `sup1-idx`, `su
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | 1 (12 chunks) | no index | 10 of 17 | 2 | 0 | 358 ✓ 371 ✓ | 5 of 7 | 9 of 12 | 12 004 | PASS |
 | 1 | no index, age lines | 8 of 17 | 2 | 0 | 358 ✓ 371 ✓ | 6 of 7 | 9 of 12 | 12 764 | PASS |
-| 1 | index 600t | 12 of 20 | 3 | 0 | 358 ✓ 371 ✓ | 4 of 8 | 10 of 12 | 16 987 | PASS |
-| 1 | index 200t | 14 of 20 | 4 | 2 | 358 ✓ 371 ✓ | 6 of 6 | 11 of 12 | 15 956 | FAIL |
-| 2 (30 chunks) | no index | 29 of 30 | 9 | 4 | offline 402 ✗ lan 371 ✓ | 1 of 1 | 8 of 12 | 30 616 | FAIL |
-| 2 | no index, age lines | 28 of 29 | 9 | 4 | offline 402 ✗ lan 371 ✓ | 1 of 1 | 8 of 12 | 32 111 | FAIL |
+| 1 | index 600t | 12 of 20 | 4 | 2 | 358 ✓ 371 ✓ | 4 of 8 | 10 of 12 | 16 987 | FAIL |
+| 1 | index 200t | 14 of 20 | 5 | 4 | 358 ✓ 371 ✓ | 6 of 6 | 11 of 12 | 15 956 | FAIL |
+| 2 (30 chunks) | no index | 29 of 30 | 9 | 5 | offline 402 ✗ lan 371 ✓ | 1 of 1 | 8 of 12 | 30 616 | FAIL |
+| 2 | no index, age lines | 28 of 29 | 9 | 5 | offline 402 ✗ lan 371 ✓ | 1 of 1 | 8 of 12 | 32 111 | FAIL |
 | 2 | index 600t | **21 of 29** | **5** | **0** | **offline 402 ✓ lan 371 ✓** | 1 of 8 | 8 of 12 | 49 673 | **PASS** |
 | 2 | index 200t | 26 of 33 | 7 | 0 | offline 402 ✓ lan 371 ✗, and lan 251 invented | 2 of 7 | 8 of 12 | 43 283 | FAIL |
 
 Reading:
 
 - **On the crowded corpus the index is the only arm that ends with nothing stale asserted as current.** Both
-  no-index arms end holding 251, 334, 358 and a LAN 341 as live counts while never holding 402 at all. The
+  no-index arms end holding 251, 262, 334, 358 and a LAN 341 as live counts while never holding 402 at all. The
   600-token index arm ends holding 402 and 371 and asserts no superseded count: the only old numbers left active
   sit inside records — the changelog line, the release log, the hard-coded CI line — which the corpus says belong
   there. The bank is 8 entries smaller and holds 5 count claims instead of 9. Nothing about the reconcile rules
   changed between those arms; the writer was simply told what the bank already asserted before it drafted.
-- **On the easy corpus the 600-token index is neutral on correctness and worse on size.** It asserts no superseded
-  count, same as both no-index arms, but its bank ends with 12 active entries instead of 10 or 8, and 4 of its 8
-  UPDATEs missed. The 200-token index is the one that breaks: it leaves 226 asserted twice.
+- **On the easy corpus the index costs correctness as well as size.** Both no-index arms pass there. The 600-token
+  index arm ends asserting 251 twice — two active entries each claiming the offline count — and its bank grows to 12
+  active entries while 4 of its 8 `UPDATE`s missed. The 200-token index is worse: 226 and 251 both left asserted.
 - **The drafting failure is not fixed.** `8 of 12 counts reached the writer` on the crowded corpus in every arm,
   and four chunks still produced a draft stating a number the corpus marks superseded. The index changes what the
   writer banks; it does not stop a chunk that quotes an old log line from being drafted as if it were current.
@@ -3174,11 +3174,16 @@ Reading:
   it does not make it pick better.
 - **Cost.** Writer input rose from 30 616 to 49 673 tokens on the crowded corpus (+62 %) and from 12 004 to 16 987
   on the easy one (+41 %). Wall time rose from 76 s to 95 s.
+- **The crowded-corpus index arm was run three times: PASS, PASS, FAIL.** `sup2-idx` and `sup2-idx2` end clean;
+  `sup2-idx3` leaves 358 asserted while still holding 402, and wrote 13 supersessions against 8 and 6. Tokens held
+  steady across the three (49 673 / 47 745 / 48 725) while the end state did not. The no-index baseline was repeated
+  too (`sup2-base2`) and failed again, with 5 stale assertions and one invented count.
 
-**Gate result.** The gate asks for both corpora to improve. The crowded corpus improved on every end-state number
-it can be judged on. The easy corpus did not improve: it stayed correct and got a larger bank, noisier targets and
-41 % more writer input. So nothing ships, and the gate has to be read as what it now means — a change has to earn
-its tokens on the corpus that does not need saving.
+**Gate result.** The gate asks for both corpora to improve. The crowded corpus improved on every end-state number it
+can be judged on, in two of its three index runs. The easy corpus got worse: the index arm asserts 251 twice where
+both no-index arms pass, and it carries a larger bank, noisier targets and 41 % more writer input. So nothing ships,
+and the gate has to be read as what it now means — a change has to earn its tokens on the corpus that does not need
+saving.
 
 What the measurement does establish is where the win lives: the current claim reaching the bank, in a bank too big
 for the writer to see all of. What it establishes about the block is that "every active statement, newest first" is
@@ -3198,6 +3203,22 @@ reads; the verdict decides whether the bank ends in the state the corpus actuall
 never seen can slip through, so a PASS means "no contradiction the metrics can see", not "the bank is correct". And
 every arm below is one run of one model at temperature 0: a verdict reports what a single run did, not what a rule
 does. The claims section shows how far apart two identical arms can land.
+**Which model these runs used.** Every `sup1-*` and `sup2-*` arm in this section ran on
+`qwen3.8-flash-next-gyro_m-strata`, not on the writer the extension ships with (`kitxai/hy-memory-30b-a3b`). The
+round moved to the flash model to avoid contending with the production route. Sections earlier in this file — the
+restraint arms, the clipwindow runs, the hi-fi compaction runs — used the shipped writer, so their numbers are not
+comparable with these. What transfers from this round is the direction: whole entries change what the writer drafts,
+a list of values does not. What does not transfer is any absolute verdict, because a bank index works by changing
+the writer's restraint, and restraint is a property of the model. `sup2w-*` arms repeat the crowded corpus on the
+shipped writer.
+
+**How a count is attributed to a mode.** `dev/suite-claim.ts` reads the marker inside the number's own segment:
+"the suite passes 358 checks in dry mode and 371 checks when including the LAN section" gives 358 to offline and 371
+to LAN. A run command carrying both flags is the LAN run it flags. An earlier version of this parser assigned modes
+from a clause split that cut "README.md lines 22 and 23" in half, and read a file named near a count as a record of
+it, which turned an assertion about 402 into a record about `test/run.mjs`. Both are fixed. `tools/suite-claim-check.ts`
+now pins 28 shapes, four of them copied verbatim from bank entries the parser got wrong. Every table in this section
+was re-scored with the fixed parser, which is why the numbers moved.
 
 ### The cheap version: an index of values instead of entries (four arms)
 
@@ -3209,10 +3230,10 @@ never changes. `--bank-index-claims-records` adds the recorded numbers too, labe
 
 | corpus | arm | bank at the end | active count claims | superseded counts asserted | holds each mode's last count | UPDATEs aimed at the current count | counts reaching the writer | writer input tokens | verdict |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| 1 | claims 150t | 11 of 19 | 4 | 0 | 358 ✓ 371 ✓ | 5 of 8 | 11 of 12 | 13 561 | FAIL |
-| 2 | claims 150t | 28 of 30 | 7 | 2 | offline 402 ✗ lan 371 ✗ | 0 of 2 | 4 of 12 | 39 436 | FAIL |
-| 2 | claims + records 300t | 28 of 34 | 8 | 4 | offline 402 ✗ lan 371 ✓ | 2 of 6 | 10 of 12 | 37 294 | FAIL |
-| 2 | claims 150t, repeated | 30 of 33 | 11 | 6 | offline 402 ✗ lan 371 ✓ | 0 of 3 | 10 of 12 | 36 480 | FAIL |
+| 1 | claims 150t | 11 of 19 | 5 | 2 | 358 ✓ 371 ✓ | 5 of 8 | 11 of 12 | 13 561 | FAIL |
+| 2 | claims 150t | 28 of 30 | 8 | 3 | offline 402 ✗ lan 371 ✗ | 0 of 2 | 4 of 12 | 39 436 | FAIL |
+| 2 | claims + records 300t | 28 of 34 | 9 | 5 | offline 402 ✗ lan 371 ✗ (341 asserted) | 2 of 6 | 10 of 12 | 37 294 | FAIL |
+| 2 | claims 150t, repeated | 30 of 33 | 12 | 7 | offline 402 ✗ lan 371 ✗ (341 asserted) | 0 of 3 | 10 of 12 | 36 480 | FAIL |
 
 Reading:
 
@@ -3226,12 +3247,13 @@ Reading:
   with no index and 49 673 with the statements index. The savings evaporate because the bank never shrinks: candidates
   stay large for the rest of the run.
 - **These arms are noisy, and the noise is bigger than the gap between them.** Two identical claims arms on the same
-  corpus differed in stale assertions (2 vs 6), in whether LAN 371 survived at all, and in coverage (4 of 12 counts
-  reaching the writer vs 10 of 12). The first claims run's coverage collapse was therefore run noise, not the
-  mechanism. On corpus 1 the claims arm failed only because the writer invented an offline 247 that no chunk states.
+  corpus differed in stale assertions (3 against 7), in whether any LAN count survived, and in coverage (4 of 12
+  counts reaching the writer against 10 of 12). The first claims run's coverage collapse was run noise, not the
+  mechanism. On corpus 1 the claims arm left 251 asserted twice and banked an offline 247 that no chunk states.
 
-**Next probe, still dev-only.** Price the statements index instead of shrinking it. It passed the crowded corpus once
-and failed the easy corpus on size, so the open questions are: does the crowded-corpus PASS survive repeats, does a
-whole-entry index at 300 tokens keep it (200 tokens is known to break it by dropping a whole mode), and does the
-mode-label leak into the drafts shrink when the block is capped. `dev/metric-identity.ts` stays as the dev-side parser
-for claim keys; the claims-only block is dropped.
+**Next probe, in progress.** Repeats of the statements index came back PASS, PASS, FAIL on the crowded corpus, so the
+index is not a rule that makes a run end clean — it is a change that makes a clean ending more likely. The open
+question is the model, not the shape: `sup2w-base`, `sup2w-idx600` and `sup2w-idxc` replay the no-index arm, the
+600-token statements index and the claims index on `kitxai/hy-memory-30b-a3b`, the writer the extension actually
+ships. Until those land, no index number in this file is a product claim. `dev/metric-identity.ts` stays as the
+dev-side parser for claim keys; the claims-only block is dropped.
