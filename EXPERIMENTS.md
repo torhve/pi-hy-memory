@@ -3195,10 +3195,43 @@ caught rather than being read as a stale count. Each corpus now also declares it
 mode must end on, and which superseded counts may stay inside records — and the report prints a `VERDICT` line
 against it. **The record/assertion split is a wording heuristic, not ground truth.** It decides *how* a held number
 reads; the verdict decides whether the bank ends in the state the corpus actually claims. A phrasing the parser has
-never seen can slip through, so a PASS means "no contradiction the metrics can see", not "the bank is correct".
+never seen can slip through, so a PASS means "no contradiction the metrics can see", not "the bank is correct". And
+every arm below is one run of one model at temperature 0: a verdict reports what a single run did, not what a rule
+does. The claims section shows how far apart two identical arms can land.
 
-**Next probe, still dev-only.** A claims-only block instead of a statements block: one line per metric the chunk
-actually mentions, `measure/scope` key plus the current value, derived by the parser in `dev/metric-identity.ts`
-(30 of 31 numeric facts keyed correctly, wrong on none). No statements, no labels, no retired values, no block at
-all when the chunk names no numeric key. The question it answers is whether the win survives at a fraction of the
-tokens, and whether the mode-label leak disappears when the bank's wording is absent.
+### The cheap version: an index of values instead of entries (four arms)
+
+The statements index costs a lot because it copies whole entries. `dev/run.ts --bank-index-claims` builds the block
+itself: one line per number the bank currently asserts (`- offline checks: 402`), records left out, newest first,
+deduped — about 11 tokens when the crowded corpus is finished, against 600 for the statements block. It reaches the
+writer through an experiment-only seam in `writeChunk` (`bankIndex: { block, clause }`), so the shipped render path
+never changes. `--bank-index-claims-records` adds the recorded numbers too, labelled as records rather than current.
+
+| corpus | arm | bank at the end | active count claims | superseded counts asserted | holds each mode's last count | UPDATEs aimed at the current count | counts reaching the writer | writer input tokens | verdict |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| 1 | claims 150t | 11 of 19 | 4 | 0 | 358 ✓ 371 ✓ | 5 of 8 | 11 of 12 | 13 561 | FAIL |
+| 2 | claims 150t | 28 of 30 | 7 | 2 | offline 402 ✗ lan 371 ✗ | 0 of 2 | 4 of 12 | 39 436 | FAIL |
+| 2 | claims + records 300t | 28 of 34 | 8 | 4 | offline 402 ✗ lan 371 ✓ | 2 of 6 | 10 of 12 | 37 294 | FAIL |
+| 2 | claims 150t, repeated | 30 of 33 | 11 | 6 | offline 402 ✗ lan 371 ✓ | 0 of 3 | 10 of 12 | 36 480 | FAIL |
+
+Reading:
+
+- **Every value-list arm failed, on both corpora, in these four runs.** None of them ever holds 402 on the crowded
+  corpus, where the 600-token statements index is so far the only arm that passes. So the thing the writer needed was
+  the entry — the sentence it would otherwise duplicate — not the number.
+- **Retiring is what the value list loses.** The claims arms superseded 2, 6 and 3 writes out of 30-plus; the
+  statements index superseded 8 of 29 and ended 8 entries smaller. A list of values gives the writer nothing to
+  point at, so old entries stay active.
+- **It is cheaper than the statements index and dearer than doing nothing** — 36 480 to 39 436 tokens against 30 616
+  with no index and 49 673 with the statements index. The savings evaporate because the bank never shrinks: candidates
+  stay large for the rest of the run.
+- **These arms are noisy, and the noise is bigger than the gap between them.** Two identical claims arms on the same
+  corpus differed in stale assertions (2 vs 6), in whether LAN 371 survived at all, and in coverage (4 of 12 counts
+  reaching the writer vs 10 of 12). The first claims run's coverage collapse was therefore run noise, not the
+  mechanism. On corpus 1 the claims arm failed only because the writer invented an offline 247 that no chunk states.
+
+**Next probe, still dev-only.** Price the statements index instead of shrinking it. It passed the crowded corpus once
+and failed the easy corpus on size, so the open questions are: does the crowded-corpus PASS survive repeats, does a
+whole-entry index at 300 tokens keep it (200 tokens is known to break it by dropping a whole mode), and does the
+mode-label leak into the drafts shrink when the block is capped. `dev/metric-identity.ts` stays as the dev-side parser
+for claim keys; the claims-only block is dropped.

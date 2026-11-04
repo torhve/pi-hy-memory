@@ -129,7 +129,11 @@ export async function writeChunk(
 		 * treated as a result; the shape of the index (what is shown when the cap bites) is not
 		 * settled by the first run.
 		 */
-		bankIndex?: boolean | { maxTokens?: number };
+		/** `block` plus `clause`: experiment only, never set by the extension. The harness builds the index
+		 * itself and this injects it verbatim — `src` neither caps it nor renders entries for it — so a
+		 * different index shape can be scored against the same corpora and the same scorer. An empty block
+		 * falls back to the shipped render while keeping the supplied clause. */
+		bankIndex?: boolean | { maxTokens?: number; block?: string; clause?: string };
 		/**
 		 * Experiment only, off by default and never set by the extension: replace the extract
 		 * system prompt with a variant, so a prompt-text change can be measured against the
@@ -196,11 +200,18 @@ export async function writeChunk(
 		// The index is built from the bank as it stands before this chunk, and only when
 		// there is something in it to say.
 		const bankIndex = options.bankIndex
-			? renderBankIndex(bank, typeof options.bankIndex === "object" ? (options.bankIndex.maxTokens ?? 600) : 600)
+			? typeof options.bankIndex === "object" && options.bankIndex.block
+				? { block: options.bankIndex.block }
+				: renderBankIndex(
+						bank,
+						typeof options.bankIndex === "object" ? (options.bankIndex.maxTokens ?? 600) : 600,
+					)
 			: null;
-		const extractContent = bankIndex?.block
-			? `${bankIndex.block}\n${BANK_INDEX_CLAUSE}\n\n${chunk.text}`
-			: chunk.text;
+		const indexClause =
+			typeof options.bankIndex === "object" && options.bankIndex.clause
+				? options.bankIndex.clause
+				: BANK_INDEX_CLAUSE;
+		const extractContent = bankIndex?.block ? `${bankIndex.block}\n${indexClause}\n\n${chunk.text}` : chunk.text;
 		// Undefined in every shipped path: the variant exists so a prompt-text change is
 		// measured before it replaces anything the writer actually sees.
 		const extractSystem = options.extractSystem ?? EXTRACT_SYSTEM;

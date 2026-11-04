@@ -3,7 +3,8 @@
  *
  *   npx tsx dev/run.ts --run <runId> [--corpus FILE] [--pool 12000]
  *       [--candidate-render-mode union|perDraft] [--candidate-limit 12]
- *       [--bank-index [--bank-index-tokens N]] [--extract-prompt actorframe]
+ *       [--bank-index [--bank-index-tokens N]] [--bank-index-claims [--bank-index-claims-tokens N]]
+ *       [--extract-prompt actorframe]
  *
  * Writer route resolution, in order:
  *   1. POC_ORIGIN / POC_KEY / POC_MODEL (same convention as poc.ts);
@@ -37,6 +38,7 @@ import { normalizeLegacyLabels, rolesFromText } from "../src/serialize.js";
 import type { BankEntry, Draft, LedgerRecord } from "../src/types.js";
 import { ACTOR_FRAME_EXTRACT_SYSTEM } from "./prompts-actorframe.js";
 import { rawWriter } from "./raw-writer.js";
+import { suiteClaims } from "./suite-claim.js";
 
 type Row = Record<string, any>;
 
@@ -96,6 +98,36 @@ function bankStats(bank: BankEntry[]): { active: number; tokens: number } {
 	return { active: active.length, tokens: active.reduce((s, e) => s + e.tokenCount, 0) };
 }
 
+/**
+ * The bank as the numbers it currently asserts, one line each, newest first. Built by the dev claim parser
+ * (`dev/suite-claim.ts`) rather than by copying entries, so the arm measures whether naming the value alone is
+ * enough for the writer to notice an update.
+ */
+const CLAIMS_INDEX_CLAUSE =
+	"The <current_values> block lists the numbers the memory already holds as current. Do not draft a fact that only restates one of them. Do draft when this chunk reports a different number for the same measurement, and name the number it replaces.";
+
+function claimsIndex(bank: BankEntry[], maxTokens: number, includeRecords: boolean): string {
+	const seen = new Set<string>();
+	const lines: string[] = [];
+	let used = 0;
+	for (const entry of bank.slice().reverse()) {
+		if (entry.status !== "active") continue;
+		for (const claim of suiteClaims(entry.statement)) {
+			if (claim.record && !includeRecords) continue;
+			const key = `${claim.mode} ${claim.value} ${claim.record ? "record" : "current"}`;
+			if (seen.has(key)) continue;
+			seen.add(key);
+			const line = `- ${claim.mode} checks: ${claim.value}${claim.record ? "  (a record about a document, not the current count)" : ""}`;
+			const cost = Math.ceil(line.length / 4);
+			if (used + cost > maxTokens) continue;
+			used += cost;
+			lines.push(line);
+		}
+	}
+	if (lines.length === 0) return "";
+	return `<current_values>\n${lines.join("\n")}\n</current_values>`;
+}
+
 /** The same candidate selection `writeChunk` performs (per-draft limit = shown cap). */
 function candidateCoverage(
 	bank: BankEntry[],
@@ -153,6 +185,13 @@ async function main(): Promise<void> {
 	// Experiment arm (TODO 7.10): extract sees the bank's task lines before it proposes.
 	// Off unless the flag is given, so every published baseline stays the flagless path.
 	const bankIndex = process.argv.includes("--bank-index");
+	// Experiment arm: the index as one line per number the bank currently asserts, built by the dev claim
+	// parser. Records (a changelog line, a log file) are left out, so the block is only what is current.
+	const bankIndexClaims = process.argv.includes("--bank-index-claims");
+	const claimsIndexTokens = numArg("--bank-index-claims-tokens", 150);
+	// Variant of the same arm: the claims block also names the recorded numbers, so the writer can see that an old
+	// value in the bank is a record rather than the current count.
+	const bankIndexClaimsRecords = process.argv.includes("--bank-index-claims-records");
 	// Experiment arm (TODO 7.18): refuse an UPDATE whose draft drops a value its target carries,
 	// even when the subject guard calls the two one subject. Off unless the flag is given, so every
 	// baseline on disk stays the flagless path and the arm says so in its own log line.
@@ -287,7 +326,7 @@ async function main(): Promise<void> {
 		prefix.push(r);
 	}
 	console.log(
-		`run=${runId} model=${route.model} origin=${route.origin} temp=0 kwargs=none timeout=600s candidates=${renderMode} limit=${candidateLimit}${bankIndex ? ` bank-index=${bankIndexTokens}t` : ""}${extractPromptName ? ` extract-prompt=${extractPromptName}` : ""}${mergeValueGate ? " merge-value-gate=on" : ""}`,
+		`run=${runId} model=${route.model} origin=${route.origin} temp=0 kwargs=none timeout=600s candidates=${renderMode} limit=${candidateLimit}${bankIndexClaims ? ` bank-index=claims${bankIndexClaimsRecords ? "+records" : ""} ${claimsIndexTokens}t` : bankIndex ? ` bank-index=${bankIndexTokens}t` : ""}${extractPromptName ? ` extract-prompt=${extractPromptName}` : ""}${mergeValueGate ? " merge-value-gate=on" : ""}`,
 	);
 	console.log(
 		`corpus=${corpus.length} chunks, ledger has ${doneChunk.size} complete, ${extractOf.size - doneChunk.size} resumable`,
@@ -335,7 +374,14 @@ async function main(): Promise<void> {
 					rawDir: join(outDir, "raw"),
 					candidateRenderMode: renderMode,
 					candidateLimit,
-					bankIndex: bankIndex ? { maxTokens: bankIndexTokens } : undefined,
+					bankIndex: bankIndexClaims
+						? {
+								block: claimsIndex(bank, claimsIndexTokens, bankIndexClaimsRecords),
+								clause: CLAIMS_INDEX_CLAUSE,
+							}
+						: bankIndex
+							? { maxTokens: bankIndexTokens }
+							: undefined,
 					mergeValueGate,
 					extractSystem,
 					resume: resumeFrom

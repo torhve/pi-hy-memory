@@ -131,6 +131,34 @@ const bank: BankEntry[] = [
 	check("the system prompt is untouched", extract.system.includes("Extract durable memory candidates"), true);
 }
 
+// ---- 2b) a harness-built block: injected verbatim, shipped path untouched ----------
+{
+	const s = spy();
+	await writeChunk(s.writer as never, bank, "chunk-2", CHUNK, {
+		bankIndex: {
+			block: "<current_values>\n- offline checks: 402\n</current_values>",
+			clause: "Custom clause.",
+		},
+	});
+	const extract = s.seen.find((c) => c.label.startsWith("extract"))!;
+	check(
+		"the supplied block arrives first and verbatim",
+		extract.user.startsWith("<current_values>\n- offline checks: 402\n</current_values>"),
+		true,
+	);
+	check("the supplied clause replaces the shipped one", extract.user.includes("Custom clause."), true);
+	check("the shipped index is not rendered as well", extract.user.includes("<existing_memory>"), false);
+	check("the shipped clause is absent", extract.user.includes(BANK_INDEX_CLAUSE), false);
+	check("the chunk still arrives verbatim at the end", extract.user.endsWith(CHUNK), true);
+	const s2 = spy();
+	await writeChunk(s2.writer as never, bank, "chunk-2", CHUNK, {
+		bankIndex: { block: "", clause: "Custom clause." },
+	});
+	const fallback = s2.seen.find((c) => c.label.startsWith("extract"))!;
+	check("an empty supplied block falls back to the shipped index", fallback.user.includes("<existing_memory>"), true);
+	check("and keeps the supplied clause", fallback.user.includes("Custom clause."), true);
+}
+
 // ---- 3) the cap drops whole entries, never half a fact -----------------------------
 {
 	const wide: BankEntry[] = Array.from({ length: 12 }, (_, i) =>
