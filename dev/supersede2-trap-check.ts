@@ -12,9 +12,11 @@
  *   - the rank of the *current* count claim in that draft's candidate list;
  *   - the rank of the top-ranked count claim, and whether the number it asserts is one the suite moved past.
  *
- * A chunk is a trap when the top-ranked count claim is a stale number while the current one ranks below it.
- * No model call here: this measures the selection code, so a corpus that cannot set the trap is caught here
- * rather than after three paid arms.
+ * Four ways it can fail, counted separately because they need different fixes: a stale count ranked above the
+ * current one; the current claim never retrieved; stale counts sharing the screen with the current one; and a
+ * chunk that only records an old number while the bank's current claim is nowhere in view. No model call here:
+ * this measures the selection code, so a corpus that cannot set the trap is caught here rather than after
+ * three paid arms.
  *
  *   npx tsx dev/supersede2-trap-check.ts [--limit 24] [--corpus dev/corpus-supersede2.json]
  */
@@ -59,16 +61,22 @@ corpus.chunks.forEach((chunk, ci) => {
 	});
 });
 
-const kinds = { inverted: 0, unretrieved: 0, stalePeers: 0 };
-const kindsAfter = { inverted: 0, unretrieved: 0, stalePeers: 0 };
+const kinds = { inverted: 0, unretrieved: 0, stalePeers: 0, recordBlind: 0 };
+const kindsAfter = { inverted: 0, unretrieved: 0, stalePeers: 0, recordBlind: 0 };
 let droppedPeers = 0;
 let countChunks = 0;
+let recordChunks = 0;
 
 corpus.chunks.forEach((chunk, ci) => {
 	const own = chunk.facts.map((f) => suiteClaim(f.statement));
 	const draftIndex = own.findIndex((c) => c !== undefined);
 	if (draftIndex < 0) return;
 	countChunks++;
+	// A fact the corpus marks stale is a record of an old number, not a claim about the current one. The
+	// writer still faces a selection problem in that chunk — it is rewriting a document about 214 while the
+	// bank's current count is 402 — so it is graded, just not as an assertion.
+	const draftIsRecord = chunk.facts[draftIndex]?.stale === true;
+	if (draftIsRecord) recordChunks++;
 	const draftClaim = own[draftIndex];
 	if (!draftClaim) return;
 	const draft: Draft = {
@@ -112,17 +120,21 @@ corpus.chunks.forEach((chunk, ci) => {
 	const activeCounts = bank.filter((e) => suiteClaim(e.statement) !== undefined);
 	const shownCounts = shown.filter((e) => suiteClaim(e.statement) !== undefined);
 
-	// Three ways the selection can fail the writer, and they need different fixes.
+	// Ways the selection can fail the writer, and they need different fixes.
 	const hasPredecessor = currentId !== undefined;
-	const unretrieved = hasPredecessor && currentRank < 0;
+	const unretrieved = !draftIsRecord && hasPredecessor && currentRank < 0;
+	// A chunk that only records an old number is a risk when the call cannot see the current one: the writer
+	// has nothing to write the correction against, and the stale number is the only count in front of it.
+	const recordBlind = draftIsRecord && (currentId === undefined || currentRank < 0);
 	const currentClaimValue = suiteClaim(bank.find((e) => e.id === currentId)?.statement ?? "")?.value ?? -1;
 	const inverted =
+		!draftIsRecord &&
 		!unretrieved &&
 		topClaim !== undefined &&
 		topClaim.mode === draftClaim.mode &&
 		topClaim.value !== currentClaimValue &&
 		topClaim.value !== draftClaim.value;
-	// The case the age lines are meant to settle: the current claim is on screen, and stale counts of the same
+	// The case the age lines were meant to settle: the current claim is on screen, and stale counts of the same
 	// subject are on screen with it, so the only thing that tells them apart is which one is newest.
 	const stalePeers = shown.filter((e) => {
 		const claim = suiteClaim(e.statement);
@@ -130,12 +142,15 @@ corpus.chunks.forEach((chunk, ci) => {
 	}).length;
 	const trapKind = unretrieved
 		? "the current claim was not retrieved at all"
-		: inverted
-			? "a stale count ranked above it"
-			: stalePeers > 0
-				? `${stalePeers} stale count(s) share the screen with it`
-				: "";
+		: recordBlind
+			? "the chunk records an old number and the current claim is not on screen"
+			: inverted
+				? "a stale count ranked above it"
+				: stalePeers > 0
+					? `${stalePeers} stale count(s) share the screen with it`
+					: "";
 	if (unretrieved) kinds.unretrieved++;
+	if (recordBlind) kinds.recordBlind++;
 	if (inverted) kinds.inverted++;
 	if (stalePeers > 0) kinds.stalePeers++;
 	// The alternative selection: the newest claim of a metric keeps the slot, older claims of the same metric
@@ -159,18 +174,20 @@ corpus.chunks.forEach((chunk, ci) => {
 	}).length;
 	const topAfter = kept[0] ? suiteClaim(kept[0].statement) : undefined;
 	const invertedAfter =
+		!draftIsRecord &&
 		!unretrieved &&
 		topAfter !== undefined &&
 		topAfter.mode === draftClaim.mode &&
 		topAfter.value !== currentClaimValue &&
 		topAfter.value !== draftClaim.value;
 	if (unretrieved) kindsAfter.unretrieved++;
+	if (recordBlind) kindsAfter.recordBlind++;
 	if (invertedAfter) kindsAfter.inverted++;
 	if (stalePeersAfter > 0) kindsAfter.stalePeers++;
 	droppedPeers += shownCounts.length - shownAfter.filter((e) => suiteClaim(e.statement) !== undefined).length;
 
 	console.log(
-		`${chunk.chunkId} draft asserts ${draftClaim.mode} ${draftClaim.value} | active count claims ${activeCounts
+		`${chunk.chunkId} draft ${draftIsRecord ? "records" : "asserts"} ${draftClaim.mode} ${draftClaim.value} | active count claims ${activeCounts
 			.map((e) => suiteClaim(e.statement)?.value ?? 0)
 			.sort((a, b) => a - b)
 			.join(
@@ -203,8 +220,8 @@ corpus.chunks.forEach((chunk, ci) => {
 });
 
 console.log(
-	`\ncorpus ${corpusPath}: ${countChunks} count chunks. Traps found before any model runs: ${kinds.inverted} where a stale count ranked above the current one, ${kinds.unretrieved} where the current claim was not a candidate at all, ${kinds.stalePeers} where stale counts of the same subject share the screen with it. Candidate limit ${limit}.`,
+	`\ncorpus ${corpusPath}: ${countChunks} count chunks, ${recordChunks} of them only recording an old number. Traps found before any model runs: ${kinds.inverted} where a stale count ranked above the current one, ${kinds.unretrieved} where the current claim was not a candidate at all, ${kinds.stalePeers} where stale counts of the same subject share the screen with it, ${kinds.recordBlind} where a chunk records an old number with no current claim in view. Candidate limit ${limit}.`,
 );
 console.log(
-	`with the newest claim of a metric holding the slot: ${kindsAfter.inverted} inverted, ${kindsAfter.unretrieved} unretrieved, ${kindsAfter.stalePeers} with stale peers; ${droppedPeers} stale count(s) left the screen and stay recallable.`,
+	`with the newest claim of a metric holding the slot: ${kindsAfter.inverted} inverted, ${kindsAfter.unretrieved} unretrieved, ${kindsAfter.stalePeers} with stale peers, ${kindsAfter.recordBlind} record chunks blind to the current claim; ${droppedPeers} stale count(s) left the screen and stay recallable.`,
 );

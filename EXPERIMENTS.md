@@ -3061,16 +3061,17 @@ file, a changelog line, a hard-coded CI script. One chunk is built so a heavy ol
 current one. The writer never sees the declarations; the reports grade against them.
 
 **The trap replay, no model (`dev/supersede2-trap-check.ts`).** It rebuilds the bank the corpus implies and
-re-runs the shipped candidate selection for every chunk that asserts a count. Corpus 2 has 15 such chunks: 0
-where a stale count of the same mode ranks above the current claim, 1 where the current claim is not a
-candidate at all, and 6 where stale counts share the screen with it. Corpus 1 gives 0, 0 and 5. The candidate
-sets are small — 4 to 11 entries against a limit of 24 — so the crowding is about which claims reach the
-screen, not about the window size.
+re-runs the shipped candidate selection for every chunk that states a count. Corpus 2 has 15 such chunks, 4 of
+them only recording an old number: 0 where a stale count of the same mode ranks above the current claim, 0 where
+the current claim is not a candidate at all, 6 where stale counts share the screen with it, and 1 where a chunk
+rewrites a stale number in a document while the bank's current count is nowhere in view. Corpus 1 gives 0, 0, 5
+and 0. The candidate sets are small — 4 to 11 entries against a limit of 24 — so the crowding is about which
+claims reach the screen, not about the window size.
 
-The same script then replays one selection rule: only the newest claim of a metric may hold a slot, older
-claims stay in the bank and stay recallable. That removes every stale-peer trap — 6 to 0 on corpus 2, 5 to 0
-on corpus 1 — and moves 11 and 13 stale counts off the screen. The one unretrieved case is not selection and
-stays.
+The same script then replays one selection rule: only the newest claim of a metric may hold a slot, older claims
+stay in the bank and stay recallable. That removes every stale-peer trap — 6 to 0 on corpus 2, 5 to 0 on corpus
+1 — and moves 11 and 13 stale counts off the screen. The record chunk stays blind: dropping stale candidates
+cannot bring in a claim the selection never retrieved.
 
 **The arms, graded offline (`dev/supersede-outcome-report.ts <run> --corpus dev/corpus-supersede2.json`).**
 Model `qwen3.8-flash-next-gyro_m-strata`, candidate render `perDraft`, limit 24, no probe. "Target aimed at
