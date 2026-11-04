@@ -3076,20 +3076,23 @@ cannot bring in a claim the selection never retrieved.
 **The arms, graded offline (`dev/supersede-outcome-report.ts <run> --corpus dev/corpus-supersede2.json`).**
 Model `qwen3.8-flash-next-gyro_m-strata`, candidate render `perDraft`, limit 24, no probe. "Target aimed at
 the current count" is judged against the newest claim the bank actually held, not against the corpus.
-
-| arm | writes | active of written | active count claims | superseded counts still active | DELETEs | UPDATEs aimed at the current count | counts held by more than one entry |
-| --- | --- | --- | --- | --- | --- | --- | --- |
-| tree before the age lines | 33 | 29 of 30 | 9 | 7 | 0 | 1 of 1 | 1 |
-| age lines landed (first run) | 32 | 28 of 30 | 9 | 7 | 0 | 1 of 2 | 1 |
-| age lines landed (repeat) | 32 | 28 of 29 | 9 | 7 | 0 | 1 of 1 | 1 |
-| age lines plus merge value gate | 32 | 30 of 31 | 11 | 7 | 0 | 0 of 1 | 3 |
+The report separates two things an earlier version of it conflated. A superseded number sitting in an active entry
+is a failure only when the entry **asserts** it as the current count. The corpus deliberately carries records — a
+log file, a changelog line, a hard-coded CI line — and an entry holding an old number inside a record is a correct
+fact about that document. Each entry's own chunk says which case it is, because the corpus marks that fact stale.
+| arm | writes | active of written | active count claims | superseded counts still **asserted** as current | held only as records the corpus says stay | DELETEs | UPDATEs aimed at the current count | counts held by more than one entry |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| tree before the age lines | 33 | 29 of 30 | 9 | 5 | 2 | 0 | 1 of 1 | 1 |
+| age lines landed (first run) | 32 | 28 of 30 | 9 | 5 | 2 | 0 | 1 of 2 | 1 |
+| age lines landed (repeat) | 32 | 28 of 29 | 9 | 5 | 2 | 0 | 1 of 1 | 1 |
+| age lines plus merge value gate | 32 | 30 of 31 | 11 | 6 | 1 | 0 | 0 of 1 | 3 |
 
 Reading:
 
-- **The age lines changed nothing that this corpus can measure.** Every arm ends with 9 active count claims,
-  7 of them superseded, and zero `DELETE`s. Only one or two `UPDATE`s fire across a 30-chunk run, so the
-  target question barely arises. On the easier corpus the age arm did retire two claims the no-age arm left
-  active; on the crowded one it did not.
+- **The age lines changed nothing that this corpus can measure.** Every arm ends with 9 active count claims, 5 of
+  them superseded numbers still asserted as current, and zero `DELETE`s. Only one or two `UPDATE`s fire across a
+  30-chunk run, so the target question barely arises. On the easier corpus the age arm did retire two claims the
+  no-age arm left active; on the crowded one it did not.
 - **Extraction breaks the chain first, and it is arm-independent.** In all four arms, 4 of the 12 counts the
   corpus states never reached the writer as a draft, and 4 chunks produced a draft stating a number the corpus
   marks superseded. The corpus's final offline count (402) never entered the bank in any arm. Extraction never
@@ -3124,3 +3127,62 @@ the model noticing two sentences measure the same thing.
 stale-peer traps gone, no record retired by mistake, no new unretrieved case, superseded counts inactive after
 a model run, `UPDATE` and `DELETE` targets not worse, no count carried twice, and the hard corpus improved —
 not just the easy one. Nothing here has cleared that gate.
+## Extraction sees the bank: the crowded corpus finally holds the count that moved (2026-11-03)
+
+The section above put the first break upstream of reconcile: in every arm, four of the twelve counts the corpus
+states never reached the writer as a draft, and the corpus's last offline count (402) never entered the bank. This
+section runs the arm that fixes exactly that — `--bank-index`, the experiment-only option that puts the bank's
+active statements in front of the extract call — against the same two corpora, same model, same candidate limit 24,
+`perDraft`, no probe, no value gate. The bank-index block is the shipped shape: newest first, whole entries only,
+capped in tokens. The runs are `supersed-base`, `supersed-aged`, `sup1-idx`, `sup1-idx200`, `sup2-base`,
+`sup2-agesonly`, `sup2-idx` and `sup2-idx200`.
+
+| corpus | arm | bank at the end | active count claims | superseded counts still **asserted** as current | holds each mode's last count | UPDATEs aimed at the current count | counts reaching the writer | writer input tokens |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| 1 (12 chunks) | no index | 10 of 17 | 2 | 0 | 358 ✓ 371 ✓ | 5 of 7 | 9 of 12 | 12 004 |
+| 1 | no index, age lines | 8 of 17 | 2 | 0 | 358 ✓ 371 ✓ | 6 of 7 | 9 of 12 | 12 764 |
+| 1 | index 600t | 12 of 20 | 3 | 0 | 358 ✓ 371 ✓ | 4 of 8 | 10 of 12 | 16 987 |
+| 1 | index 200t | 14 of 20 | 4 | 2 | 358 ✓ 371 ✓ | 6 of 6 | 11 of 12 | 15 956 |
+| 2 (30 chunks) | no index | 29 of 30 | 9 | 5 | offline 402 ✗ lan 371 ✓ | 1 of 1 | 8 of 12 | 30 616 |
+| 2 | no index, age lines | 28 of 29 | 9 | 5 | offline 402 ✗ lan 371 ✓ | 1 of 1 | 8 of 12 | 32 111 |
+| 2 | index 600t | **21 of 29** | **5** | **0** | **offline 402 ✓ lan 371 ✓** | 1 of 8 | 8 of 12 | 49 673 |
+| 2 | index 200t | 26 of 33 | 7 | 2 | offline 402 ✓ lan 371 ✗ | 2 of 7 | 8 of 12 | 43 283 |
+
+Reading:
+
+- **On the crowded corpus the index is the only arm that ends with nothing stale asserted as current.** Both
+  no-index arms end holding 251, 262, 334, 358 and a LAN 341 as live counts while never holding 402 at all. The
+  600-token index arm ends holding 402 and 371 and asserts no superseded count: the only old numbers left active
+  sit inside records — the changelog line, the release log, the hard-coded CI line — which the corpus says belong
+  there. The bank is 8 entries smaller and holds 5 count claims instead of 9. Nothing about the reconcile rules
+  changed between those arms; the writer was simply told what the bank already asserted before it drafted.
+- **On the easy corpus the 600-token index is neutral on correctness and worse on size.** It asserts no superseded
+  count, same as both no-index arms, but its bank ends with 12 active entries instead of 10 or 8, and 4 of its 8
+  UPDATEs missed. The 200-token index is the one that breaks: it leaves 226 asserted twice.
+- **The drafting failure is not fixed.** `8 of 12 counts reached the writer` on the crowded corpus in every arm,
+  and four chunks still produced a draft stating a number the corpus marks superseded. The index changes what the
+  writer banks; it does not stop a chunk that quotes an old log line from being drafted as if it were current.
+- **A tighter cap loses a whole mode.** At 200 tokens on the crowded corpus the bank stopped holding the LAN count
+  (371) because the cap drops whole entries and the LAN facts fell out. It also introduced a new kind of error: the
+  run banked "the LAN test suite reports 251 passing tests" where 251 is the offline count. The bank's task labels
+  seed the draft's wording, so a label can move a number to the wrong mode.
+- **Targeting got noisier, not cleaner.** The crowded-corpus index arm wrote 8 UPDATEs where the no-index arm wrote
+  1, and 5 of those 8 aimed at an entry holding no count at all. Seeing the bank makes the writer merge more often;
+  it does not make it pick better.
+- **Cost.** Writer input rose from 30 616 to 49 673 tokens on the crowded corpus (+62 %) and from 12 004 to 16 987
+  on the easy one (+41 %). Wall time rose from 76 s to 95 s.
+
+**Gate result.** The gate asks for both corpora to improve. The crowded corpus improved on every end-state number
+it can be judged on. The easy corpus did not improve: it stayed correct and got a larger bank, noisier targets and
+41 % more writer input. So nothing ships, and the gate has to be read as what it now means — a change has to earn
+its tokens on the corpus that does not need saving.
+
+What the measurement does establish is where the win lives: the current claim reaching the bank, in a bank too big
+for the writer to see all of. What it establishes about the block is that "every active statement, newest first" is
+both expensive and blunt — a 200-token cap drops a whole mode, and the block's own labels leak into the drafts.
+
+**Next probe, still dev-only.** A claims-only block instead of a statements block: one line per metric the chunk
+actually mentions, `measure/scope` key plus the current value, derived by the parser in `dev/metric-identity.ts`
+(30 of 31 numeric facts keyed correctly, wrong on none). No statements, no labels, no retired values, no block at
+all when the chunk names no numeric key. The question it answers is whether the win survives at a fraction of the
+tokens, and whether the mode-label leak disappears when the bank's wording is absent.

@@ -11,13 +11,16 @@
  *   - Which entry did each UPDATE aim at? An UPDATE that landed on an older count of the same mode, on the other
  *     mode's claim, or on an entry holding no count at all is a wrong target even when the bank ends tidy.
  *   - What did the bank end with? Every superseded count retired, each current count held once, and the two
- *     counts kept apart — the corpus says the offline run and the LAN run are separate facts.
+ *     counts kept apart — the corpus says the offline run and the LAN run are separate facts. A superseded number
+ *     in an active entry counts against the run only when that entry asserts it as the current count: the corpus
+ *     also carries records — a log file, a changelog line, a hard-coded CI line — which keep quoting old numbers
+ *     on purpose, and the entry's own chunk carries the stale mark that tells the two apart.
  *
  *   npx tsx dev/supersede-outcome-report.ts <runId> [<runId> ...] [--corpus dev/corpus-supersede2.json]
  */
 import { existsSync, readFileSync } from "node:fs";
 import { foldLedger } from "../src/bank.js";
-import type { Draft, LedgerRecord, ReconcileOp } from "../src/types.js";
+import type { BankEntry, Draft, LedgerRecord, ReconcileOp } from "../src/types.js";
 import { type SuiteClaim, suiteClaims } from "./suite-claim.js";
 
 type Mode = SuiteClaim["mode"];
@@ -215,7 +218,24 @@ const report = (runId: string, ledger: LedgerRecord[]) => {
 	const heldBy = (mode: Mode, value: number) =>
 		bank.filter((entry) => suiteClaims(entry.statement).some((c) => c.mode === mode && c.value === value));
 
+	// A superseded number sitting in an active entry is only a failure when the entry asserts it as the current
+	// count. The corpus deliberately carries records — a changelog line, a log file, a hard-coded CI script — and
+	// a record that quotes an old number is a correct fact about that document. The entry's own chunk says which
+	// one it is: a fact the corpus marked stale in that chunk is a record.
+	const staleClaimsByChunk = new Map<string, Set<string>>();
+	for (const chunk of corpusChunks) {
+		const keys = new Set<string>();
+		for (const fact of chunk.facts) {
+			if (!fact.stale) continue;
+			for (const claim of suiteClaims(fact.statement)) keys.add(`${claim.mode} ${claim.value}`);
+		}
+		staleClaimsByChunk.set(chunk.chunkId, keys);
+	}
+	const recordCarrier = (entry: BankEntry, claim: { mode: Mode; value: number }): boolean =>
+		staleClaimsByChunk.get(entry.chunkId)?.has(`${claim.mode} ${claim.value}`) === true;
+
 	let staleSurvivors = 0;
+	let staleRecords = 0;
 	let duplicates = 0;
 	const endings: string[] = [];
 	for (const mode of modes) {
@@ -223,10 +243,21 @@ const report = (runId: string, ledger: LedgerRecord[]) => {
 		const superseded = (lineage.get(mode) ?? []).slice(0, -1);
 		const holdingFinal = final === undefined ? 0 : heldBy(mode, final).length;
 		const holdingOld = superseded.filter((step) => heldBy(step.mode, step.value).length > 0);
-		staleSurvivors += holdingOld.length;
+		const oldAsAssertion = holdingOld.filter((step) =>
+			heldBy(step.mode, step.value).some((entry) => !recordCarrier(entry, step)),
+		);
+		const oldAsRecord = holdingOld.filter((step) =>
+			heldBy(step.mode, step.value).every((entry) => recordCarrier(entry, step)),
+		);
+		staleSurvivors += oldAsAssertion.length;
+		staleRecords += oldAsRecord.length;
 		duplicates += Math.max(0, holdingFinal - 1);
 		endings.push(
-			`${mode}: corpus ends at ${final ?? "-"}, bank holds it ${holdingFinal}x | superseded ${superseded.map((s) => s.value).join(", ") || "-"} — still active: ${holdingOld.map((s) => s.value).join(", ") || "none"}`,
+			`${mode}: corpus ends at ${final ?? "-"}, bank holds it ${holdingFinal}x | superseded ${
+				superseded.map((s) => s.value).join(", ") || "-"
+			} — asserted as current: ${oldAsAssertion.map((s) => s.value).join(", ") || "none"} | held only as a record: ${
+				oldAsRecord.map((s) => s.value).join(", ") || "none"
+			}`,
 		);
 	}
 	const merged = bank.filter((entry) => {
@@ -253,7 +284,7 @@ const report = (runId: string, ledger: LedgerRecord[]) => {
 		`  targets: ${rightTarget}/${updates} UPDATEs aimed at the current count of their mode; ${olderCountTarget} aimed at an older count, ${otherModeTarget} at an entry holding no claim of that mode, ${noClaimTarget} at an entry holding no count at all, ${retiredTarget} at an entry the bank had already superseded`,
 	);
 	console.log(
-		`  retirement: ${deletes} DELETEs, ${deletesOfSuperseded} of them removed a superseded count; ${staleSurvivors} superseded counts left active; ${duplicates} duplicate entries for a current count; ${sharedCarriers} counts held by more than one active entry; ${merged.length} entries merged both counts into one statement`,
+		`  retirement: ${deletes} DELETEs, ${deletesOfSuperseded} of them removed a superseded count; ${staleSurvivors} superseded counts still asserted as current (${staleRecords} more held only as records the corpus says stay); ${duplicates} duplicate entries for a current count; ${sharedCarriers} counts held by more than one active entry; ${merged.length} entries merged both counts into one statement`,
 	);
 	console.log(
 		`  coverage: of ${declaredCount} counts the corpus states across the run, ${draftedCount} reached the writer as a draft; ${storedStaleRecords.length} chunks produced a draft stating a number the corpus marks superseded`,
