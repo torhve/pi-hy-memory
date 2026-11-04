@@ -3209,8 +3209,8 @@ round moved to the flash model to avoid contending with the production route. Se
 restraint arms, the clipwindow runs, the hi-fi compaction runs — used the shipped writer, so their numbers are not
 comparable with these. What transfers from this round is the direction: whole entries change what the writer drafts,
 a list of values does not. What does not transfer is any absolute verdict, because a bank index works by changing
-the writer's restraint, and restraint is a property of the model. `sup2w-*` arms repeat the crowded corpus on the
-shipped writer.
+the writer's restraint, and restraint is a property of the model. The `sup2w-*` section below replays the crowded
+corpus on the shipped writer, and nothing there transfers.
 
 **How a count is attributed to a mode.** `dev/suite-claim.ts` reads the marker inside the number's own segment:
 "the suite passes 358 checks in dry mode and 371 checks when including the LAN section" gives 358 to offline and 371
@@ -3251,9 +3251,36 @@ Reading:
   counts reaching the writer against 10 of 12). The first claims run's coverage collapse was run noise, not the
   mechanism. On corpus 1 the claims arm left 251 asserted twice and banked an offline 247 that no chunk states.
 
-**Next probe, in progress.** Repeats of the statements index came back PASS, PASS, FAIL on the crowded corpus, so the
-index is not a rule that makes a run end clean — it is a change that makes a clean ending more likely. The open
-question is the model, not the shape: `sup2w-base`, `sup2w-idx600` and `sup2w-idxc` replay the no-index arm, the
-600-token statements index and the claims index on `kitxai/hy-memory-30b-a3b`, the writer the extension actually
-ships. Until those land, no index number in this file is a product claim. `dev/metric-identity.ts` stays as the
-dev-side parser for claim keys; the claims-only block is dropped.
+## The same arms on the writer the extension ships (`sup2w-*`)
+
+`kitxai/hy-memory-30b-a3b` is the model the shipped extension is configured with, and every arm above ran on the
+flash model instead. These three arms replay the crowded corpus on the shipped writer: no index, the 600-token
+statements index, and the 150-token claims index. Same corpus, same candidate limit 24, same pool 60 000 — which is
+`bankMaxTokens` as `src/config.ts` sets it.
+
+| arm | writes | bank at the end | active count claims | superseded counts asserted | held only as records | holds each mode's last count | ADD / UPDATE | counts held by more than one entry | counts reaching the writer | writer input tokens | verdict |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| no index | 59 | 51 of 59 (8 superseded) | 17 | 7 | 3 | offline 402 ✗ lan 371 ✓ | 51 / 8 | 4 | 11 of 12 | 34 591 | FAIL |
+| index 600t | 63 | 54 of 63 (9 superseded) | 23 | 8 | 2 | offline 402 ✓ lan 371 ✓ | 54 / 9 | 7 | 12 of 12 | 52 863 | FAIL |
+| claims index 150t | 72 | 51 of 72 (21 superseded) | **47** | 9 | 0 | offline 402 ✗ lan 371 held 3x | 51 / 21 | 9 | 12 of 12 | 48 194 | FAIL |
+
+Reading:
+
+- **Nothing transfers.** The flash model's crowded-corpus PASS is not a result about this system. On the shipped
+  writer every arm fails, and the index arm fails with more stale assertions than the baseline, not fewer.
+- **The failure this writer has is different.** It drafted 11 to 12 of the 12 counts the corpus states, so the
+  under-drafting the index was designed to fix barely happens here. What happens instead is accumulation: 51 `ADD`s
+  against 8 `UPDATE`s at baseline, zero `DELETE` anywhere, and a bank that ends with 17 count claims active where the
+  corpus states 12 counts in total. Four of those claims are held by more than one entry, rising to seven with the
+  index and nine with the claims index.
+- **The claims index teaches the writer to narrate the index.** 13 of its 51 active entries are about replaced values
+  — "offline checks replaced: 226, 214, 402, 358, 247, 262, 238, 251" — and it copied the block's own labels into the
+  statements. Each of those entries states superseded numbers as facts, which is why the bank ends with 47 count
+  claims and 9 of them asserted while stale. The block also moved a number across modes: LAN 251, where 251 is an
+  offline count.
+- **Cost on this route.** The statements index added 18 272 writer input tokens (34 591 to 52 863).
+
+**Next probe, no model calls.** The shipped bank has no rule about who may hold a metric. The model-free replay at the
+top of this file showed that "only the newest claim of a metric holds a slot" removes every stale-peer trap — 6 to 0 on
+the crowded corpus, 5 to 0 on the easy one. That rule can now be re-applied offline to these three ledgers, which is
+how its price gets measured before anything in `src/` moves.
