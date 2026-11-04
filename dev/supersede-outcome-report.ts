@@ -219,7 +219,30 @@ const report = (runId: string, ledger: LedgerRecord[]) => {
 	const all = foldLedger(ledger);
 	// A superseded entry stays in the ledger and stays recallable; it is no longer current. Only active entries
 	// are the end state the corpus grades.
-	const bank = all.filter((entry) => entry.status === "active");
+	let bank = all.filter((entry) => entry.status === "active");
+	// Experiment rule, applied at measurement time rather than in the writer: only the newest active entry that
+	// asserts a metric's count may hold that metric. An older entry is not deleted — it stays in the ledger and
+	// stays recallable — it just stops being current, which is what a supersede already means.
+	const newestClaimOnly = process.argv.includes("--newest-claim-only");
+	let ruleRetired = 0;
+	if (newestClaimOnly) {
+		const holdsMetric = (entry: BankEntry, mode: Mode): boolean =>
+			suiteClaims(entry.statement).some((c) => !c.record && c.mode === mode);
+		const modesHeld = (entry: BankEntry): Mode[] => [
+			...new Set(
+				suiteClaims(entry.statement)
+					.filter((c) => !c.record)
+					.map((c) => c.mode),
+			),
+		];
+		bank = bank.filter((entry) => {
+			const overtaken = modesHeld(entry).filter((mode) =>
+				bank.some((other) => other !== entry && other.createdAt > entry.createdAt && holdsMetric(other, mode)),
+			);
+			ruleRetired += overtaken.length;
+			return overtaken.length === 0;
+		});
+	}
 	const heldBy = (mode: Mode, value: number) =>
 		bank.filter((entry) => suiteClaims(entry.statement).some((c) => c.mode === mode && c.value === value));
 
@@ -312,6 +335,10 @@ const report = (runId: string, ledger: LedgerRecord[]) => {
 	console.log(
 		`\n${runId} — ${writes} writes over ${ledger.filter((r) => r.type === "hy.ops").length} chunks; bank ends with ${bank.length} active entries of ${all.length} written (${all.length - bank.length} superseded), holding ${allClaims.length} count claims (${allClaims.map((c) => `${c.mode} ${c.value}`).join(", ") || "none"})`,
 	);
+	if (newestClaimOnly)
+		console.log(
+			`  newest-claim-only rule applied at measurement: ${ruleRetired} older claims would stop being current (${bank.length} entries left holding a count)`,
+		);
 	if (ungradedChunks.length) console.log(`  ungraded: ${ungradedChunks.join(", ")} declare no facts`);
 	for (const line of endings) console.log(`  ${line}`);
 	console.log(

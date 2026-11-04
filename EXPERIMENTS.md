@@ -3284,3 +3284,38 @@ Reading:
 top of this file showed that "only the newest claim of a metric holds a slot" removes every stale-peer trap — 6 to 0 on
 the crowded corpus, 5 to 0 on the easy one. That rule can now be re-applied offline to these three ledgers, which is
 how its price gets measured before anything in `src/` moves.
+### Priced offline: only the newest claim of a metric holds a slot
+
+`dev/supersede-outcome-report.ts --newest-claim-only` re-grades an existing ledger. It drops from the end state every
+active entry whose asserted count was overtaken by a newer active entry of the same metric. Nothing is deleted; the
+older entry keeps its place in the bank and stops being current, which is what a supersede already means. No model
+runs were needed.
+
+| run | model | superseded counts asserted | with the rule | counts the rule retired | verdict with the rule |
+| --- | --- | --- | --- | --- | --- |
+| sup2-base | flash | 5 | 1 | 4 | FAIL |
+| sup2-base2 | flash | 5 | 1 | 5 | FAIL |
+| sup2-idx | flash | 0 | 0 | 0 | PASS |
+| sup2-idx3 | flash | 1 | 0 | 1 | PASS |
+| sup2-idxc | flash | 3 | 3 | 3 | FAIL |
+| sup2-idxc2 | flash | 7 | 2 | 6 | FAIL |
+| sup2-idxcr | flash | 5 | 2 | 3 | FAIL |
+| sup2w-base | shipped writer | 7 | 1 | 7 | FAIL |
+| sup2w-idx600 | shipped writer | 8 | **0** | 13 | **PASS** |
+| sup2w-idxc | shipped writer | 9 | 3 | 21 | FAIL |
+| sup1-idx | flash, easy corpus | 2 | 0 | 1 | PASS |
+
+Reading:
+
+- **The rule does what the replay said it would.** Old peers stop being current in every run: 5 to 1, 7 to 1, 8 to 0,
+  9 to 3, 2 to 0. On the shipped writer's index arm it is enough to end clean, and that arm ends holding 402 and 371
+  with nothing stale asserted.
+- **It cannot put a number in the bank that never arrived.** `sup2w-base` still fails with one stale assertion, and it
+  fails mainly because 402 is nowhere in the bank — not one of its 59 entries mentions it. At the chunk that states
+  402 the writer drafted "Lease section landed, number only (no other details)." It withheld the count from a
+  user-grounded turn. No retirement rule can retire an entry that was never written.
+- **It cannot fix a wrong mode.** `sup2-idxc2` and `sup2-idxcr` still end asserting LAN 341 where the corpus ends at
+  LAN 371, and `sup2w-idxc` still holds the invented LAN 251.
+
+So the slot rule is a real, cheap improvement to the end state — and on its own it is not enough for either writer to
+pass the crowded corpus from a cold baseline.
