@@ -3266,8 +3266,9 @@ statements index, and the 150-token claims index. Same corpus, same candidate li
 
 Reading:
 
-- **Nothing transfers.** The flash model's crowded-corpus PASS is not a result about this system. On the shipped
-  writer every arm fails, and the index arm fails with more stale assertions than the baseline, not fewer.
+- **The flash-model win did not show up here.** On the shipped writer the raw index arm ended with more stale
+  assertions than its own baseline (8 against 7) and 18 272 more writer input tokens. It passed only after the
+  end-state regrade described below, which is not the same as passing a run.
 - **The failure this writer has is different.** It drafted 11 to 12 of the 12 counts the corpus states, so the
   under-drafting the index was designed to fix barely happens here. What happens instead is accumulation: 51 `ADD`s
   against 8 `UPDATE`s at baseline, zero `DELETE` anywhere, and a bank that ends with 17 count claims active where the
@@ -3280,10 +3281,10 @@ Reading:
   offline count.
 - **Cost on this route.** The statements index added 18 272 writer input tokens (34 591 to 52 863).
 
-**Next probe, no model calls.** The shipped bank has no rule about who may hold a metric. The model-free replay at the
-top of this file showed that "only the newest claim of a metric holds a slot" removes every stale-peer trap — 6 to 0 on
-the crowded corpus, 5 to 0 on the easy one. That rule can now be re-applied offline to these three ledgers, which is
-how its price gets measured before anything in `src/` moves.
+**First measurement, no model calls.** The shipped bank has no rule about who may hold a metric. The model-free replay
+at the top of this file showed that "only the newest claim of a metric holds a slot" removes every stale-peer trap — 6
+to 0 on the crowded corpus, 5 to 0 on the easy one. The section below applies that rule to these ledgers after the
+fact, which prices the reading but not the rule.
 ### Priced offline: only the newest claim of a metric holds a slot
 
 `dev/supersede-outcome-report.ts --newest-claim-only` re-grades an existing ledger. It drops from the end state every
@@ -3317,5 +3318,9 @@ Reading:
 - **It cannot fix a wrong mode.** `sup2-idxc2` and `sup2-idxcr` still end asserting LAN 341 where the corpus ends at
   LAN 371, and `sup2w-idxc` still holds the invented LAN 251.
 
-So the slot rule is a real, cheap improvement to the end state — and on its own it is not enough for either writer to
-pass the crowded corpus from a cold baseline.
+**What this measures, and what it does not.** The flag re-classifies a ledger after the run finished. It shows how the
+same bank would be read if only the newest claim of a metric counted as current. It does not show what a rule inside
+`src/` would do, because such a rule changes the bank while the writer is still working: later chunks would see a
+smaller current set, choose different candidates, and write different facts. Treating a PASS here as evidence for a
+shipped rule would be reading the answer before the experiment. The next measurement has to be a cold-start run with
+the rule enabled during the writes, compared against these ledgers on stale claims, bank size and tokens.
