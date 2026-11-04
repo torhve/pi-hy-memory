@@ -3079,17 +3079,20 @@ the current count" is judged against the newest claim the bank actually held, no
 The report separates two things an earlier version of it conflated. A superseded number sitting in an active entry
 is a failure only when the entry **asserts** it as the current count. The corpus deliberately carries records — a
 log file, a changelog line, a hard-coded CI line — and an entry holding an old number inside a record is a correct
-fact about that document. Each entry's own chunk says which case it is, because the corpus marks that fact stale.
-| arm | writes | active of written | active count claims | superseded counts still **asserted** as current | held only as records the corpus says stay | DELETEs | UPDATEs aimed at the current count | counts held by more than one entry |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| tree before the age lines | 33 | 29 of 30 | 9 | 5 | 2 | 0 | 1 of 1 | 1 |
-| age lines landed (first run) | 32 | 28 of 30 | 9 | 5 | 2 | 0 | 1 of 2 | 1 |
-| age lines landed (repeat) | 32 | 28 of 29 | 9 | 5 | 2 | 0 | 1 of 1 | 1 |
-| age lines plus merge value gate | 32 | 30 of 31 | 11 | 6 | 1 | 0 | 0 of 1 | 3 |
+fact about that document. The classification reads the entry's own wording — a file path, a quoted string, or a verb
+that attributes the number to a document — rather than the chunk the entry came from. The verdict column compares the
+run against the right answer the corpus declares: the count each mode must end on, no superseded count asserted as
+current, and no count the corpus never stated.
+| arm | writes | active of written | active count claims | superseded counts still **asserted** as current | held only as records the corpus says stay | DELETEs | UPDATEs aimed at the current count | counts held by more than one entry | verdict |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| tree before the age lines | 33 | 29 of 30 | 9 | 4 | 3 | 0 | 1 of 1 | 1 | FAIL |
+| age lines landed (first run) | 32 | 28 of 30 | 9 | 4 | 3 | 0 | 1 of 2 | 1 | FAIL |
+| age lines landed (repeat) | 32 | 28 of 29 | 9 | 4 | 3 | 0 | 1 of 1 | 1 | FAIL |
+| age lines plus merge value gate | 32 | 30 of 31 | 11 | 5 | 2 | 0 | 0 of 1 | 3 | FAIL |
 
 Reading:
 
-- **The age lines changed nothing that this corpus can measure.** Every arm ends with 9 active count claims, 5 of
+- **The age lines changed nothing that this corpus can measure.** Every arm ends with 9 active count claims, 4 of
   them superseded numbers still asserted as current, and zero `DELETE`s. Only one or two `UPDATE`s fire across a
   30-chunk run, so the target question barely arises. On the easier corpus the age arm did retire two claims the
   no-age arm left active; on the crowded one it did not.
@@ -3137,21 +3140,21 @@ active statements in front of the extract call — against the same two corpora,
 capped in tokens. The runs are `supersed-base`, `supersed-aged`, `sup1-idx`, `sup1-idx200`, `sup2-base`,
 `sup2-agesonly`, `sup2-idx` and `sup2-idx200`.
 
-| corpus | arm | bank at the end | active count claims | superseded counts still **asserted** as current | holds each mode's last count | UPDATEs aimed at the current count | counts reaching the writer | writer input tokens |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| 1 (12 chunks) | no index | 10 of 17 | 2 | 0 | 358 ✓ 371 ✓ | 5 of 7 | 9 of 12 | 12 004 |
-| 1 | no index, age lines | 8 of 17 | 2 | 0 | 358 ✓ 371 ✓ | 6 of 7 | 9 of 12 | 12 764 |
-| 1 | index 600t | 12 of 20 | 3 | 0 | 358 ✓ 371 ✓ | 4 of 8 | 10 of 12 | 16 987 |
-| 1 | index 200t | 14 of 20 | 4 | 2 | 358 ✓ 371 ✓ | 6 of 6 | 11 of 12 | 15 956 |
-| 2 (30 chunks) | no index | 29 of 30 | 9 | 5 | offline 402 ✗ lan 371 ✓ | 1 of 1 | 8 of 12 | 30 616 |
-| 2 | no index, age lines | 28 of 29 | 9 | 5 | offline 402 ✗ lan 371 ✓ | 1 of 1 | 8 of 12 | 32 111 |
-| 2 | index 600t | **21 of 29** | **5** | **0** | **offline 402 ✓ lan 371 ✓** | 1 of 8 | 8 of 12 | 49 673 |
-| 2 | index 200t | 26 of 33 | 7 | 2 | offline 402 ✓ lan 371 ✗ | 2 of 7 | 8 of 12 | 43 283 |
+| corpus | arm | bank at the end | active count claims | superseded counts still **asserted** as current | holds each mode's last count | UPDATEs aimed at the current count | counts reaching the writer | writer input tokens | verdict |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| 1 (12 chunks) | no index | 10 of 17 | 2 | 0 | 358 ✓ 371 ✓ | 5 of 7 | 9 of 12 | 12 004 | PASS |
+| 1 | no index, age lines | 8 of 17 | 2 | 0 | 358 ✓ 371 ✓ | 6 of 7 | 9 of 12 | 12 764 | PASS |
+| 1 | index 600t | 12 of 20 | 3 | 0 | 358 ✓ 371 ✓ | 4 of 8 | 10 of 12 | 16 987 | PASS |
+| 1 | index 200t | 14 of 20 | 4 | 2 | 358 ✓ 371 ✓ | 6 of 6 | 11 of 12 | 15 956 | FAIL |
+| 2 (30 chunks) | no index | 29 of 30 | 9 | 4 | offline 402 ✗ lan 371 ✓ | 1 of 1 | 8 of 12 | 30 616 | FAIL |
+| 2 | no index, age lines | 28 of 29 | 9 | 4 | offline 402 ✗ lan 371 ✓ | 1 of 1 | 8 of 12 | 32 111 | FAIL |
+| 2 | index 600t | **21 of 29** | **5** | **0** | **offline 402 ✓ lan 371 ✓** | 1 of 8 | 8 of 12 | 49 673 | **PASS** |
+| 2 | index 200t | 26 of 33 | 7 | 0 | offline 402 ✓ lan 371 ✗, and lan 251 invented | 2 of 7 | 8 of 12 | 43 283 | FAIL |
 
 Reading:
 
 - **On the crowded corpus the index is the only arm that ends with nothing stale asserted as current.** Both
-  no-index arms end holding 251, 262, 334, 358 and a LAN 341 as live counts while never holding 402 at all. The
+  no-index arms end holding 251, 334, 358 and a LAN 341 as live counts while never holding 402 at all. The
   600-token index arm ends holding 402 and 371 and asserts no superseded count: the only old numbers left active
   sit inside records — the changelog line, the release log, the hard-coded CI line — which the corpus says belong
   there. The bank is 8 entries smaller and holds 5 count claims instead of 9. Nothing about the reconcile rules
@@ -3180,6 +3183,19 @@ its tokens on the corpus that does not need saving.
 What the measurement does establish is where the win lives: the current claim reaching the bank, in a bank too big
 for the writer to see all of. What it establishes about the block is that "every active statement, newest first" is
 both expensive and blunt — a 200-token cap drops a whole mode, and the block's own labels leak into the drafts.
+
+**How the numbers above were made safe.** The first version of the report decided "record" from the chunk an entry
+came from. That is too generous: an entry that started as a record can be rewritten into a current claim by a later
+`UPDATE`, and provenance would keep excusing it. The classification now reads the entry's own wording — a file path,
+a quoted string, or a verb that attributes the number to an artifact — and a claim counts as a record only when every
+claim of that number in that entry is a record. `tools/suite-claim-check.ts` pins those shapes, including the rewrite
+case and the case where a number appears both as a record and as the current count, where the assertion wins. The
+report also now names any count the corpus never states for that mode, which is how the invented `lan 251` above got
+caught rather than being read as a stale count. Each corpus now also declares its own right answer — the count each
+mode must end on, and which superseded counts may stay inside records — and the report prints a `VERDICT` line
+against it. **The record/assertion split is a wording heuristic, not ground truth.** It decides *how* a held number
+reads; the verdict decides whether the bank ends in the state the corpus actually claims. A phrasing the parser has
+never seen can slip through, so a PASS means "no contradiction the metrics can see", not "the bank is correct".
 
 **Next probe, still dev-only.** A claims-only block instead of a statements block: one line per metric the chunk
 actually mentions, `measure/scope` key plus the current value, derived by the parser in `dev/metric-identity.ts`

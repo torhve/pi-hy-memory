@@ -173,5 +173,17 @@
     }
    ]
   }
- ]
+ ],
+ "expected": {
+  "offline": {
+   "final": 358,
+   "records": [
+    238
+   ]
+  },
+  "lan": {
+   "final": 371,
+   "records": []
+  }
+ }
 }

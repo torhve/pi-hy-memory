@@ -7,7 +7,10 @@
    "why": "baseline count in the heavy summary form",
    "text": "[0] [User @ 09:00]: Run the offline suite and give me the summary the way we write it in release notes.\n[1] [Assistant @ 09:03]: pnctl test --offline --report=summary\nchecks passed 214, checks failed 0, network disabled, sound disabled, cache warm, wall time recorded\n[2] [Assistant @ 09:04]: I will keep using that summary form for this suite.",
    "facts": [
-    { "task": "pnctl offline suite summary", "statement": "pnctl test --offline --report=summary reports 214 checks passed and 0 checks failed with network disabled and sound disabled" }
+    {
+     "task": "pnctl offline suite summary",
+     "statement": "pnctl test --offline --report=summary reports 214 checks passed and 0 checks failed with network disabled and sound disabled"
+    }
    ]
   },
   {
@@ -15,7 +18,10 @@
    "why": "durable fact that shares the words but is a different subject",
    "text": "[0] [User @ 09:20]: Where does pnctl keep queue state on the three nodes?\n[1] [Assistant @ 09:22]: One file: state/queue.json, shared by alpha, beta and gamma. Nothing else on disk holds it.\n[2] [User @ 09:23]: Remember that, it surprises people.",
    "facts": [
-    { "task": "queue state location", "statement": "pnctl keeps queue state for nodes alpha, beta and gamma in one JSON file at state/queue.json" }
+    {
+     "task": "queue state location",
+     "statement": "pnctl keeps queue state for nodes alpha, beta and gamma in one JSON file at state/queue.json"
+    }
    ]
   },
   {
@@ -23,8 +29,15 @@
    "why": "count moves, still in the heavy form; a separate parser fact lands in the same chunk",
    "text": "[0] [User @ 09:40]: Add parser cases for quoted arguments with embedded spaces and re-run the summary.\n[1] [Assistant @ 09:46]: pnctl test --offline --report=summary\nchecks passed 226, checks failed 0, network disabled, sound disabled, cache warm, wall time recorded\n[2] [Assistant @ 09:47]: The parser section now covers quoted arguments that contain spaces and a closing quote that is escaped.",
    "facts": [
-    { "task": "pnctl offline suite summary", "statement": "pnctl test --offline --report=summary reports 226 checks passed and 0 checks failed with network disabled and sound disabled", "retire": true },
-    { "task": "parser section coverage", "statement": "the parser section covers quoted arguments that contain spaces and an escaped closing quote" }
+    {
+     "task": "pnctl offline suite summary",
+     "statement": "pnctl test --offline --report=summary reports 226 checks passed and 0 checks failed with network disabled and sound disabled",
+     "retire": true
+    },
+    {
+     "task": "parser section coverage",
+     "statement": "the parser section covers quoted arguments that contain spaces and an escaped closing quote"
+    }
    ]
   },
   {
@@ -32,7 +45,10 @@
    "why": "a rule about the drain lock, must never merge into the count",
    "text": "[0] [User @ 10:00]: The second worker took an item the first one was draining. Why?\n[1] [Assistant @ 10:04]: pnctl holds the drain lock for the whole job. Releasing it early lets another worker claim the same item, so it is held until the job finishes or fails.",
    "facts": [
-    { "task": "drain lock scope", "statement": "pnctl holds the drain lock for the whole job, and releasing it early lets another worker claim the same item" }
+    {
+     "task": "drain lock scope",
+     "statement": "pnctl holds the drain lock for the whole job, and releasing it early lets another worker claim the same item"
+    }
    ]
   },
   {
@@ -40,7 +56,11 @@
    "why": "count moves, terse one-line form",
    "text": "[0] [User @ 10:20]: Quick number only: offline suite?\n[1] [Assistant @ 10:21]: 238 green.",
    "facts": [
-    { "task": "offline suite count", "statement": "the offline suite is at 238 green", "retire": true }
+    {
+     "task": "offline suite count",
+     "statement": "the offline suite is at 238 green",
+     "retire": true
+    }
    ]
   },
   {
@@ -48,8 +68,15 @@
    "why": "a second run mode gets its own heavy-form count, plus what that mode adds",
    "text": "[0] [User @ 10:40]: Now the LAN run, same summary form.\n[1] [Assistant @ 10:45]: pnctl test --lan --report=summary\nchecks passed 241, checks failed 0, discovery enabled, drain handshake enabled, wall time recorded\n[2] [Assistant @ 10:46]: The --lan section adds discovery and drain-handshake checks on top of the offline suite.",
    "facts": [
-    { "task": "pnctl LAN suite summary", "statement": "pnctl test --lan --report=summary reports 241 checks passed and 0 checks failed with discovery and drain handshake enabled", "retire": true },
-    { "task": "LAN section content", "statement": "the --lan section adds discovery and drain-handshake checks on top of the offline suite" }
+    {
+     "task": "pnctl LAN suite summary",
+     "statement": "pnctl test --lan --report=summary reports 241 checks passed and 0 checks failed with discovery and drain handshake enabled",
+     "retire": true
+    },
+    {
+     "task": "LAN section content",
+     "statement": "the --lan section adds discovery and drain-handshake checks on top of the offline suite"
+    }
    ]
   },
   {
@@ -57,7 +84,10 @@
    "why": "a rule that shares the count's own wording",
    "text": "[0] [User @ 11:00]: Rule for the offline run: a test must never open a socket or play sound there.\n[1] [Assistant @ 11:01]: Agreed. In offline mode, network stays disabled and sound stays disabled. A test that needs either is skipped, not marked failed.",
    "facts": [
-    { "task": "offline mode rule", "statement": "in offline mode pnctl keeps network disabled and sound disabled, and a test that needs either is skipped rather than marked failed" }
+    {
+     "task": "offline mode rule",
+     "statement": "in offline mode pnctl keeps network disabled and sound disabled, and a test that needs either is skipped rather than marked failed"
+    }
    ]
   },
   {
@@ -65,7 +95,11 @@
    "why": "count moves, terse form again",
    "text": "[0] [User @ 11:20]: Retest after the cache fix, number only.\n[1] [Assistant @ 11:24]: 251 green.",
    "facts": [
-    { "task": "offline suite count", "statement": "the offline suite is at 251 green", "retire": true }
+    {
+     "task": "offline suite count",
+     "statement": "the offline suite is at 251 green",
+     "retire": true
+    }
    ]
   },
   {
@@ -73,8 +107,14 @@
    "why": "flag semantics and inventory: durable, adjacent words, must stay separate",
    "text": "[0] [User @ 11:40]: --purge-age took 3 and removed everything older than three minutes. That is wrong.\n[1] [Assistant @ 11:43]: It takes seconds. --purge-age 3 is three seconds.\n[2] [User @ 11:44]: And what ships in the package?\n[3] [Assistant @ 11:45]: Four binaries: pnctl, pnctld, pnctl-mon and pnctl-gen.",
    "facts": [
-    { "task": "purge age flag", "statement": "pnctl's --purge-age flag takes seconds, not minutes" },
-    { "task": "package contents", "statement": "pnctl ships four binaries: pnctl, pnctld, pnctl-mon and pnctl-gen" }
+    {
+     "task": "purge age flag",
+     "statement": "pnctl's --purge-age flag takes seconds, not minutes"
+    },
+    {
+     "task": "package contents",
+     "statement": "pnctl ships four binaries: pnctl, pnctld, pnctl-mon and pnctl-gen"
+    }
    ]
   },
   {
@@ -82,8 +122,15 @@
    "why": "a regression: the count drops, restated in the heavy form",
    "text": "[0] [User @ 12:00]: The queue timeout fix broke two handshake cases. Run the summary.\n[1] [Assistant @ 12:06]: pnctl test --offline --report=summary\nchecks passed 247, checks failed 2, network disabled, sound disabled, cache warm, wall time recorded\n[2] [Assistant @ 12:07]: The two failures are drain handshake cases that assumed the old timeout.",
    "facts": [
-    { "task": "pnctl offline suite summary", "statement": "pnctl test --offline --report=summary reports 247 checks passed and 2 checks failed after the queue timeout fix", "retire": true },
-    { "task": "handshake cases are fragile", "statement": "the drain handshake cases are the fragile part of the offline suite and assume the queue timeout" }
+    {
+     "task": "pnctl offline suite summary",
+     "statement": "pnctl test --offline --report=summary reports 247 checks passed and 2 checks failed after the queue timeout fix",
+     "retire": true
+    },
+    {
+     "task": "handshake cases are fragile",
+     "statement": "the drain handshake cases are the fragile part of the offline suite and assume the queue timeout"
+    }
    ]
   },
   {
@@ -91,7 +138,11 @@
    "why": "stale number returns as log evidence",
    "text": "[0] [User @ 12:20]: release-14 log says something different from what you just told me.\n[1] [Assistant @ 12:23]: grep checks logs/release-14.log\nchecks passed 238, checks failed 0, cache warm\n[2] [Assistant @ 12:24]: That log is from the release run, before the cache fix. The number in it is the suite at that time.",
    "facts": [
-    { "task": "release log record", "statement": "logs/release-14.log records 238 checks passed for the release run, before the cache fix", "stale": true }
+    {
+     "task": "release log record",
+     "statement": "logs/release-14.log records 238 checks passed for the release run, before the cache fix",
+     "stale": true
+    }
    ]
   },
   {
@@ -99,7 +150,11 @@
    "why": "count moves past the regression, plain command form",
    "text": "[0] [User @ 12:40]: Fixed the handshake assumptions. Result?\n[1] [Assistant @ 12:45]: node test/run.mjs --offline: 262 checks passed, 0 failed.",
    "facts": [
-    { "task": "offline suite result", "statement": "node test/run.mjs --offline passes 262 checks with 0 failed", "retire": true }
+    {
+     "task": "offline suite result",
+     "statement": "node test/run.mjs --offline passes 262 checks with 0 failed",
+     "retire": true
+    }
    ]
   },
   {
@@ -107,7 +162,10 @@
    "why": "config precedence, unrelated to the count",
    "text": "[0] [User @ 13:00]: Which wins, the key file or the environment variable?\n[1] [Assistant @ 13:02]: PNCTL_TEST_KEY wins in resolveKey. The key file is only used when the variable is absent.",
    "facts": [
-    { "task": "config precedence", "statement": "PNCTL_TEST_KEY overrides the key file in resolveKey, and the key file is used only when the variable is absent" }
+    {
+     "task": "config precedence",
+     "statement": "PNCTL_TEST_KEY overrides the key file in resolveKey, and the key file is used only when the variable is absent"
+    }
    ]
   },
   {
@@ -115,7 +173,11 @@
    "why": "stale number returns as document evidence, and the staleness itself is a fact",
    "text": "[0] [User @ 13:20]: docs/CHANGELOG.md still opens with the old number.\n[1] [Assistant @ 13:23]: grep -n checks docs/CHANGELOG.md\n12: 214 checks passed, 0 checks failed, network disabled, sound disabled\n[2] [Assistant @ 13:24]: The document still states 214 checks passed, which no longer matches the suite.",
    "facts": [
-    { "task": "stale document number", "statement": "docs/CHANGELOG.md states 214 checks passed, which no longer matches the suite", "stale": true }
+    {
+     "task": "stale document number",
+     "statement": "docs/CHANGELOG.md states 214 checks passed, which no longer matches the suite",
+     "stale": true
+    }
    ]
   },
   {
@@ -123,7 +185,10 @@
    "why": "a durable rule about the suite file",
    "text": "[0] [User @ 13:40]: Keep the suite in one file. One section per module, no splitting.\n[1] [Assistant @ 13:41]: Keeping it at test/run.mjs with one section per module.",
    "facts": [
-    { "task": "suite file rule", "statement": "the suite stays in one file at test/run.mjs with one section per module" }
+    {
+     "task": "suite file rule",
+     "statement": "the suite stays in one file at test/run.mjs with one section per module"
+    }
    ]
   },
   {
@@ -131,7 +196,11 @@
    "why": "old summary text quoted back while checking what changed",
    "text": "[0] [User @ 14:00]: Show me the summaries we wrote this week.\n[1] [Assistant @ 14:03]: grep -rn report=summary notes/\nnotes/mon.md: pnctl test --offline --report=summary 226 checks passed 0 checks failed network disabled sound disabled\nnotes/wed.md: pnctl test --offline --report=summary 247 checks passed 2 checks failed network disabled sound disabled\n[2] [Assistant @ 14:04]: Those are last week's notes, not current results.",
    "facts": [
-    { "task": "weekly notes record old summaries", "statement": "notes/mon.md and notes/wed.md record the 226 and 247 summaries from last week", "stale": true }
+    {
+     "task": "weekly notes record old summaries",
+     "statement": "notes/mon.md and notes/wed.md record the 226 and 247 summaries from last week",
+     "stale": true
+    }
    ]
   },
   {
@@ -139,7 +208,10 @@
    "why": "an interface fact about the summary output",
    "text": "[0] [User @ 14:20]: Does --report=summary go to stdout?\n[1] [Assistant @ 14:22]: Yes, the summary block goes to stdout. Failures and diagnostics go to stderr.",
    "facts": [
-    { "task": "summary output stream", "statement": "pnctl writes the --report=summary block to stdout and sends failures and diagnostics to stderr" }
+    {
+     "task": "summary output stream",
+     "statement": "pnctl writes the --report=summary block to stdout and sends failures and diagnostics to stderr"
+    }
    ]
   },
   {
@@ -147,8 +219,16 @@
    "why": "count moves in the terse form, twice in one chunk for two modes",
    "text": "[0] [User @ 14:40]: Retry work landed. Both numbers, short.\n[1] [Assistant @ 14:46]: Offline 334 green. LAN 341 green.",
    "facts": [
-    { "task": "offline suite count", "statement": "the offline suite is at 334 green", "retire": true },
-    { "task": "LAN suite count", "statement": "the LAN suite is at 341 green", "retire": true }
+    {
+     "task": "offline suite count",
+     "statement": "the offline suite is at 334 green",
+     "retire": true
+    },
+    {
+     "task": "LAN suite count",
+     "statement": "the LAN suite is at 341 green",
+     "retire": true
+    }
    ]
   },
   {
@@ -156,7 +236,10 @@
    "why": "the retry semantics themselves",
    "text": "[0] [User @ 15:00]: How many times does a worker retry an item now?\n[1] [Assistant @ 15:02]: Three attempts, then it parks the item in state/parked.json. The retry count is not configurable.",
    "facts": [
-    { "task": "retry semantics", "statement": "a worker retries an item three attempts and then parks it in state/parked.json, and the retry count is not configurable" }
+    {
+     "task": "retry semantics",
+     "statement": "a worker retries an item three attempts and then parks it in state/parked.json, and the retry count is not configurable"
+    }
    ]
   },
   {
@@ -164,7 +247,11 @@
    "why": "an old count quoted from a parked-item investigation",
    "text": "[0] [User @ 15:20]: The old CI job still prints its own suite line. Find it.\n[1] [Assistant @ 15:25]: grep -rn checks .ci/legacy.sh\n.ci/legacy.sh: node test/run.mjs --offline && echo \"251 checks passed\"\n[2] [Assistant @ 15:26]: The legacy CI script hard-codes 251 checks passed. It is not measuring anything.",
    "facts": [
-    { "task": "legacy CI hard-codes a count", "statement": ".ci/legacy.sh hard-codes 251 checks passed and does not measure the suite", "stale": true }
+    {
+     "task": "legacy CI hard-codes a count",
+     "statement": ".ci/legacy.sh hard-codes 251 checks passed and does not measure the suite",
+     "stale": true
+    }
    ]
   },
   {
@@ -172,7 +259,10 @@
    "why": "durable fact about the LAN section behaviour",
    "text": "[0] [User @ 15:40]: In the LAN run, discovery has to stay on even when the handshake is skipped.\n[1] [Assistant @ 15:42]: Noted: discovery stays enabled, and the handshake check is what gets skipped.",
    "facts": [
-    { "task": "LAN discovery rule", "statement": "in the LAN run pnctl keeps discovery enabled even when the drain handshake check is skipped" }
+    {
+     "task": "LAN discovery rule",
+     "statement": "in the LAN run pnctl keeps discovery enabled even when the drain handshake check is skipped"
+    }
    ]
   },
   {
@@ -180,7 +270,10 @@
    "why": "a durable constraint that shares the summary words",
    "text": "[0] [User @ 16:00]: The summary block must stay machine-readable. Other tools parse it.\n[1] [Assistant @ 16:01]: Understood: the summary keeps the fixed labels checks passed and checks failed, so the block stays parseable.",
    "facts": [
-    { "task": "summary labels are fixed", "statement": "the summary block keeps the fixed labels checks passed and checks failed because other tools parse it" }
+    {
+     "task": "summary labels are fixed",
+     "statement": "the summary block keeps the fixed labels checks passed and checks failed because other tools parse it"
+    }
    ]
   },
   {
@@ -188,7 +281,10 @@
    "why": "durable fact about which modules the sections cover",
    "text": "[0] [User @ 16:20]: Which modules have sections today?\n[1] [Assistant @ 16:23]: parse, queue, drain, retry and discovery. The lease module has no section yet.",
    "facts": [
-    { "task": "suite sections today", "statement": "the suite has sections for parse, queue, drain, retry and discovery, and the lease module has no section yet" }
+    {
+     "task": "suite sections today",
+     "statement": "the suite has sections for parse, queue, drain, retry and discovery, and the lease module has no section yet"
+    }
    ]
   },
   {
@@ -196,7 +292,10 @@
    "why": "THE TRAP: the current count is terse and the draft restates it in the heavy form, so an old heavy-form claim ranks above it",
    "text": "[0] [User @ 16:40]: New suite baseline for the release notes, in the summary form we keep.\n[1] [Assistant @ 16:48]: pnctl test --offline --report=summary\nchecks passed 358, checks failed 0, network disabled, sound disabled, cache warm, wall time recorded\n[2] [Assistant @ 16:49]: I will write that line into the release notes.",
    "facts": [
-    { "task": "pnctl offline suite summary", "statement": "pnctl test --offline --report=summary reports 358 checks passed and 0 checks failed with network disabled and sound disabled" }
+    {
+     "task": "pnctl offline suite summary",
+     "statement": "pnctl test --offline --report=summary reports 358 checks passed and 0 checks failed with network disabled and sound disabled"
+    }
    ]
   },
   {
@@ -204,7 +303,10 @@
    "why": "the LAN number lands after the offline one, in a third register",
    "text": "[0] [User @ 17:00]: Add the LAN total to the release notes too.\n[1] [Assistant @ 17:05]: 371 with discovery and drain handshake included.",
    "facts": [
-    { "task": "LAN suite count", "statement": "the LAN suite totals 371 with discovery and drain handshake included" }
+    {
+     "task": "LAN suite count",
+     "statement": "the LAN suite totals 371 with discovery and drain handshake included"
+    }
    ]
   },
   {
@@ -212,7 +314,10 @@
    "why": "an unrelated durable fact that shares several words",
    "text": "[0] [User @ 17:20]: pnctl-mon should not be installed on the worker nodes.\n[1] [Assistant @ 17:22]: Right: the monitor runs only on the controller node, and the package does not install it on alpha, beta or gamma.",
    "facts": [
-    { "task": "monitor install rule", "statement": "pnctl-mon runs only on the controller node and is not installed on the worker nodes" }
+    {
+     "task": "monitor install rule",
+     "statement": "pnctl-mon runs only on the controller node and is not installed on the worker nodes"
+    }
    ]
   },
   {
@@ -220,7 +325,10 @@
    "why": "the last durable rule near the end of the session",
    "text": "[0] [User @ 17:40]: Do not let the release notes claim a LAN number without saying which mode it is.\n[1] [Assistant @ 17:41]: Understood: any count in the notes names its mode, offline or LAN.",
    "facts": [
-    { "task": "counts name their mode", "statement": "a count written into the release notes names its mode, offline or LAN" }
+    {
+     "task": "counts name their mode",
+     "statement": "a count written into the release notes names its mode, offline or LAN"
+    }
    ]
   },
   {
@@ -228,7 +336,10 @@
    "why": "the offline count moves once more, terse",
    "text": "[0] [User @ 18:00]: Lease section landed. Number only.\n[1] [Assistant @ 18:05]: 402 green offline.",
    "facts": [
-    { "task": "offline suite count", "statement": "the offline suite is at 402 green" }
+    {
+     "task": "offline suite count",
+     "statement": "the offline suite is at 402 green"
+    }
    ]
   },
   {
@@ -236,7 +347,11 @@
    "why": "the stale document complaint, restated while the writer is looking at the notes",
    "text": "[0] [User @ 18:20]: Is the changelog number fixed yet?\n[1] [Assistant @ 18:23]: Not yet. docs/CHANGELOG.md still opens with 214 checks passed.",
    "facts": [
-    { "task": "stale document number", "statement": "docs/CHANGELOG.md still opens with 214 checks passed", "stale": true }
+    {
+     "task": "stale document number",
+     "statement": "docs/CHANGELOG.md still opens with 214 checks passed",
+     "stale": true
+    }
    ]
   },
   {
@@ -244,8 +359,25 @@
    "why": "closing durable fact",
    "text": "[0] [User @ 18:40]: Last thing: the parked items file is never cleared automatically.\n[1] [Assistant @ 18:42]: Correct: state/parked.json is only cleared by an explicit pnctl unpark --all.",
    "facts": [
-    { "task": "parked items stay", "statement": "state/parked.json is never cleared automatically; only pnctl unpark --all clears it" }
+    {
+     "task": "parked items stay",
+     "statement": "state/parked.json is never cleared automatically; only pnctl unpark --all clears it"
+    }
    ]
   }
- ]
+ ],
+ "expected": {
+  "offline": {
+   "final": 402,
+   "records": [
+    214,
+    238,
+    262
+   ]
+  },
+  "lan": {
+   "final": 371,
+   "records": []
+  }
+ }
 }
