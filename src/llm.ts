@@ -27,6 +27,7 @@
 
 import type { Api, AssistantMessage, Model } from "@earendil-works/pi-ai";
 import type { ModelRegistry } from "@earendil-works/pi-coding-agent";
+import { isOutputDefect } from "./failures.js";
 import type { CallUsage } from "./types.js";
 
 /** The model a completion came from, after name resolution. */
@@ -219,9 +220,7 @@ export function isBusyError(error: unknown): boolean {
  */
 export function isFailoverError(error: unknown): boolean {
 	if (error instanceof WriterError) {
-		if (error.status === undefined) {
-			return !/^(extract|reconcile) \S+: (Expected|Unbalanced|no JSON object|Unexpected)/i.test(error.message);
-		}
+		if (error.status === undefined) return !isOutputDefect(error);
 		if (error.status === 0) return true;
 		return (
 			error.status === 408 ||

@@ -48,6 +48,7 @@ import {
 import { decideCompactionWait, type InFlightWrite, TIMING_WINDOW, type WriteTiming } from "./lag.js";
 import { createWriter, type Writer } from "./llm.js";
 import { writeChunk } from "./pipeline.js";
+import { redactSecrets } from "./protocol.js";
 import { recallHits, renderFileOperations, renderMemory, renderRecallHit, summaryBudget } from "./render.js";
 import { pruneSessions } from "./state.js";
 import { type SessionStats, statsFromLedger } from "./stats.js";
@@ -598,6 +599,26 @@ export default function piHyMemory(pi: ExtensionAPI): void {
 					// A quarter of the call budget: enough for a slot to free, not enough
 					// to spend the whole write asleep.
 					busyBudgetMs: Math.max(1, Math.round((config.timeoutMs ?? 480_000) / 4)),
+					onParseFailure: ({ stage, content, error }) => {
+						// Keep the bytes. 25 of these failures were recorded with nothing captured, which
+						// left the parser's wording as the only evidence. The window is centred on the
+						// position the strict parse stopped at, and is masked before it is stored.
+						// The runtime names the character *after* a bad escape, so the defect starts one
+						// earlier; centre the window there.
+						const at = Math.max(0, (error.position ?? 1) - 1);
+						const from = Math.max(0, at - 200);
+						audit("parse_failure", {
+							sessionId,
+							chunkId,
+							stage,
+							repairs: error.repairs,
+							strict: error.strictMessage.slice(0, 160),
+							repaired: error.repairedMessage?.slice(0, 160),
+							chars: content.length,
+							at,
+							window: redactSecrets(content.slice(from, from + 400)),
+						});
+					},
 					onStage: (stage, detail) => {
 						status.stage(stage, detail);
 						// The stage report is the only honest signal of what is left of a write, so

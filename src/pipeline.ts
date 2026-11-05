@@ -9,6 +9,7 @@
 
 import { writeFileSync } from "node:fs";
 import { type ApplyReport, applyOps, enforceBudget } from "./bank.js";
+import { OutputParseError } from "./errors.js";
 import { failureClass } from "./failures.js";
 import { completeWithFallback, type Writer } from "./llm.js";
 import { EXTRACT_SYSTEM, reconcileSystem } from "./prompts.js";
@@ -78,11 +79,29 @@ const addUsage = (a: CallUsage, b: CallUsage): CallUsage => ({
 	wallS: Number((a.wallS + b.wallS).toFixed(1)),
 });
 
-function stage<T>(name: "extract" | "reconcile", chunkId: string, fn: () => T): T {
+/** One parse attempt that says which completion it failed on and hands back the bytes. */
+export type ParseFailure = {
+	stage: "extract" | "reconcile";
+	chunkId: string;
+	/** The completion as the model wrote it, before any repair. */
+	content: string;
+	error: OutputParseError;
+};
+
+function stage<T>(
+	name: "extract" | "reconcile",
+	chunkId: string,
+	content: string,
+	onParseFailure: ((failure: ParseFailure) => void) | undefined,
+	fn: () => T,
+): T {
 	try {
 		return fn();
 	} catch (error) {
-		throw new Error(`${name} ${chunkId}: ${String((error as Error)?.message ?? error)}`);
+		if (error instanceof OutputParseError) onParseFailure?.({ stage: name, chunkId, content, error });
+		// The cause stays attached. `failureClass` reads the class off the parse error, and a
+		// wrapper that drops it made a malformed completion look like a dropped connection.
+		throw new Error(`${name} ${chunkId}: ${String((error as Error)?.message ?? error)}`, { cause: error });
 	}
 }
 
@@ -144,6 +163,12 @@ export async function writeChunk(
 		 */
 		extractSystem?: string;
 		rawDir?: string;
+		/**
+		 * A completion the code could not parse, with the bytes it failed on. The audit keeps
+		 * a window around the reported position so a malformed completion can be read instead
+		 * of inferred: 25 of these failures were recorded with no captured text at all.
+		 */
+		onParseFailure?: (failure: ParseFailure) => void;
 		/**
 		 * Drafts from an extract call that already succeeded on this same window
 		 * but whose reconcile failed. Reusing them is the difference between
@@ -235,7 +260,9 @@ export async function writeChunk(
 		failover = extract.failed;
 		if (options.rawDir) writeFileSync(`${options.rawDir}/${chunkId}.extract.txt`, extract.content);
 		try {
-			({ drafts, rejected, idRefs } = stage("extract", chunkId, () => parseDrafts(extract.content, chunk.refs)));
+			({ drafts, rejected, idRefs } = stage("extract", chunkId, extract.content, options.onParseFailure, () =>
+				parseDrafts(extract.content, chunk.refs),
+			));
 			draftsRepairs = idRefs ? ["ref-by-entry-id"] : undefined;
 		} catch (error) {
 			if (failureClass(error) !== "output") throw error;
@@ -249,7 +276,9 @@ export async function writeChunk(
 				{ preferFallback: options.preferFallback },
 			);
 			extractUsage = addUsage(extract.usage, retry.usage);
-			({ drafts, rejected, idRefs } = stage("extract", chunkId, () => parseDrafts(retry.content, chunk.refs)));
+			({ drafts, rejected, idRefs } = stage("extract", chunkId, retry.content, options.onParseFailure, () =>
+				parseDrafts(retry.content, chunk.refs),
+			));
 			draftsRepairs = idRefs ? ["ref-by-entry-id"] : undefined;
 			extractEndpoint = retry.endpoint;
 		}
@@ -332,7 +361,7 @@ export async function writeChunk(
 		let content = raw.content;
 		let parsed: ReturnType<typeof parseOps>;
 		try {
-			parsed = stage("reconcile", chunkId, () =>
+			parsed = stage("reconcile", chunkId, content, options.onParseFailure, () =>
 				parseOps(content, drafts.length, new Set(seen.map((e) => e.id)), allowedTargets),
 			);
 		} catch (error) {
@@ -348,7 +377,7 @@ export async function writeChunk(
 			);
 			content = retry.content;
 			reconcileUsage = addUsage(raw.usage, retry.usage);
-			parsed = stage("reconcile", chunkId, () =>
+			parsed = stage("reconcile", chunkId, content, options.onParseFailure, () =>
 				parseOps(content, drafts.length, new Set(seen.map((e) => e.id)), allowedTargets),
 			);
 		}

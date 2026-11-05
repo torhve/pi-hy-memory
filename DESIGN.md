@@ -355,6 +355,12 @@ auth); only the first two increment `failures`, and an endpoint failure resets i
 write 059 failed with `extract …: terminated`, a dropped stream, and halving the budget made
 the next chunk leave 133 entries behind instead of 43.
 
+The class is read off the error, not off the runtime's sentence for it: `OutputParseError`
+means a completion that would not parse, a numeric status means the endpoint said something,
+and the wording list is a backstop for an error that arrives unwrapped. The distinction decides
+two things — whether the stage gets its one corrective re-ask, and whether the next chunk is
+half the size — so a defect that reaches the code under a wording nobody predicted costs both.
+
 **The writer is a model, not an endpoint.** `src/llm.ts` resolves `provider/modelId` from pi's
 model registry and calls `registry.complete()`; provider registration, base URLs, credentials
 and request shapes stay pi's business, including for models a provider registers dynamically at
@@ -396,20 +402,30 @@ Code rejects an op when: `draft` index out of range or already used, `target` no
 id **in the shown set**, or the action is unknown. A rejected op never corrupts the bank;
 it is counted and logged.
 
-**2b. Malformed output is repaired before it is allowed to fail.** Two shapes have been
-measured in production, and both are nearly-valid JSON rather than a wrong answer:
+**2b. Malformed output is repaired before it is allowed to fail.** Three shapes have been
+measured in production, and all three are nearly-valid JSON rather than a wrong answer:
 
-- a regex copied verbatim into a statement — `"… /^[\s]*(\d+)[\s]*(?:px)?[\s]*$/ …"` —
-  where `\s` and `\d` are not legal JSON escapes (chunk 003, `Bad escaped character …
-  position 4825`, six of them in one extract);
+- a regex copied verbatim into a statement — `"… /^[\s]*(\d+)[\s]*(?:px)?[\s]*$/ …"` — where
+  `\s` and `\d` are not legal JSON escapes, or a `\u` with no four hex digits after it. The
+  audit carries 25 write failures across 12 sessions worded `Bad escaped character …`;
 - a stray quote closing a numeric field, `"draft":5"` (chunk 005, which then failed three
-  times because the retry resumed the same persisted drafts and produced the same string).
+  times because the retry resumed the same persisted drafts and produced the same string);
+- a bare token inside an array, `"refs":[0,66594cfa]`.
 
-`repairJson` runs **only after** a strict parse has failed, so valid output is never
-rewritten; it fixes those two classes and nothing else, and the repair is logged on the
-ledger record (`repaired`) and in the audit. If the output is still unparseable the stage is
-re-asked **once**, with the parse error appended to the request (`retriedJson`), because a
-blind retry reproduces a deterministic malformation. Anything else still fails the write.
+An escape repair has to consume a legal escape whole. `\\s` — an escaped backslash followed by
+`s` — is valid JSON, and its second backslash is not the start of anything; a repair that
+weighs each backslash on its own doubles it, and `\\\s` is a defect the repair wrote. A
+completion mixing one legal pair with one illegal escape is the common shape, because the
+writer quotes a path and a regex in the same answer.
+
+`repairJson` runs **only after** a strict parse has failed, so valid output is never rewritten;
+it fixes those three classes and nothing else, and every repair is named on the ledger record
+(`repaired`) and in the audit. If the output is still unparseable the stage is re-asked **once**,
+with the parse error appended to the request (`retriedJson`), because a blind retry reproduces a
+deterministic malformation. A failure that survives the repair says which of the two attempts
+blocked it, and the audit keeps a masked 400-character window of the completion around the
+position the strict parse stopped at (`parse_failure`): a malformed completion otherwise leaves
+nothing to reason from but the parser's sentence. Anything else still fails the write.
 
 **3. Sanitize.** Every statement gets: `[Source entry id: …]` labels removed, any id that
 was actually present in the chunk removed by exact match, bracketed numeric refs removed,

@@ -68,6 +68,50 @@ const ids = ["4f2a9c1b7d33", "9a01c4de22f7", "5882a9281052", "e346eec8cf15"];
 	check("and the repair is named", takeJsonRepair(), ["escaped-backslash"]);
 }
 
+// --- 2b) a legal escaped backslash next to an illegal one (session 01a1ab1d) --------
+{
+	const B = String.fromCharCode(92);
+	// Fixture 2 above collapses every doubled backslash before parsing, so it never carries a
+	// legal pair. This one does: `\\s` is a legal escaped backslash followed by `s`, and `\s` in
+	// the neighbouring draft is not legal at all. The first escape repair looked at each
+	// backslash on its own, doubled the second half of the legal pair, and produced `\\\s`: a
+	// completion that used to parse was left unparseable.
+	const raw =
+		`{"drafts":[` +
+		`{"task":"path separators","statement":"a path written with a doubled separator as in C:${B}${B}users${B}${B}tor stays literal here","keys":["paths"],"refs":[0]},` +
+		`{"task":"font scaling","statement":"the fontsize effect parses with /^[${B}s]*(${B}d+)[${B}s]*$/ and applies it","keys":["fontsize"],"refs":[1]}` +
+		`]}`;
+	const parsed = parseDrafts(raw, ids);
+	check("the mixed completion parses", parsed.drafts.length, 2);
+	check("the legal pair is not doubled", parsed.drafts[0].statement.includes(`C:${B}users${B}tor`), true);
+	check(
+		"the illegal escape still becomes the regex the model meant",
+		parsed.drafts[1].statement.includes(`/^[${B}s]*(${B}d+)[${B}s]*$/`),
+		true,
+	);
+	check("and only one repair is named", takeJsonRepair(), ["escaped-backslash"]);
+}
+
+{
+	const B = String.fromCharCode(92);
+	// A legal pair on its own: the completion is valid JSON, so nothing may be rewritten.
+	const legal = `{"drafts":[{"task":"regex quoting","statement":"the docs spell the class as ${B}${B}s and the path separator as ${B}${B}d, both legal JSON","keys":["quoting"],"refs":[0]}]}`;
+	parseDrafts(legal, ids);
+	check("valid escapes report no repair", takeJsonRepair(), undefined);
+}
+
+{
+	const B = String.fromCharCode(92);
+	// `\u` is only an escape with four hex digits after it. The old repair left `\uZZZZ` alone
+	// because `u` was in its allowed set, so the completion failed with `Bad Unicode escape`.
+	const raw = `{"drafts":[{"task":"unicode","statement":"the writer mentions ${B}uXXXX escapes and ${B}u00e9 as the letter itself","keys":["unicode"],"refs":[0]}]}`;
+	const parsed = parseDrafts(raw, ids);
+	check("a bad \\u parses after repair", parsed.drafts.length, 1);
+	check("the bad \\u stays text", parsed.drafts[0].statement.includes(`${B}uXXXX`), true);
+	check("the legal \\u00e9 became the character", parsed.drafts[0].statement.includes("é"), true);
+	check("and the repair is named for what it was", takeJsonRepair(), ["unicode-escape"]);
+}
+
 // --- 3) valid output is never rewritten -------------------------------------
 {
 	const raw = JSON.stringify({ ops: [{ action: "ADD", draft: 0 }] });

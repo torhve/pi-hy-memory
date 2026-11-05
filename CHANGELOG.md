@@ -6,6 +6,15 @@ keep the heading form `## X.Y.Z — YYYY-MM-DD` and put the newest section first
 an entry: it is staging for the next release. See `AGENTS.md` for the rules.
 
 ## Unreleased
+- Fixed a malformed writer completion ending a session's memory writes. A fact that quotes code — a
+  regex copied into a statement — reaches the parser as JSON it refuses, and 25 of those writes across
+  12 sessions were recorded as endpoint failures: a 30-second cooldown doubling to 60, the writes that
+  would have followed skipped, and no corrective re-ask of the stage. A repair no longer damages a
+  valid escaped backslash (`\\s`) while fixing an illegal one, a parse failure is now classified as the
+  model's output so its stage gets the one re-ask with the parse error attached, and a write that
+  survives the repair still fails says which of the two parse attempts blocked it. The audit gains
+  `parse_failure`, carrying the repairs attempted and a masked 400-character window of the completion
+  around the position the parser stopped at.
 - Internal: the package takes `Type` from `typebox` instead of from `@earendil-works/pi-ai`, declares
   `typebox` as a host-provided peer dependency, and now builds against the 1.5 host packages. pi-ai 1.5 no
   longer re-exports TypeBox, so the old import type-checked only against the 1.3 packages it was pinned to.

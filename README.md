@@ -406,7 +406,8 @@ to break silently:
 | `ops-guard-check`, `subject-guard-check` | wrong-target and wrong-subject UPDATEs |
 | `reconcile-render-check` | the reconcile render stays plain: candidates arrive in selection order, each printed as id, task and statement with no age and no re-sorting, and the reconcile prompt makes no ordering or age claim, so the render and the prompt cannot drift apart |
 | `redact-check` | credential redaction without damaging identifiers |
-| `json-repair-check` | the three measured malformations (illegal escape, stray quote after a number, a bare token inside an array) parse, content survives, valid output is untouched, and an unparseable reply is re-asked exactly once |
+| `json-repair-check` | the three measured malformations (illegal escape, stray quote after a number, a bare token inside an array) parse, content survives, a legal escaped backslash next to an illegal one is not doubled, `\u` is an escape only with four hex digits, valid output is untouched, and an unparseable reply is re-asked exactly once |
+| `parse-failure-check` | the completion shape that stopped session 01a1ab1d parses; a malformed completion is classified as the model's output so its stage gets the corrective re-ask; a failure that survives the repair names both parse attempts and hands over the bytes around the position it stopped at |
 | `source-ref-check` | refs arrive as the `[n]` indices the chunk shows: an id naming one source entry becomes its index and is counted, a truncated id resolves only while it names one entry, an ambiguous or unknown id gets its own rejection reason, prose that looks like a list keeps its brackets, and a captured chunk's line labels become indices while a bracketed commit sha stays as written |
 | `budget-check`, `reload-budget-check` | pool eviction order, reload semantics, summary budget |
 | `stats-counter-check` | the counters describe the session, not the process: a reload continues writes, drafts, adds, merges and refusals from its ledger, a ledger written before `downgradedCount` reports a floor and admits it, a gap counts as a compaction only when it is one, and a session with no ledger starts at zero and says it is fresh |
@@ -461,6 +462,7 @@ it, which is.
 | `src/serialize.ts` | pi entry text → chunk with positional `[n]` refs; internal ids hidden. `labelLinesToIndices` rewrites a captured chunk's legacy `[da8e7079]` line labels into the same indices, so a replay never shows the writer an id it was never meant to see |
 | `src/prompts.ts` | extract prompt (fixed) + reconcile prompt (size-aware) |
 | `src/protocol.ts` | JSON parse (three measured malformations repaired, each named in the audit), validation, sanitizing, bank/draft rendering; a ref naming a source entry id becomes that entry's index and is counted rather than forgiven |
+| `src/errors.ts` | the error a completion gets when it will not parse: which repair was attempted, what each parse attempt said, and the byte offset the strict parse stopped at |
 | `src/values.ts` | what counts as a value rather than wording — numbers, flags, file names, paths, identifiers — and which values an UPDATE draft fails to restate; the one definition the gate and the reports share |
 | `src/bank.ts` | ledger fold, candidate retrieval, op application, budget |
 | `src/pipeline.ts` | the two calls and everything deterministic around them |
@@ -472,7 +474,7 @@ it, which is.
 | `src/config.ts` | every setting and its default |
 | `src/entries.ts` | coverage window, entry rendering, chunk building from session entries |
 | `src/chain.ts` | when a finished write is followed by another, and when an idle session drains |
-| `src/failures.ts` | failure class, cooldown ladder, whether a chunk should shrink |
+| `src/failures.ts` | failure class, read off the error (a parse failure is the model's output, an HTTP status is the endpoint's) rather than off its wording; cooldown ladder; whether a chunk should shrink |
 | `src/lag.ts` | how far behind the writer is, and whether a compaction should wait for it: stage-aware ETA from the last eight writes, and the gates that make it skip (overflow, unhealthy writer, backoff, no history, ETA past the budget). Pure — pinned by `tools/lag-check.ts`, and its wiring by `tools/compaction-wait-check.ts` |
 | `src/budget.ts` | how a compaction splits the room the next request has — tail, digest, note — including who gives way (the tail asks for `keepRecentShare` of the room and is held at `COMPACT_KEEP_MIN_TOKENS` while the room can pay one; the note takes what is left up to `summaryMaxTokens`, and below 1 500 tokens of room the tail is the half that goes under its floor, which `underprovisioned` reports), a digest reserved at a ceiling and then priced down by a boundary probe, and the difference between a cut the backward walk made and a cut the request cap made. Pure — pinned by `tools/budget-split-check.ts` |
 | `src/hifi.ts` | the optional model-written checkpoint and its fact guard |

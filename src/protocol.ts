@@ -3,6 +3,7 @@
  * The model proposes; code decides what enters the bank.
  */
 
+import { errorPosition, OutputParseError } from "./errors.js";
 import type { BankEntry, Draft, ExtractResult, ReconcileOp, ReconcileResult } from "./types.js";
 import { isId } from "./types.js";
 import { valuesTheDraftDrops } from "./values.js";
@@ -11,15 +12,24 @@ const MAX_STATEMENT_CHARS = 420;
 const MAX_TASK_CHARS = 120;
 
 /**
- * Repairs for the two malformations observed in production, attempted only after a
+ * Repairs for the malformed completions measured in production, attempted only after a
  * strict parse has already failed, so valid output is never rewritten.
  *
  * 1. Invalid escapes inside strings. The writer copies code verbatim, so a regex in a
- *    statement arrives as `/^[\s]*(\d+).../`, and `\s`/`\d` are not legal JSON
- *    escapes (measured: six in one extract, `Bad escaped character ... position 4825`).
+ *    statement arrives as `/^[\s]*(\d+).../`, and `\s`/`\d` are not legal JSON escapes.
+ *    Measured in the audit: 25 write failures across 12 sessions, every one worded
+ *    `Bad escaped character …`. A `\u` not followed by four hex digits is the same class.
  * 2. A stray quote after a numeric field: `"draft":5"` (measured on chunk 005 of the
  *    extended corpus, which then failed three times because the retry reused the same
  *    persisted drafts).
+ * 3. A bare token inside an array — see `quoteBareArrayTokens`.
+ *
+ * An escape repair has to consume a legal escape whole. The first version was
+ * `text.replace(/\\(?![\\"/bfnrtu])/g, "\\\\")`, which weighed every backslash on its own.
+ * In `\\s` — a legal escaped backslash followed by `s` — the first backslash is skipped and
+ * the second is repaired, so the output is `\\\s`: the repair wrote the defect it was
+ * meant to remove. A completion that mixes legal pairs with one illegal escape then failed
+ * its second parse, and the chunk was lost over a defect the repair invented.
  */
 /**
  * Quote bare tokens inside JSON arrays: `"refs":[0,66594cfa]` -> `"refs":[0,"66594cfa"]`.
@@ -86,15 +96,52 @@ function quoteBareArrayTokens(text: string): { text: string; repaired: boolean }
 	return { text: out, repaired };
 }
 
-function repairJson(text: string): { text: string; repairs: string[] } {
+/** The single character that may follow a backslash inside a JSON string. */
+const LEGAL_ESCAPE = '\\"/bfnrt';
+
+/**
+ * One left-to-right pass. A legal escape is copied and its second character is consumed,
+ * so a later backslash is only ever read as what it really is. A backslash that starts
+ * nothing legal — `\s`, `\d`, `\.` — is doubled, and `\u` counts as legal only when four
+ * hex digits follow it.
+ */
+function repairEscapes(text: string): { text: string; repairs: string[] } {
 	const repairs: string[] = [];
-	// A backslash that does not start a legal escape becomes a literal backslash.
-	const escapes = text.replace(/\\(?![\\"/bfnrtu])/g, () => {
+	let out = "";
+	for (let i = 0; i < text.length; i++) {
+		const ch = text[i];
+		if (ch !== "\\") {
+			out += ch;
+			continue;
+		}
+		const next = text[i + 1];
+		if (next === "u") {
+			const hex = text.slice(i + 2, i + 6);
+			if (/^[0-9a-fA-F]{4}$/.test(hex)) {
+				out += `\\u${hex}`;
+				i += 5;
+				continue;
+			}
+			if (!repairs.includes("unicode-escape")) repairs.push("unicode-escape");
+			out += "\\\\";
+			continue;
+		}
+		if (next !== undefined && LEGAL_ESCAPE.includes(next)) {
+			out += ch + next;
+			i++;
+			continue;
+		}
 		if (!repairs.includes("escaped-backslash")) repairs.push("escaped-backslash");
-		return "\\\\";
-	});
+		out += "\\\\";
+	}
+	return { text: out, repairs };
+}
+
+function repairJson(text: string): { text: string; repairs: string[] } {
+	const escapes = repairEscapes(text);
+	const repairs = [...escapes.repairs];
 	// `"draft":5"` -> `"draft":5`.
-	const numeric = escapes.replace(/("(?:draft|index)"\s*:\s*-?\d+)\s*"/g, (_m, head: string) => {
+	const numeric = escapes.text.replace(/("(?:draft|index)"\s*:\s*-?\d+)\s*"/g, (_m, head: string) => {
 		if (!repairs.includes("quote-after-number")) repairs.push("quote-after-number");
 		return head;
 	});
@@ -141,27 +188,48 @@ function scanJson(raw: string): unknown {
 	throw new Error("unbalanced JSON object in completion");
 }
 
+type ParseAttempt = { ok: true; value: unknown } | { ok: false; error: Error };
+
+function attemptScan(raw: string): ParseAttempt {
+	try {
+		return { ok: true, value: scanJson(raw) };
+	} catch (error) {
+		return { ok: false, error: error as Error };
+	}
+}
+
 /**
  * Strict parse first. Anything else is the model's malformation, and three of those have
- * been measured — see `repairJson`. The repair has to run before the scan, not after:
- * a stray quote makes the balanced-brace scanner swallow the rest of the object, which
- * is why the reported error was "unbalanced" rather than a parse position.
+ * been measured — see `repairJson`. The repair has to run before the scan, not after: a
+ * stray quote makes the balanced-brace scanner swallow the rest of the object, which is
+ * why the reported error was "unbalanced" rather than a parse position.
+ *
+ * A failure always says which attempt blocked the write. The first version rethrew the
+ * strict error whenever the repaired text failed, so an audit line blamed the defect the
+ * repair had already fixed and hid the one that actually stopped the parse.
  */
 export function parseJsonObject(raw: string): unknown {
 	lastRepair = undefined;
-	try {
-		return scanJson(raw);
-	} catch (strictError) {
-		const { text, repairs } = repairJson(raw);
-		if (repairs.length === 0) throw strictError;
-		try {
-			const value = scanJson(text);
-			lastRepair = repairs;
-			return value;
-		} catch {
-			throw strictError;
-		}
+	const strict = attemptScan(raw);
+	if (strict.ok) return strict.value;
+	const { text, repairs } = repairJson(raw);
+	const position = errorPosition(strict.error.message);
+	if (repairs.length === 0)
+		throw new OutputParseError({ strictMessage: strict.error.message, repairs: [], position, cause: strict.error });
+	const repaired = attemptScan(text);
+	if (repaired.ok) {
+		lastRepair = repairs;
+		return repaired.value;
 	}
+	// `position` is the strict one on purpose: it indexes the completion as the model
+	// wrote it, which is the text a capture window has to point at.
+	throw new OutputParseError({
+		strictMessage: strict.error.message,
+		repairs,
+		repairedMessage: repaired.error.message,
+		position,
+		cause: strict.error,
+	});
 }
 
 /**
@@ -198,6 +266,17 @@ const SECRET_PATTERNS: RegExp[] = [
 	/\b[a-f0-9]{20,}\b/g,
 ];
 
+/**
+ * Mask credential-shaped text. Exported because the audit keeps a window of a failing
+ * completion, and that window is raw model text: it carries whatever the writer read off
+ * the tool output it was summarising.
+ */
+export function redactSecrets(text: string): string {
+	let out = text;
+	for (const pattern of SECRET_PATTERNS) out = out.replace(pattern, (match) => `${match.slice(0, 3)}…redacted…`);
+	return out;
+}
+
 export function sanitizeStatement(value: string, sourceIds: Set<string>): string {
 	let text = value.replace(/\[Source entry id:\s*[a-f0-9]{6,12}\]/gi, "").replace(/\[\d{1,4}\]/g, " ");
 	// A copied chunk line drags its label with it: `[da8e7079] [Assistant @ 16:59]: …`. The id is
@@ -205,9 +284,7 @@ export function sanitizeStatement(value: string, sourceIds: Set<string>): string
 	// statement is not mistaken for an internal id and quietly deleted from a fact.
 	text = text.replace(/\[[0-9a-f]{6,12}\](?=\s*\[(?:User|Assistant|Tool|System|Earlier|Custom|Model))/gi, "");
 	for (const id of sourceIds) text = text.split(id).join("");
-	for (const pattern of SECRET_PATTERNS) {
-		text = text.replace(pattern, (match) => `${match.slice(0, 3)}…redacted…`);
-	}
+	text = redactSecrets(text);
 	return text.replace(/\s+/g, " ").trim().slice(0, MAX_STATEMENT_CHARS);
 }
 

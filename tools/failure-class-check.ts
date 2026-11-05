@@ -12,6 +12,7 @@
  * and context-length rejections.
  */
 
+import { OutputParseError } from "../src/errors.js";
 import { failureClass, shrinksChunk, writeCooldownMs } from "../src/failures.js";
 import { WriterError } from "../src/llm.js";
 
@@ -50,6 +51,55 @@ check("unparseable JSON", failureClass(at("Expected ',' or ']' after array eleme
 check("unbalanced JSON", failureClass(at("Unbalanced JSON object in completion")), "output");
 check("no JSON at all", failureClass(at("no JSON object in completion")), "output");
 check("empty completion", failureClass(at("empty completion (stopReason=length)")), "output");
+
+// The wording a copied regex produces. The audit carries 25 of these across 12 sessions —
+// `extract hy-01a1ab1d-001: Bad escaped character in JSON at position 2223 (line 6 column
+// 333)` is one — and every one of them was recorded as an endpoint failure, which costs a
+// cooldown and a skipped chain and skips the corrective re-ask the pipeline already has.
+check("bad escape", failureClass(at("Bad escaped character in JSON at position 2223 (line 6 column 333)")), "output");
+check(
+	"bad control character",
+	failureClass(at("Bad control character in string literal in JSON at position 341 (line 4 column 88)")),
+	"output",
+);
+check("bad unicode escape", failureClass(at("Bad Unicode escape in JSON at position 52 (line 1 column 53)")), "output");
+check(
+	"unterminated string",
+	failureClass(at("Unterminated string in JSON at position 6112 (line 11 column 40)")),
+	"output",
+);
+
+// The class comes from the parse error itself, so a wrapper cannot lose it.
+check(
+	"a wrapped parse error is still the model's output",
+	failureClass(
+		new Error("extract hy-test: unparseable completion", {
+			cause: new OutputParseError({
+				strictMessage: "Bad escaped character in JSON at position 2223",
+				repairs: ["escaped-backslash"],
+			}),
+		}),
+	),
+	"output",
+);
+check(
+	"an HTTP status outranks the wording",
+	failureClass(at('400: {"error":"Bad escaped character in the prompt"}', 400)),
+	"endpoint",
+);
+
+// An endpoint failure that carries a parse failure underneath stays an endpoint failure, so it
+// still moves to the fallback model instead of being read as the model's answer.
+{
+	const wrapped = at("reconcile hy-test: 502 Bad Gateway", 502);
+	wrapped.cause = new OutputParseError({ strictMessage: "Unexpected end of JSON input", repairs: [] });
+	check("a status outranks its parse cause", failureClass(wrapped), "endpoint");
+}
+check(
+	"an unrelated SyntaxError is not the model's output",
+	failureClass(new SyntaxError("invalid regular expression")),
+	"endpoint",
+);
 
 // The mapping the budget uses.
 check("endpoint does not shrink", shrinksChunk("endpoint"), false);

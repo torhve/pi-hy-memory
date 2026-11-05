@@ -15,26 +15,55 @@
  *              empty completion. A smaller chunk gives it less to track.
  *   endpoint — transport, 5xx, 429, auth. Nothing about the chunk caused it, and
  *              the failover path already handles it.
+ *
+ * A malformed completion was recorded as `endpoint` for a while, because the class was read
+ * off a message string and the wording was not in the list. That cost sessions a cooldown
+ * and a skipped chain instead of the one corrective re-ask src/pipeline.ts already has.
  */
+
+import { OutputParseError } from "./errors.js";
 
 export type FailureClass = "chunk" | "output" | "endpoint";
 
 const CONTEXT_REJECTION = /context|too long|too large|exceed|maximum.*token|prompt.*length/i;
-const OUTPUT_DEFECT = /(Expected|Unbalanced|no JSON object|Unexpected)\b|empty completion/i;
+/**
+ * Wording, kept only as a backstop for an error that reaches here unwrapped. The shipped
+ * parse path throws `OutputParseError`, and that is what the classification relies on. The
+ * list matters because it once did all the work and missed the one defect the writer
+ * actually produces: a copied regex lands as `Bad escaped character …`, matched nothing
+ * here, and 25 write failures were recorded as endpoint outages.
+ */
+const OUTPUT_DEFECT =
+	/(Expected|Unexpected|Unbalanced|no JSON object|empty completion|Bad escaped character|Bad control character|Bad Unicode escape|Bad character|Unterminated string)/i;
 
+/**
+ * Walk the error and then its causes. The first link that says anything decides, and a
+ * numeric status outranks wording: it came from the endpoint. A wrapper that names neither
+ * says nothing, which is why `stage` in src/pipeline.ts keeps the cause attached.
+ */
 export function failureClass(error: unknown): FailureClass {
-	const message = String((error as Error)?.message ?? error);
-	const status = (error as { status?: unknown })?.status;
-
-	if (OUTPUT_DEFECT.test(message)) return "output";
-	if (typeof status === "number") {
-		if (status === 0) return "chunk"; // our own timeout or an abort
-		if (status === 413) return "chunk";
-		if (status === 400 && CONTEXT_REJECTION.test(message)) return "chunk";
+	for (let link = error; link instanceof Error; link = (link as { cause?: unknown }).cause) {
+		// A completion that parsed to nothing usable is a property of the model's answer. Only
+		// `OutputParseError` says that, so a bare `SyntaxError` is not enough here: a malformed
+		// provider body or a broken request would read as the model's fault and lose its failover.
+		if (link instanceof OutputParseError) return "output";
+		const status = (link as { status?: unknown }).status;
+		if (typeof status === "number") {
+			if (status === 0) return "chunk"; // our own timeout or an abort
+			if (status === 413) return "chunk";
+			if (status === 400 && CONTEXT_REJECTION.test(link.message)) return "chunk";
+			return "endpoint";
+		}
+		if (OUTPUT_DEFECT.test(link.message)) return "output";
 	}
-	// No status at all means the stream never produced a usable response: a
-	// dropped connection, "terminated", a socket that hung up.
+	// No status at all means the stream never produced a usable response: a dropped
+	// connection, "terminated", a socket that hung up.
 	return "endpoint";
+}
+
+/** The model answered with something unusable, as opposed to the endpoint failing. */
+export function isOutputDefect(error: unknown): boolean {
+	return failureClass(error) === "output";
 }
 
 /** Would a smaller chunk help? Only a size or output failure changes the budget. */
