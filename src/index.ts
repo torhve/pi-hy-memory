@@ -191,8 +191,8 @@ export function ledgerFromSession(entries: SessionEntry[]): LedgerRecord[] {
  *
  * A reload has no completed write in this process, and the policy refuses to wait without history
  * (`src/lag.ts`), so the first compaction after a resume would never wait. The ledger carries each
- * call's own `usage.wallS`, which is exactly the split the ETA needs: `hy.extract` is the extract
- * stage, `hy.ops` is the reconcile stage, and the two share a `chunkId`.
+ * stage's `usage.wallS`, summed over the calls that stage made, which is the split the ETA needs:
+ * `hy.extract` is the extract stage, `hy.ops` is the reconcile stage, and the two share a `chunkId`.
  *
  * Only a pair counts. An `hy.extract` with no `hy.ops` is a write that failed before its reconcile,
  * and seeding from it would estimate a total write from half of one.

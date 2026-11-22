@@ -15,6 +15,12 @@ an entry: it is staging for the next release. See `AGENTS.md` for the rules.
   survives the repair still fails says which of the two parse attempts blocked it. The audit gains
   `parse_failure`, carrying the repairs attempted and a masked 400-character window of the completion
   around the position the parser stopped at.
+
+- Fixed the token counts of a write that was re-asked. A stage whose completion could not be parsed
+  is asked once more, and its record kept only the first call's tokens: the ledger record, the
+  `/hy` footer's `… in / … out tok`, and the write timing all understated a retried write, and a
+  replay cannot recover a number the record never held. A retried stage now sums both of its calls.
+  Ledgers written before this keep the smaller figure.
 - Internal: the package takes `Type` from `typebox` instead of from `@earendil-works/pi-ai`, declares
   `typebox` as a host-provided peer dependency, and now builds against the 1.5 host packages. pi-ai 1.5 no
   longer re-exports TypeBox, so the old import type-checked only against the 1.3 packages it was pinned to.

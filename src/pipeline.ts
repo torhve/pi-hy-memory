@@ -258,6 +258,9 @@ export async function writeChunk(
 		extractEndpoint = extract.endpoint;
 		extractModel = `${extract.model.provider}/${extract.model.id}`;
 		failover = extract.failed;
+		// Set before the re-ask can add to it. An assignment here placed after the catch instead
+		// discarded the sum, so a retried extract was written to the ledger at its first call.
+		extractUsage = extract.usage;
 		if (options.rawDir) writeFileSync(`${options.rawDir}/${chunkId}.extract.txt`, extract.content);
 		try {
 			({ drafts, rejected, idRefs } = stage("extract", chunkId, extract.content, options.onParseFailure, () =>
@@ -275,7 +278,7 @@ export async function writeChunk(
 				`extract ${chunkId} (json retry)`,
 				{ preferFallback: options.preferFallback },
 			);
-			extractUsage = addUsage(extract.usage, retry.usage);
+			extractUsage = addUsage(extractUsage, retry.usage);
 			({ drafts, rejected, idRefs } = stage("extract", chunkId, retry.content, options.onParseFailure, () =>
 				parseDrafts(retry.content, chunk.refs),
 			));
@@ -291,7 +294,6 @@ export async function writeChunk(
 			...draft,
 			fromUser: chunk.roles ? draft.refs.some((r) => chunk.roles?.[r] === "user") : false,
 		}));
-		extractUsage = extract.usage;
 	}
 
 	// Persist the extract before the reconcile call can fail, so a retry resumes
@@ -357,6 +359,8 @@ export async function writeChunk(
 		reconcileEndpoint = raw.endpoint;
 		reconcileModel = `${raw.model.provider}/${raw.model.id}`;
 		failover = failover ?? raw.failed;
+		// The first call's usage, set before the re-ask can add to it.
+		reconcileUsage = raw.usage;
 		if (options.rawDir) writeFileSync(`${options.rawDir}/${chunkId}.reconcile.txt`, raw.content);
 		let content = raw.content;
 		let parsed: ReturnType<typeof parseOps>;
@@ -376,7 +380,7 @@ export async function writeChunk(
 				{ preferFallback: extractEndpoint === "fallback" },
 			);
 			content = retry.content;
-			reconcileUsage = addUsage(raw.usage, retry.usage);
+			reconcileUsage = addUsage(reconcileUsage, retry.usage);
 			parsed = stage("reconcile", chunkId, content, options.onParseFailure, () =>
 				parseOps(content, drafts.length, new Set(seen.map((e) => e.id)), allowedTargets),
 			);
@@ -385,7 +389,6 @@ export async function writeChunk(
 		ops = parsed.ops;
 		rejectedOps = parsed.rejected;
 		downgradedOps = parsed.downgraded;
-		reconcileUsage = raw.usage;
 
 		// An UPDATE must restate its target. The per-draft retrieval guard only
 		// proves the entry was on screen for this draft; it cannot tell that the

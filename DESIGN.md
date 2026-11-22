@@ -427,6 +427,13 @@ blocked it, and the audit keeps a masked 400-character window of the completion 
 position the strict parse stopped at (`parse_failure`): a malformed completion otherwise leaves
 nothing to reason from but the parser's sentence. Anything else still fails the write.
 
+A corrective re-ask is a second call for the same stage, so its tokens belong to that stage's record:
+`usage` on `hy.extract` and `hy.ops` sums the calls that stage made. `statsFromLedger` prints that
+figure and `writeTimingsFromLedger` seeds the compaction ETA from it, so a stage that re-asked
+reports both calls, including both calls' wall time. The first version wrote only the first call,
+which understated a retried write in the ledger for good: a replay cannot recover a number that was
+never recorded. Ledgers written before the fix keep the smaller figure.
+
 **3. Sanitize.** Every statement gets: `[Source entry id: …]` labels removed, any id that
 was actually present in the chunk removed by exact match, bracketed numeric refs removed,
 `sk-…`/`token…`/`Bearer …` secrets masked, whitespace collapsed, 420-char cap.
