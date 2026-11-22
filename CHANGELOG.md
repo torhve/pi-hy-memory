@@ -21,6 +21,14 @@ an entry: it is staging for the next release. See `AGENTS.md` for the rules.
   `/hy` footer's `… in / … out tok`, and the write timing all understated a retried write, and a
   replay cannot recover a number the record never held. A retried stage now sums both of its calls.
   Ledgers written before this keep the smaller figure.
+
+- A completion that answered the contract with no array now fails the write. `{"drafts":{}}`,
+  `{"ops":"none"}` and a reply that carries neither key parsed as an empty list, so the chunk's
+  drafts were discarded, the ledger recorded a clean write, and neither the writer nor the audit was
+  told. The stage now gets its one corrective re-ask, the audit records an output failure that names
+  the key, and a smaller chunk follows. `{"drafts":[]}` still means "nothing durable here" and stays
+  a clean write. No captured run had hit this: all 1,934 completions stored under the measurement
+  directories answered with a non-empty array.
 - Internal: the package takes `Type` from `typebox` instead of from `@earendil-works/pi-ai`, declares
   `typebox` as a host-provided peer dependency, and now builds against the 1.5 host packages. pi-ai 1.5 no
   longer re-exports TypeBox, so the old import type-checked only against the 1.3 packages it was pinned to.

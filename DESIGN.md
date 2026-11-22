@@ -427,6 +427,17 @@ blocked it, and the audit keeps a masked 400-character window of the completion 
 position the strict parse stopped at (`parse_failure`): a malformed completion otherwise leaves
 nothing to reason from but the parser's sentence. Anything else still fails the write.
 
+A top-level key that is not an array is the same kind of defect. `{"drafts":{}}`, `{"ops":"none"}`
+and a completion that carries neither key are valid JSON, so they parse. The first version read
+them as an empty list: the chunk's work was discarded, `ops: []` reached the ledger, and the write
+was recorded as clean, because an empty list and a malformed answer looked the same to the parser.
+`requireArray` now throws `OutputParseError` naming the key and what it held, so the shape reaches
+the corrective re-ask and the audit line instead, and `shrinksChunk` counts it as an output failure
+rather than an endpoint fault. `{"drafts":[]}` stays legal: that is the answer the prompt asks for
+when a chunk holds nothing durable. Replaying the 1,934 stored completions under `out/` (1,256
+unique) found every one of them answering with a non-empty array, so this guard rejects a shape no
+captured run has produced yet. It exists because the failure it prevents leaves no trace.
+
 A corrective re-ask is a second call for the same stage, so its tokens belong to that stage's record:
 `usage` on `hy.extract` and `hy.ops` sums the calls that stage made. `statsFromLedger` prints that
 figure and `writeTimingsFromLedger` seeds the compaction ETA from it, so a stage that re-asked

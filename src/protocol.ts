@@ -326,9 +326,36 @@ function resolveSourceRef(
 	return hits.length === 1 ? { index: sourceIds.indexOf(hits[0]), byId: true } : undefined;
 }
 
+/**
+ * The contract's top-level key, which is always an array. An object, a string or a missing key
+ * attempted the shape of the answer and got it wrong, so it is the model's output and gets the
+ * one corrective re-ask. Reading those shapes as an empty list instead threw the chunk's work
+ * away and recorded a clean write, which is why the malformation never reached the audit or the
+ * writer's notice: `{"drafts":[]}` is the only completion that means "nothing durable here".
+ */
+function requireArray(data: any, key: "drafts" | "ops"): any[] {
+	const value = data?.[key];
+	if (Array.isArray(value)) return value;
+	throw new OutputParseError({
+		strictMessage: `the answer's "${key}" is ${typeNamed(value)}, not an array`,
+		repairs: [],
+	});
+}
+
+/** What the key held, phrased for the model to read back in the corrective re-ask. */
+function typeNamed(value: unknown): string {
+	if (value === undefined) return "missing";
+	if (value === null) return "null";
+	if (typeof value === "object") return "an object";
+	if (typeof value === "string") return "a string";
+	if (typeof value === "number") return "a number";
+	if (typeof value === "boolean") return "a boolean";
+	return typeof value;
+}
+
 export function parseDrafts(raw: string, sourceIds: string[]): ExtractResult {
 	const data = parseJsonObject(raw) as any;
-	const list = Array.isArray(data?.drafts) ? data.drafts : [];
+	const list = requireArray(data, "drafts");
 	const idSet = new Set(sourceIds);
 	const drafts: Draft[] = [];
 	const rejected: { reason: string; draft: unknown }[] = [];
@@ -393,7 +420,7 @@ export function parseOps(
 	allowedTargets?: Map<number, Set<string>>,
 ): ReconcileResult {
 	const data = parseJsonObject(raw) as any;
-	const list = Array.isArray(data?.ops) ? data.ops : [];
+	const list = requireArray(data, "ops");
 	const ops: ReconcileOp[] = [];
 	const rejected: { reason: string; op: unknown }[] = [];
 	const usedDrafts = new Set<number>();
