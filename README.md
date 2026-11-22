@@ -119,13 +119,14 @@ on measurement (`RESULTS.md`): a config that still sets them gets one warning li
 ## Commands
 
 ```
-/hy           status: session switch, bank size, cost so far, how far behind the writer is
+/hy status    session switch, bank size, cost so far, how far behind the writer is
 /hy summary   the facts a compaction would render, as the model would read them
+/hy hifi      toggle the model-written compaction checkpoint for this session
 /hy off       stop memory work for this session (remembered across reloads)
 /hy on        resume; the window accumulated while off is not remembered
 ```
 
-`/hy off` exists because not every session earns its keep. A session that ends before the
+A bare `/hy` prints status. `/hy off` exists because not every session earns its keep. A session that ends before the
 next compaction never uses the facts its writes paid for, and two model calls per chunk is
 real money on a short-lived session.
 
@@ -328,7 +329,7 @@ kept tail rather than from the whole transcript:
 { "hifiCompaction": true, "hifiMaxTokens": 4000, "hifiTailTokens": 6000 }
 ```
 
-or `/hy-memory hifi` to try it in the current session.
+or `/hy hifi` to try it in the current session.
 
 It is opt-in because it puts a model call at the slowest moment in a session. It is *not*
 slower than vanilla pi, which makes exactly such a call — it is slower than the render, which
@@ -432,6 +433,7 @@ to break silently:
 | `session-scope-check` | destructive authority across a session boundary, pinned as the behaviour that ships: candidates are retrieved unscoped, `sameSubject` is blind to session identity, a cross-session UPDATE supersedes the other session's entry leaving only its own session marker, and the ledger classifier keeps applied crossings apart from refused proposals and refuses by the reason the bank recorded |
 | `prune-check` | retention deletes old sessions and nothing else |
 | `config-docs-check` | every setting in the code is in the table above, with the same default |
+| `command-docs-check` | the command and tool names come from the live registration, and the subcommands from what the command offers: every one of them is in the README, and the README shows no `/command` or subcommand the extension does not accept |
 | `budget-split-check` | the arithmetic a compaction hands the model: exact values at window boundaries, the digest cap flooring rather than rounding, the order the parts are served in (the note sheds its cap before the tail sheds an entry), the published window table in `DESIGN_HYVCC.md` reproduced row for row, a reservation that only ever moves down and never past its ceiling, the walk and the request cap staying separate so a budget trim always yields a reportable `trimmed` range, monotonicity as the window grows, and a probe loop that reports `converged: false` instead of iterating forever |
 | `design-leak-check` | every markdown file in the repository is free of the shapes that would say where it was written: an absolute path under a home directory, a pi session directory name, a credential-shaped token, an e-mail address, a non-local IP. It exists because a design document now quotes a summary synthesized from a real session file |
 | `hyvcc-fixture-check` | the fixture that `dev/hyvcc-demo.ts` measures actually names itself: a frozen copy records bytes, entry count and a content digest for both legs (session *and* bank, so neither can drift while the numbers look pinned), the identity line is printed before any figure and carries no path and no session directory name, a copy that no longer matches its manifest reports `MOVED`, a live file with no manifest is called one rather than looking pinned, and a session file caught mid-append loses its half-written record and nothing else. Built on a synthetic session in a temp directory, so it passes on a machine that has never held the fixture — no real token count is asserted anywhere, because a check that pinned one would pass only here |

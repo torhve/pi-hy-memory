@@ -29,6 +29,11 @@ an entry: it is staging for the next release. See `AGENTS.md` for the rules.
   the key, and a smaller chunk follows. `{"drafts":[]}` still means "nothing durable here" and stays
   a clean write. No captured run had hit this: all 1,934 completions stored under the measurement
   directories answered with a non-empty array.
+
+- The README told readers to run `/hy-memory hifi`. No command of that name exists, so nothing
+  happened when they typed it: the command is `/hy`. The command list now names all five arguments
+  the command offers (`status`, `summary`, `hifi`, `off`, `on`), and says that a bare `/hy` prints
+  status. A new check compares the README with the live registration in both directions.
 - Internal: the package takes `Type` from `typebox` instead of from `@earendil-works/pi-ai`, declares
   `typebox` as a host-provided peer dependency, and now builds against the 1.5 host packages. pi-ai 1.5 no
   longer re-exports TypeBox, so the old import type-checked only against the 1.3 packages it was pinned to.
