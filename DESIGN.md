@@ -380,50 +380,73 @@ most `dev/` arms read `SETTING_DEFAULTS.<key>` to reuse the shipped default, whi
 is reachable, not that a config path sets it.
 
 This tree: 40 keys, 40 rows, 40 keys documented in the README settings table (`busyRetries` and
-`busyBackoffMs` share one row), and no key without a read site in the shipped path.
+`busyBackoffMs` share one row), and no key without a read site in the shipped path. The same check
+runs from the other side: 21 of the 40 are also read downstream through an object the extension
+fills from that config read (`options.`, `input.`), and none of those 21 depends on the alias —
+every one still has its own `config.` read, where the value enters.
 
-| key | default | read at (src, outside `src/config.ts`) | also read in dev/ tools/ | README | class |
-| --- | --- | --- | --- | --- | --- |
-| `enabled` | `true` | index.ts 315, 938, 1084, 1808, 1836 · lag.ts 192 | probe-model.ts 44 (via thinking) | yes | shipped knob |
-| `dryRun` | `false` | index.ts 664, 743, 761, 793, 1231, 1909, 1927 | — | yes | shipped knob |
-| `observeAfterTokens` | `6000` | index.ts 390, 871, 948, 965, 1052 | — | yes | shipped knob |
-| `maxChunkTokens` | `6000` | index.ts 358, 1150, 1242, 1918 | — | yes | shipped knob |
-| `maxEntryChars` | `3000` | index.ts 861, 954, 1054, 1487 | capture-session.ts 50 (via raw) · capture-session.ts 52 (via SETTING_DEFAULTS) · hifi-probe.ts 93 (via SETTING_DEFAULTS) · summary-arms.ts 217 (via SETTING_DEFAULTS) | yes | shipped knob |
-| `bankMaxTokens` | `60000` | index.ts 392, 446, 454, 591 | recall-check.ts 51 | yes | shipped knob |
-| `summaryMaxTokens` | `12000` | index.ts 405, 1144, 1447, 1885 | summary-arms.ts 134 (via SETTING_DEFAULTS) | yes | shipped knob |
-| `foundationAfterChunks` | `8` | index.ts 363, 1478 | summary-arms.ts 124 (via SETTING_DEFAULTS) | yes | shipped knob |
-| `summaryConstraintShare` | `0.1` | index.ts 364, 1479 | summary-arms.ts 125 (via SETTING_DEFAULTS) | yes | shipped knob |
-| `summaryFoundationShare` | `0.35` | index.ts 365, 1480 | summary-arms.ts 126 (via SETTING_DEFAULTS) | yes | shipped knob |
-| `keepRecentTokens` | `20000` | index.ts 1142 | — | yes | shipped knob |
-| `keepRecentShare` | `0.4` | index.ts 1143 | — | yes | shipped knob |
-| `overflowDigestTokens` | `1500` | index.ts 1145 | — | yes | shipped knob |
-| `candidateLimit` | `24` | index.ts 369 | run.ts 161 (via prior) · session-scope-report.ts 341, 342 (via metrics) | yes | shipped knob |
-| `hifiCompaction` | `false` | index.ts 1469, 1864, 1867, 1872, 1873 | — | yes | shipped knob |
-| `hifiMaxTokens` | `4000` | index.ts 1468 | summary-arms.ts 133 (via SETTING_DEFAULTS) | yes | shipped knob |
-| `hifiThinkingLevel` | `"off"` | index.ts 1512 | — | yes | shipped knob |
-| `hifiTailTokens` | `6000` | index.ts 1485, 1486 | summary-arms.ts 215, 216 (via SETTING_DEFAULTS) | yes | shipped knob |
-| `hifiDeltaTokens` | `6000` | index.ts 1475 | summary-arms.ts 224 (via SETTING_DEFAULTS) | yes | shipped knob |
-| `hifiRetryLimit` | `3` | index.ts 1474 | — | yes | shipped knob |
-| `hifiTimeoutMs` | `120000` | index.ts 1508 | summary-arms.ts 243 (via SETTING_DEFAULTS) | yes | shipped knob |
-| `candidateRenderMode` | `"perDraft"` | index.ts 593 | — | yes | shipped knob |
-| `mergeValueGate` | `false` | index.ts 594 | — | yes | experiment lever |
-| `waitForWriteOnSettle` | `true` | index.ts 1068 | — | yes | shipped knob |
-| `waitForWriterBeforeCompact` | `true` | index.ts 1230, 1908 | — | yes | shipped knob |
-| `compactWaitMs` | `60000` | index.ts 1243, 1263, 1919 | — | yes | shipped knob |
-| `model` | `"hy-memory-30b-a3b"` | index.ts 258, 567, 1613, 1927 | boundary-arms.ts 343, 370, 379 (via route) · hifi-probe.ts 122 (via route) · poc.ts 84 (via writer) · probe-model.ts 30, 31 (via route) · prune-signal.ts 177 (via route) · ratification-arm.ts 207, 214 (via route) · raw-writer.ts 47, 63, 113 (via options) · run.ts 214, 253, 289, 329 (via route) · split-chunk.ts 167, 172, 211 (via route) · summary-arms.ts 382, 414 (via writerRoute) · endpoint-check.ts 142, 143 (via out) · fallback-check.ts 129 (via out) · recall-check.ts 45, 51, 58 | yes | shipped knob |
-| `maxTokens` | `8000` | index.ts 260 | constraint-slice-report.ts 196 (via opts) · probe-model.ts 48 (via options) · raw-writer.ts 54 (via options) · endpoint-check.ts 133 (via opts) | yes | shipped knob |
-| `timeoutMs` | `480000` | index.ts 262, 601 | raw-writer.ts 32 (via options) | yes | shipped knob |
-| `chatTemplateKwargs` | `false` | index.ts 246 | raw-writer.ts 56, 57 (via options) | yes | shipped knob |
-| `extraBody` | `{}` | index.ts 245 | raw-writer.ts 59 (via options) | yes | shipped knob |
-| `fallback` | `false` | index.ts 265 | — | yes | shipped knob |
-| `fallbackCooldownS` | `300` | index.ts 698 | — | yes | shipped knob |
-| `busyRetries` | `3` | index.ts 597 | — | yes | shipped knob |
-| `busyBackoffMs` | `4000` | index.ts 598 | — | yes | shipped knob |
-| `writeCooldownS` | `30` | index.ts 807 | — | yes | shipped knob |
-| `idleDrainAfterMs` | `180000` | index.ts 941, 973 | — | yes | shipped knob |
-| `pruneAfterDays` | `30` | index.ts 511 | — | yes | shipped knob |
-| `shutdownWaitMs` | `5000` | index.ts 1634 | — | yes | shipped knob |
-| `statusBar` | `true` | index.ts 377, 541 | — | yes | shipped knob |
+| key | default | read at (src, outside `src/config.ts`) | also read in dev/ tools/ | README | class | decision |
+| --- | --- | --- | --- | --- | --- | --- |
+| `enabled` | `true` | index.ts 315, 938, 1084, 1808, 1836 · lag.ts 192 | probe-model.ts 44 (via thinking) | yes | shipped knob | keep |
+| `dryRun` | `false` | index.ts 664, 743, 761, 793, 1231, 1909, 1927 | — | yes | shipped knob | keep |
+| `observeAfterTokens` | `6000` | index.ts 390, 871, 948, 965, 1052 | — | yes | shipped knob | keep |
+| `maxChunkTokens` | `6000` | index.ts 358, 1150, 1242, 1918 | — | yes | shipped knob | keep |
+| `maxEntryChars` | `3000` | index.ts 861, 954, 1054, 1487 | capture-session.ts 50 (via raw) · capture-session.ts 52 (via SETTING_DEFAULTS) · hifi-probe.ts 93 (via SETTING_DEFAULTS) · summary-arms.ts 217 (via SETTING_DEFAULTS) | yes | shipped knob | keep |
+| `bankMaxTokens` | `60000` | index.ts 392, 446, 454, 591 | recall-check.ts 51 | yes | shipped knob | keep |
+| `summaryMaxTokens` | `12000` | index.ts 405, 1144, 1447, 1885 | summary-arms.ts 134 (via SETTING_DEFAULTS) | yes | shipped knob | keep |
+| `foundationAfterChunks` | `8` | index.ts 363, 1478 | summary-arms.ts 124 (via SETTING_DEFAULTS) | yes | shipped knob | keep |
+| `summaryConstraintShare` | `0.1` | index.ts 364, 1479 | summary-arms.ts 125 (via SETTING_DEFAULTS) | yes | shipped knob | keep |
+| `summaryFoundationShare` | `0.35` | index.ts 365, 1480 | summary-arms.ts 126 (via SETTING_DEFAULTS) | yes | shipped knob | keep |
+| `keepRecentTokens` | `20000` | index.ts 1142 | — | yes | shipped knob | keep |
+| `keepRecentShare` | `0.4` | index.ts 1143 | — | yes | shipped knob | keep |
+| `overflowDigestTokens` | `1500` | index.ts 1145 | — | yes | shipped knob | keep |
+| `candidateLimit` | `24` | index.ts 369 | run.ts 161 (via prior) · session-scope-report.ts 341, 342 (via metrics) | yes | shipped knob | keep |
+| `hifiCompaction` | `false` | index.ts 1469, 1864, 1867, 1872, 1873 | — | yes | shipped knob | keep |
+| `hifiMaxTokens` | `4000` | index.ts 1468 | summary-arms.ts 133 (via SETTING_DEFAULTS) | yes | shipped knob | keep (read only with `hifiCompaction` on) |
+| `hifiThinkingLevel` | `"off"` | index.ts 1512 | — | yes | shipped knob | keep (read only with `hifiCompaction` on) |
+| `hifiTailTokens` | `6000` | index.ts 1485, 1486 | summary-arms.ts 215, 216 (via SETTING_DEFAULTS) | yes | shipped knob | keep (read only with `hifiCompaction` on) |
+| `hifiDeltaTokens` | `6000` | index.ts 1475 | summary-arms.ts 224 (via SETTING_DEFAULTS) | yes | shipped knob | keep (read only with `hifiCompaction` on) |
+| `hifiRetryLimit` | `3` | index.ts 1474 | — | yes | shipped knob | keep (read only with `hifiCompaction` on) |
+| `hifiTimeoutMs` | `120000` | index.ts 1508 | summary-arms.ts 243 (via SETTING_DEFAULTS) | yes | shipped knob | keep (read only with `hifiCompaction` on) |
+| `candidateRenderMode` | `"perDraft"` | index.ts 593 | — | yes | shipped knob | keep |
+| `mergeValueGate` | `false` | index.ts 594 | — | yes | experiment lever | keep as a lever: promote or delete on the live run (TODO 7.18) |
+| `waitForWriteOnSettle` | `true` | index.ts 1068 | — | yes | shipped knob | keep |
+| `waitForWriterBeforeCompact` | `true` | index.ts 1230, 1908 | — | yes | shipped knob | keep |
+| `compactWaitMs` | `60000` | index.ts 1243, 1263, 1919 | — | yes | shipped knob | keep |
+| `model` | `"hy-memory-30b-a3b"` | index.ts 258, 567, 1613, 1927 | boundary-arms.ts 343, 370, 379 (via route) · hifi-probe.ts 122 (via route) · poc.ts 84 (via writer) · probe-model.ts 30, 31 (via route) · prune-signal.ts 177 (via route) · ratification-arm.ts 207, 214 (via route) · raw-writer.ts 47, 63, 113 (via options) · run.ts 214, 253, 289, 329 (via route) · split-chunk.ts 167, 172, 211 (via route) · summary-arms.ts 382, 414 (via writerRoute) · endpoint-check.ts 142, 143 (via out) · fallback-check.ts 129 (via out) · recall-check.ts 45, 51, 58 | yes | shipped knob | keep |
+| `maxTokens` | `8000` | index.ts 260 | constraint-slice-report.ts 196 (via opts) · probe-model.ts 48 (via options) · raw-writer.ts 54 (via options) · endpoint-check.ts 133 (via opts) | yes | shipped knob | keep |
+| `timeoutMs` | `480000` | index.ts 262, 601 | raw-writer.ts 32 (via options) | yes | shipped knob | keep |
+| `chatTemplateKwargs` | `false` | index.ts 246 | raw-writer.ts 56, 57 (via options) | yes | shipped knob | keep (request-body escape hatch) |
+| `extraBody` | `{}` | index.ts 245 | raw-writer.ts 59 (via options) | yes | shipped knob | keep (request-body escape hatch) |
+| `fallback` | `false` | index.ts 265 | — | yes | shipped knob | keep |
+| `fallbackCooldownS` | `300` | index.ts 698 | — | yes | shipped knob | keep |
+| `busyRetries` | `3` | index.ts 597 | — | yes | shipped knob | keep (shared README row with `busyBackoffMs`) |
+| `busyBackoffMs` | `4000` | index.ts 598 | — | yes | shipped knob | keep (shared README row with `busyRetries`) |
+| `writeCooldownS` | `30` | index.ts 807 | — | yes | shipped knob | keep |
+| `idleDrainAfterMs` | `180000` | index.ts 941, 973 | — | yes | shipped knob | keep |
+| `pruneAfterDays` | `30` | index.ts 511 | — | yes | shipped knob | keep |
+| `shutdownWaitMs` | `5000` | index.ts 1634 | — | yes | shipped knob | keep |
+| `statusBar` | `true` | index.ts 377, 541 | — | yes | shipped knob | keep |
+
+No config key here is removed, renamed or grouped. One key change needs a measurement behind it, and no
+measurement in `RESULTS.md` says any of these values should stop being settable. No key is unread
+either, so the `REMOVED_KEYS` machinery — name the key at startup, ignore it, prove it in
+`tools/removed-keys-check.ts` — has nothing to record. That machinery exists for keys a measurement
+retired, as it did for `hy_flush`'s three. One dead thing did turn up, and it is a pipeline option
+rather than a key: `busyMaxWaitMs`, recorded below for removal at the next change to that code. It
+is not removed in this pass, so nothing here should read it as a knob anyone set.
+
+Two changes looked plausible and failed on the same ground. The seven `hifi*` keys could move under
+one `hifi` object; that shortens this table and changes nothing else, and six of the seven are
+already inert while `hifiCompaction` is off. `writeCooldownS` and `fallbackCooldownS` count seconds
+while every other time key counts milliseconds, so renaming both would end a real inconsistency —
+and break every config file that sets them, for a name. Both are documentation problems. The README
+row for each key states its unit, and a reader who wants the naming fixed has to pay for it in
+config files, which is a cost with no measurement on the other side.
+
+One key is a lever rather than a knob. `mergeValueGate` is off, measured in
+`dev/guard-fold-report.ts`, and waits for the live run TODO 7.18 asks for. It is classed as an
+experiment lever here so the next reader does not count it as shipped behaviour.
 
 ### The four pipeline options no shipped path sets
 
@@ -436,7 +459,7 @@ liability rather than a flexibility, because a config that sets it changes nothi
 | `bankIndex` | `dev/run.ts`, `tools/bank-index-check.ts` | stays dev-only: the bank-aware extract arm, measured as an arm and never shipped. |
 | `extractSystem` | `dev/run.ts`, `tools/extract-prompt-check.ts` | stays dev-only: the prompt variant the A/B harness swaps in. A config key would let one session rewrite the writer's contract behind the model's back. |
 | `rawDir` | `dev/poc.ts`, `dev/boundary-arms.ts`, `dev/run.ts` | stays dev-only: the directory that captures raw completions for an arm. A live session keeps a masked window in the audit instead, and keeping every completion is not a decision to make per session by accident. |
-| `busyMaxWaitMs` | nothing, in `src/` or elsewhere | goes at the next touch of that code: `src/llm.ts` falls back to 60 s and no path ever passes a value, so the option has exactly one possible value. Removing it changes no behaviour, which is also why it is not worth a commit on its own. |
+| `busyMaxWaitMs` | nothing, in `src/` or elsewhere | dead plumbing, recorded for removal: `src/llm.ts` falls back to 60 s and no path ever passes a value, so the option has exactly one possible value. Removing it changes no behaviour, which is why it waits for the next change to that code rather than a commit of its own. It is not a config key, so no user config names it. |
 
 No key above is a removal candidate on this evidence: every one of the 40 has a read site in the
 shipped path, so none is dead. Removals need a measurement in `RESULTS.md`, not just an unused key.
