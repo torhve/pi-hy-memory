@@ -5,7 +5,7 @@ last recorded, under "Extension Updates". It matches `## ` followed by three dot
 keep the heading form `## X.Y.Z — YYYY-MM-DD` and put the newest section first. `## Unreleased` is not
 an entry: it is staging for the next release. See `AGENTS.md` for the rules.
 
-## Unreleased
+## 0.3.0 — 2026-11-23
 - Fixed a malformed writer completion ending a session's memory writes. A fact that quotes code — a
   regex copied into a statement — reaches the parser as JSON it refuses, and 25 of those writes across
   12 sessions were recorded as endpoint failures: a 30-second cooldown doubling to 60, the writes that
