@@ -1,0 +1,177 @@
+{
+ "note": "Supersession fixture for the moving-count case. One check-suite count moves 214 -> 226 -> 238 -> 241 (LAN) -> 251 -> 247 -> 251 -> 262 -> 334/341 -> 358/371 across twelve chunks, restated in wording that drifts between a heavy boilerplate form and plain prose, with tool output repeating retired counts, a separate lint step, a durable fact about the suite file, a wrong README number, and an inventory line sharing the project name. The expected end state is one active offline count and one active LAN count; every other count retired. Content is invented: a queue-drain CLI called tctl, no hostnames, no absolute paths, no credentials. Each chunk also declares the facts a correct writer should hold, and marks a statement stale when it records a superseded number rather than asserting a current one. dev/run.ts reads only `text`; `facts` is the contract the outcome report grades against.",
+ "chunks": [
+  {
+   "chunkId": "hy-supe-001",
+   "why": "the baseline claim, in the boilerplate wording every later claim reuses",
+   "text": "[0] [User @ 09:10]: Before we touch the drain code, get the suite count on the record.\n[1] [Assistant @ 09:11]: TCTL_DRY=1 node test/run.mjs: 214 checks passed, 0 failed, no network, no sound.\n[2] [User @ 09:12]: Keep that as the baseline. Also note where queue state lives.\n[3] [Assistant @ 09:13]: tctl keeps queue state for nodes alpha, beta and gamma in one JSON file at ./state/queue.json.",
+   "facts": [
+    {
+     "task": "offline suite count",
+     "statement": "TCTL_DRY=1 node test/run.mjs reports 214 checks passed and 0 failed with no network and no sound"
+    }
+   ]
+  },
+  {
+   "chunkId": "hy-supe-002",
+   "why": "the count moves, stated in wording that shares almost nothing with the boilerplate",
+   "text": "[0] [User @ 09:40]: Add parser tests for the quoted-argument case.\n[1] [Assistant @ 09:44]: Added 12 parser cases. The suite count moved from 214 to 226 after the parser tests landed.\n[2] [User @ 09:45]: Good. Keep the quoted-argument case covered.\n[3] [Assistant @ 09:46]: test/parse.mjs now covers a quoted argument holding a space and one holding a newline.",
+   "facts": [
+    {
+     "task": "offline suite count",
+     "statement": "The offline suite reports 226 checks passed and 0 failed after 12 parser cases landed"
+    }
+   ]
+  },
+  {
+   "chunkId": "hy-supe-003",
+   "why": "same number restated in the boilerplate wording: an UPDATE candidate that should merge",
+   "text": "[0] [User @ 10:15]: Run the offline suite again and tell me the number.\n[1] [Assistant @ 10:17]: TCTL_DRY=1 node test/run.mjs: 226 checks passed, 0 failed, no network, no sound.\n[2] [User @ 10:18]: And the drain lock stays held while a job runs?\n[3] [Assistant @ 10:19]: The drain lock stays held for the whole job; releasing it early is out of scope.",
+   "facts": [
+    {
+     "task": "offline suite count",
+     "statement": "TCTL_DRY=1 node test/run.mjs reports 226 checks passed and 0 failed with no network and no sound"
+    }
+   ]
+  },
+  {
+   "chunkId": "hy-supe-004",
+   "why": "a separate permanent fact next to a moving count; the two must not merge",
+   "text": "[0] [User @ 11:00]: Add the parse lint step and show the suite count.\n[1] [Assistant @ 11:04]: node lint/parse.mjs reports no parse errors. It is a separate step and its result does not count toward the check suite.\n[2] [Assistant @ 11:05]: TCTL_DRY=1 node test/run.mjs: 238 checks passed, 0 failed, no network, no sound.\n[3] [User @ 11:06]: Keep them separate in the docs too.",
+   "facts": [
+    {
+     "task": "parse lint step",
+     "statement": "node lint/parse.mjs reports no parse errors and its result does not count toward the check suite"
+    },
+    {
+     "task": "offline suite count",
+     "statement": "TCTL_DRY=1 node test/run.mjs reports 238 checks passed and 0 failed with no network and no sound"
+    }
+   ]
+  },
+  {
+   "chunkId": "hy-supe-005",
+   "why": "a second, coexisting count for the LAN section; both numbers stay true",
+   "text": "[0] [User @ 11:40]: What does the LAN section add?\n[1] [Assistant @ 11:42]: TCTL_LAN=1 TCTL_DRY=1 node test/run.mjs: 241 checks passed, 0 failed. The LAN section adds discovery and drain-handshake checks.\n[2] [User @ 11:43]: So the LAN number and the offline number are both live.\n[3] [Assistant @ 11:44]: Yes. The offline run and the LAN run are two separate counts and both are current.",
+   "facts": [
+    {
+     "task": "lan suite count",
+     "statement": "TCTL_LAN=1 TCTL_DRY=1 node test/run.mjs reports 241 checks passed and 0 failed"
+    },
+    {
+     "task": "offline and lan counts coexist",
+     "statement": "The offline count and the LAN count are two separate counts and both are current"
+    }
+   ]
+  },
+  {
+   "chunkId": "hy-supe-006",
+   "why": "tool output repeats retired counts; a writer that re-adds them produces a stale claim here",
+   "text": "[0] [User @ 12:30]: Show me the drain output for the purge work.\n[1] [Assistant @ 12:33]: node drain.mjs --purge-age 300 -> 41 entries dropped, lock held 1.8s\n[2] [Assistant @ 12:33]: Earlier suite output still on screen: TCTL_DRY=1 node test/run.mjs: 214 checks passed, 0 failed, no network, no sound.\n[3] [Assistant @ 12:34]: And from the last session: 226 checks passed.\n[4] [User @ 12:35]: --purge-age takes seconds, not minutes. Note that.",
+   "facts": [
+    {
+     "task": "drain purge output",
+     "statement": "node drain.mjs --purge-age 300 dropped 41 entries and held the lock for 1.8s"
+    },
+    {
+     "task": "retired count still on screen",
+     "statement": "Earlier suite output still reports 214 checks passed",
+     "stale": true
+    },
+    {
+     "task": "retired count from the last session",
+     "statement": "The last session's run reported 226 checks passed",
+     "stale": true
+    }
+   ]
+  },
+  {
+   "chunkId": "hy-supe-007",
+   "why": "the count moves again beside a durable structural fact about the same file",
+   "text": "[0] [User @ 13:20]: Add the handshake checks and re-run.\n[1] [Assistant @ 13:24]: TCTL_DRY=1 node test/run.mjs: 251 checks passed, 0 failed, no network, no sound.\n[2] [Assistant @ 13:24]: The check suite stays one file, test/run.mjs, with one section per module.\n[3] [User @ 13:25]: Fine. Do not split it.",
+   "facts": [
+    {
+     "task": "offline suite count",
+     "statement": "TCTL_DRY=1 node test/run.mjs reports 251 checks passed and 0 failed with no network and no sound"
+    },
+    {
+     "task": "suite file layout",
+     "statement": "The check suite stays one file, test/run.mjs, with one section per module"
+    }
+   ]
+  },
+  {
+   "chunkId": "hy-supe-008",
+   "why": "the count falls then returns: the writer must retire the dip, not keep both",
+   "text": "[0] [User @ 14:10]: The queue timeout fix broke some checks. What is the number?\n[1] [Assistant @ 14:13]: TCTL_DRY=1 node test/run.mjs: 247 checks passed, 4 failed — the drain handshake cases.\n[2] [User @ 14:20]: Fix them.\n[3] [Assistant @ 14:26]: Fixed. TCTL_DRY=1 node test/run.mjs: 251 checks passed, 0 failed, no network, no sound.",
+   "facts": [
+    {
+     "task": "queue timeout dip",
+     "statement": "The queue timeout fix briefly left 247 checks passing and 4 failed",
+     "stale": true
+    },
+    {
+     "task": "offline suite count",
+     "statement": "TCTL_DRY=1 node test/run.mjs reports 251 checks passed and 0 failed after the handshake cases were fixed"
+    }
+   ]
+  },
+  {
+   "chunkId": "hy-supe-009",
+   "why": "a stale document is a different subject from the suite count",
+   "text": "[0] [User @ 15:00]: Check the README numbers.\n[1] [Assistant @ 15:03]: README.md lines 22 and 23 claim 238 checks. The suite reports 251.\n[2] [User @ 15:04]: Leave the README for now, but remember it is wrong.",
+   "facts": [
+    {
+     "task": "stale README number",
+     "statement": "README.md claims 238 checks while the suite reports 251",
+     "stale": true
+    }
+   ]
+  },
+  {
+   "chunkId": "hy-supe-010",
+   "why": "the count moves in the boilerplate wording again",
+   "text": "[0] [User @ 16:00]: Add the config precedence cases.\n[1] [Assistant @ 16:06]: TCTL_DRY=1 node test/run.mjs: 262 checks passed, 0 failed, no network, no sound.\n[2] [Assistant @ 16:06]: TCTL_TEST_KEY beats the key file in resolveKey.\n[3] [User @ 16:07]: Good.",
+   "facts": [
+    {
+     "task": "offline suite count",
+     "statement": "TCTL_DRY=1 node test/run.mjs reports 262 checks passed and 0 failed with no network and no sound"
+    },
+    {
+     "task": "config precedence",
+     "statement": "TCTL_TEST_KEY beats the key file in resolveKey"
+    }
+   ]
+  },
+  {
+   "chunkId": "hy-supe-011",
+   "why": "the count moves in wording that does not match the boilerplate at all",
+   "text": "[0] [User @ 17:30]: How is the suite looking after the retry work?\n[1] [Assistant @ 17:34]: The suite now reports 334 green, 0 failed. With TCTL_LAN=1 it reports 341.\n[2] [User @ 17:35]: Both numbers, same as before.",
+   "facts": [
+    {
+     "task": "offline suite count",
+     "statement": "The suite now reports 334 green and 0 failed after the retry work"
+    },
+    {
+     "task": "lan suite count",
+     "statement": "With TCTL_LAN=1 the suite reports 341 checks passed"
+    }
+   ]
+  },
+  {
+   "chunkId": "hy-supe-012",
+   "why": "the last word on both counts, in the boilerplate wording",
+   "text": "[0] [User @ 19:20]: Last run before I hand this off.\n[1] [Assistant @ 19:24]: TCTL_DRY=1 node test/run.mjs: 358 checks passed, 0 failed, no network, no sound; 371 with TCTL_LAN=1.\n[2] [User @ 19:25]: That is the pair to carry forward: 358 offline, 371 with the LAN section.",
+   "facts": [
+    {
+     "task": "offline suite count",
+     "statement": "TCTL_DRY=1 node test/run.mjs reports 358 checks passed and 0 failed with no network and no sound"
+    },
+    {
+     "task": "lan suite count",
+     "statement": "371 checks passed with TCTL_LAN=1"
+    }
+   ]
+  }
+ ]
+}

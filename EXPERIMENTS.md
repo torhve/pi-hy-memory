@@ -2981,3 +2981,145 @@ The last row is a caution about this harness, not a finding: because it renders 
 full 8 000 cap and then *adds* the block, the proposed arm is larger than today's in 22 of the 60
 windows. The shipped shape subtracts the block from the cap first; measuring that subtraction on
 the rendered string is still open (spike D).
+
+## Supersession: the writer retires the claim that matches, not the claim that moved (2026-11-03)
+
+The maintainer's own session (`019a844b`, 32 chunks, 687 foldLedger entries, 627 active) carried
+twelve mutually exclusive "N checks passed" claims at once — 214, 226, 238, 241, 251, 262, 276, 302,
+314, 334, 339, 353 — all active. A retired 251 was re-added at chunk 30, and a complaint about a
+wrong 214 in a document outlived every number it referred to. The oldest count was recalled *more*
+often than the current one (8 hits versus 5).
+
+**What was measured, offline, on that ledger** (`dev/reconcile-recency-report.ts`, deterministic;
+it re-runs `candidatesPerDraft` over each chunk's bank state and asks, per recorded `UPDATE`, what
+the writer had in front of it):
+
+| measure | value |
+|---|---|
+| UPDATEs replayed | 70 of 71 recorded (one target predated its chunk and is not reproducible) |
+| target older than a same-subject candidate on screen | **24 of 70 (34.2%)**, 29 newer same-subject entries left active |
+| target and a newer candidate assert different check counts | **1 UPDATE**, 1 contradicted claim left active |
+| candidates in the window per call (limit 24) | 16.5 |
+| reconcile render cost at limit 24 | 15 181 tokens without ages, 15 962 with ages: **+781, +59.4 per call** |
+That table came from the ledger of the session above, which the state directory no longer keeps. Two
+ledgers that are still on disk reproduce the same rate: 130 of 398 UPDATEs (32.7 %) in a 209-write ledger,
+and 197 of 490 (40.2 %) in a 152-write ledger, at +57.5 and +58.9 tokens per call. Neither of those two
+shows a hard count conflict, so the count-clash case remains a single observation from one session.
+
+The mechanism behind the 34.2 % is the candidate ordering. `overlap` divides shared tokens by the
+shorter token set, so a boilerplate-heavy 214-check statement from 2026-09-29 can out-rank the
+immediate predecessor, and a 6 000-character tool dump sharing the same command words can crowd it
+out of the 24-entry window. `UPDATE` then picks the first match by draft order, so a write aimed at
+the number that moved lands on whichever claim the ranking placed first.
+
+**A/B on an authored corpus** (`dev/corpus-supersede.json`: 12 chunks, invented `tctl` content, one
+check-suite count moved eleven times, 241 and 341 under a second run mode; wording drifts between
+boilerplate and plain prose; tool output repeats retired counts; separate traps for a lint step that
+must not merge into the count, a durable fact about the suite file, a wrong number in a document, and
+an inventory line sharing the project name). Both arms: same model, same pool, same candidate limit 24.
+End state judged against the contract the corpus sets by construction — one active offline count, one
+active LAN count, everything else retired.
+
+| arm | facts | active | retired | ADD / UPDATE / DELETE / SKIP | counts left active | writer tokens |
+|---|---|---|---|---|---|---|
+| HEAD, no ages | 17 | 10 | 7 | 10 / 7 / 0 / 2 | 358, 371 (no stale) | 13 550 |
+| current tree, ages + newest first | 17 | 8 | 9 | 10 / 7 / 2 / 2 | 358, 371 (no stale) | 14 433 |
+
+Reading:
+
+- Both arms retired the count chain correctly. The corpus **did not reproduce the wrong-target
+  defect** on the no-age arm (0 of 7 UPDATEs had a newer same-subject candidate on screen), because
+  the bank it builds holds only 17 facts and every candidate fits the window. Ordering cannot hurt
+  what it can all see.
+- The age arm retired two claims the no-age arm left active: the obsolete complaint about a wrong
+  number in a document, and a duplicate count fact. It reached that with two explicit `DELETE`s, the
+  action the no-age arm never used. That is the intended direction, on 12 chunks, from one model.
+- Cost is the age lines: +13 tokens per reconcile call at a 17-fact bank, +59 at the 627-fact bank.
+  The age arm's whole run cost 6.5 % more writer tokens.
+- `dev/reconcile-recency-report.ts` prices the age lines at the shipped ceiling rather than at a toy set: 24
+  candidates cost 61 estimated tokens over the plain render, about 2.5 each. A stamp that landed after the write
+  rendered "just now" and a year-old one rendered "365d ago". The script now carries that render itself, because
+  `src` no longer does.
+- The change was two things at once — a deterministic render change and a sentence in the prompt that tells the
+  model what to do with it. The corpus ran both together, so it cannot say which one moved the two retirements.
+  The render is pinned by a check; the prompt sentence is not measured at all, and it is the part that could
+  change the ADD/UPDATE balance in ways neither arm was built to see.
+
+**Not shown by any of this:** that the age lines reduce wrong-target `UPDATE`s in production. The
+corpus is too easy for that measurement, and the replay report ranks both arms with the current
+selection code, so it describes what each writer saw rather than what each writer was shown.
+
+**Open at the time:** a harder corpus — enough distractor facts that the 24-entry window actually fills and a
+stale count shares the screen with the current one — was the measurement that would decide this. The next
+section ran it. The age lines did not survive it.
+## Supersession, harder: the crowding moved, the ages did not (2026-11-03)
+
+The open question above was whether a corpus crowded enough to fill the candidate window would show the
+age lines helping. `dev/corpus-supersede2.json` is that corpus: 30 chunks, distractor facts wide enough to
+fill the window, terse current claims ("402 green offline"), and retired numbers returning as records — a log
+file, a changelog line, a hard-coded CI script. One chunk is built so a heavy old claim outs-ranks the terse
+current one. The writer never sees the declarations; the reports grade against them.
+
+**The trap replay, no model (`dev/supersede2-trap-check.ts`).** It rebuilds the bank the corpus implies and
+re-runs the shipped candidate selection for every chunk that asserts a count. Corpus 2 has 15 such chunks: 0
+where a stale count of the same mode ranks above the current claim, 1 where the current claim is not a
+candidate at all, and 6 where stale counts share the screen with it. Corpus 1 gives 0, 0 and 5. The candidate
+sets are small — 4 to 11 entries against a limit of 24 — so the crowding is about which claims reach the
+screen, not about the window size.
+
+The same script then replays one selection rule: only the newest claim of a metric may hold a slot, older
+claims stay in the bank and stay recallable. That removes every stale-peer trap — 6 to 0 on corpus 2, 5 to 0
+on corpus 1 — and moves 11 and 13 stale counts off the screen. The one unretrieved case is not selection and
+stays.
+
+**The arms, graded offline (`dev/supersede-outcome-report.ts <run> --corpus dev/corpus-supersede2.json`).**
+Model `qwen3.8-flash-next-gyro_m-strata`, candidate render `perDraft`, limit 24, no probe. "Target aimed at
+the current count" is judged against the newest claim the bank actually held, not against the corpus.
+
+| arm | writes | active of written | active count claims | superseded counts still active | DELETEs | UPDATEs aimed at the current count | counts held by more than one entry |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| tree before the age lines | 33 | 29 of 30 | 9 | 7 | 0 | 1 of 1 | 1 |
+| age lines landed (first run) | 32 | 28 of 30 | 9 | 7 | 0 | 1 of 2 | 1 |
+| age lines landed (repeat) | 32 | 28 of 29 | 9 | 7 | 0 | 1 of 1 | 1 |
+| age lines plus merge value gate | 32 | 30 of 31 | 11 | 7 | 0 | 0 of 1 | 3 |
+
+Reading:
+
+- **The age lines changed nothing that this corpus can measure.** Every arm ends with 9 active count claims,
+  7 of them superseded, and zero `DELETE`s. Only one or two `UPDATE`s fire across a 30-chunk run, so the
+  target question barely arises. On the easier corpus the age arm did retire two claims the no-age arm left
+  active; on the crowded one it did not.
+- **Extraction breaks the chain first, and it is arm-independent.** In all four arms, 4 of the 12 counts the
+  corpus states never reached the writer as a draft, and 4 chunks produced a draft stating a number the corpus
+  marks superseded. The corpus's final offline count (402) never entered the bank in any arm. Extraction never
+  sees the bank, so it has no way to know a number is retired. Any supersession fix downstream of this is
+  repairing a bank that never received the current fact.
+- **The merge value gate was worse**, on the only numbers it could move: 11 active count claims instead of 9,
+  3 counts carried by two entries instead of 1, and 0 of 1 correct targets. It stays opt-in and off by default
+  (`mergeValueGate`).
+- **Words around a number do not identify a metric (`dev/metric-siblings.ts`).** Comparing the tokens within
+  four of each number matches an offline run to a LAN run at 0.71 similarity because the command wording is
+  identical, and matches records to current claims. At the thresholds that recall anything useful it finds
+  12–17 of 39 true pairs while inventing 9–28 false ones. This is not a safe supersession signal.
+- **A small parser can name the metric on these corpora (`dev/metric-identity.ts`).** A `measure/scope` key
+  (scope read from `--offline`, `--lan`, `TCTL_LAN`, `TCTL_DRY`) plus a record-or-assertion kind got the kind
+  right on all 30 keyed facts, wrong on none, and gave no key to 2 of 31 statements ("README.md claims 238
+  checks while the suite reports 251", "node test/run.mjs --offline passes 262 checks"). Records landed in
+  their own group, which is what a retire-only-current rule needs. Two misses out of 31 is the cost of a
+  "no key, no supersession" safety rule, and it is honest behaviour, not a failure.
+
+**What this decides.** The age lines are priced (+13 tokens per reconcile call at a 17-fact bank, 61 at the
+ceiling) and unproven: on the corpus built to test them they moved no end-state number. They were removed from
+the shipped render and from the prompt the same day, and `tools/reconcile-render-check.ts` now pins the plain
+render so the age lines cannot be reintroduced by accident. `dev/reconcile-recency-report.ts` keeps the wrong-target
+replay and prices the removed render from a local copy of it. The measurements stay in the section above.
+
+The lever the measurements support is selection — the newest claim of a metric holds the slot, older claims stay
+recallable — and it needs a metric identity the bank owns. Two steps follow, in order: make extraction able to
+see that a number is retired before it drafts it, and give the bank the identity so retirement stops depending on
+the model noticing two sentences measure the same thing.
+
+**Gate before any of it lands in `src`.** Keep it in `dev/` until a prototype shows, on *both* corpora:
+stale-peer traps gone, no record retired by mistake, no new unretrieved case, superseded counts inactive after
+a model run, `UPDATE` and `DELETE` targets not worse, no count carried twice, and the hard corpus improved —
+not just the easy one. Nothing here has cleared that gate.

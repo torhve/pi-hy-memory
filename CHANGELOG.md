@@ -14,7 +14,7 @@ an entry: it is staging for the next release. See `AGENTS.md` for the rules.
   specificity stayed flat at a 53 % larger bank, both arms of the compaction pilot kept the same 7 of
   8 specifics, and offering the tool cost +28 % writer tokens. A config that still sets those keys is
   named at startup and ignored, so remove them. `RESULTS.md` keeps the measurements and
-  stays, so the corpus arm can be re-run.
+  `dev/boundary-arms.ts` stays, so the corpus arm can be re-run.
 
 ## 0.2.0 — 2026-11-02
 
