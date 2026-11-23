@@ -184,7 +184,7 @@ other than this one, this prompt, this host, n=3.
 The arm above isolated the tool by giving its control a threshold that could never fire. That left
 the useful question unanswered: does a model-initiated write arrive *before* the shipped cadence
 would have covered the same ground, and does the gate protect a dead writer from a model that keeps
-asking? `dev/live-cadence.sh` runs one four-message conversation in four configurations, three runs
+asking? `dev/live-cadence.sh` ran one four-message conversation in four configurations, three runs
 each, same session model, writer still a model id that does not resolve.
 
 | arm | `hy_flush` calls | write attempts | first write after message | refused |
