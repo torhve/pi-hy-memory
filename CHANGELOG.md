@@ -5,7 +5,7 @@ last recorded, under "Extension Updates". It matches `## ` followed by three dot
 keep the heading form `## X.Y.Z — YYYY-MM-DD` and put the newest section first. `## Unreleased` is not
 an entry: it is staging for the next release. See `AGENTS.md` for the rules.
 
-## Unreleased
+## 0.3.1 — 2026-11-25
 - Fixed the footer's window bar never growing. It kept the pending window from `session_start` (or
   from `/hy off` / `/hy on`) for the whole session, so the bar could sit at `0/10k` while a write ran
   in the foreground — or at whatever number the previous write left at after a completion. The window

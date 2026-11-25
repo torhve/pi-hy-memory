@@ -438,6 +438,7 @@ to break silently:
 | `design-leak-check` | every markdown file in the repository is free of the shapes that would say where it was written: an absolute path under a home directory, a pi session directory name, a credential-shaped token, an e-mail address, a non-local IP. It exists because a design document now quotes a summary synthesized from a real session file |
 | `hyvcc-fixture-check` | the fixture that `dev/hyvcc-demo.ts` measures actually names itself: a frozen copy records bytes, entry count and a content digest for both legs (session *and* bank, so neither can drift while the numbers look pinned), the identity line is printed before any figure and carries no path and no session directory name, a copy that no longer matches its manifest reports `MOVED`, a live file with no manifest is called one rather than looking pinned, and a session file caught mid-append loses its half-written record and nothing else. Built on a synthetic session in a temp directory, so it passes on a machine that has never held the fixture — no real token count is asserted anywhere, because a check that pinned one would pass only here |
 | `status-check` | footer rendering, including a stale context |
+| `status-window-check` | the footer window bar tracks the unread backlog: the window is re-read every turn, after a write lands and on the idle-drain tick — and a stale branch keeps the last known window instead of zeroing the bar |
 
 ## Run the proof of concept
 

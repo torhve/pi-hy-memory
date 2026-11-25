@@ -1,6 +1,6 @@
 {
   "name": "pi-hy-memory",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "Pi memory extension designed around Hy-Memory-30B-A3B as a memory-bank writer: two single-shot JSON calls plus deterministic bank maintenance.",
   "keywords": [
     "pi-package",
