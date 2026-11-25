@@ -373,16 +373,20 @@ export default function piHyMemory(pi: ExtensionAPI): void {
 	 * the bar growing is exactly "how close am I to the next memory update"; the
 	 * second bar is the bank filling toward poolMaxTokens.
 	 */
-	const pushStatus = (entries?: SessionEntry[]): void => {
+	const pushStatus = (entries?: SessionEntry[], tokens?: number): void => {
 		if (config.statusBar === false || !state) return;
 		let pending = lastPending;
-		if (entries) {
+		if (tokens !== undefined) {
+			// Caller already computed the window (turn_end, the idle drain); pass it through.
+			pending = tokens;
+			lastPending = pending;
+		} else if (entries) {
 			try {
 				pending = coverageWindow(entries, state.ledger, state.cursorId, state.resumeFromId).tokens;
+				lastPending = pending;
 			} catch {
-				pending = 0;
+				// A stale branch must not zero the bar; the last known window stands.
 			}
-			lastPending = pending;
 		}
 		status.snapshot({
 			pending,
@@ -540,7 +544,11 @@ export default function piHyMemory(pi: ExtensionAPI): void {
 			reset(ctx);
 			if (config.statusBar !== false) {
 				status.attach(ctx.ui as never);
-				pushStatus(ctx.sessionManager.getBranch());
+				try {
+					pushStatus(ctx.sessionManager.getBranch());
+				} catch {
+					pushStatus();
+				}
 			}
 			// A remembered "off" must announce itself: silence here is indistinguishable
 			// from a broken extension until the user notices whole sessions went by.
@@ -783,7 +791,11 @@ export default function piHyMemory(pi: ExtensionAPI): void {
 					failover: result.failover ? result.failover.slice(0, 120) : undefined,
 					active: live.bank.filter((e) => e.status === "active").length,
 				});
-				pushStatus();
+				try {
+					pushStatus(ctx.sessionManager.getBranch());
+				} catch {
+					pushStatus();
+				}
 				status.done(
 					result.report.added.length,
 					result.report.updated.length,
@@ -933,6 +945,7 @@ export default function piHyMemory(pi: ExtensionAPI): void {
 		}
 		if (sessionId !== live.sessionId) return;
 		const window = coverageWindow(branch, live.ledger, live.cursorId, live.resumeFromId);
+		pushStatus(undefined, window.tokens);
 		const idleMs = Date.now() - lastActivityAt;
 		const decision = shouldIdleDrain({
 			enabled: config.enabled,
@@ -1009,6 +1022,14 @@ export default function piHyMemory(pi: ExtensionAPI): void {
 
 		const live = state;
 
+		// Refresh the footer window every turn: the bar is the one thing on screen
+		// meant to grow with the unread backlog, so it must not be frozen at the
+		// session_start value. The window is recomputed here because a turn is the
+		// only moment the session is quiescent and cheap to measure.
+		const window = coverageWindow(branch, live.ledger, live.cursorId, live.resumeFromId);
+		const { pending, tokens } = window;
+		pushStatus(undefined, tokens);
+
 		// A paid-for extract is waiting for its reconcile: retry that first, with the
 		// same chunk id and refs, and without serializing anything new.
 		if (live.pendingExtract) {
@@ -1036,8 +1057,6 @@ export default function piHyMemory(pi: ExtensionAPI): void {
 			return;
 		}
 
-		const window = coverageWindow(branch, live.ledger, live.cursorId, live.resumeFromId);
-		const { pending, tokens } = window;
 		if (window.drift && !live.coverageDriftAudited) {
 			live.coverageDriftAudited = true;
 			live.cursorId = window.drift.to;
@@ -1823,7 +1842,11 @@ export default function piHyMemory(pi: ExtensionAPI): void {
 					inFlight: live.pending !== null,
 					active: live.bank.filter((e) => e.status === "active").length,
 				});
-				pushStatus();
+				try {
+					pushStatus(ctx.sessionManager.getBranch());
+				} catch {
+					pushStatus();
+				}
 				ctx.ui.notify(
 					`pi-hy-memory: off for this session (remembered). No new writes; the ${live.bank.filter((e) => e.status === "active").length} facts already in the bank stay available to recall and compaction.` +
 						(live.pending ? " The write already running will finish." : ""),
@@ -1852,7 +1875,11 @@ export default function piHyMemory(pi: ExtensionAPI): void {
 					skippedEntries: skipped?.entries ?? 0,
 					skippedTokens: skipped?.tokens ?? 0,
 				});
-				pushStatus();
+				try {
+					pushStatus(ctx.sessionManager.getBranch());
+				} catch {
+					pushStatus();
+				}
 				ctx.ui.notify(
 					`pi-hy-memory: on. Writing resumes from now; ${skipped?.entries ?? 0} entries (${skipped?.tokens ?? 0} tokens) that accumulated while off are not remembered.`,
 					"info",

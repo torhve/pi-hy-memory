@@ -5,6 +5,14 @@ last recorded, under "Extension Updates". It matches `## ` followed by three dot
 keep the heading form `## X.Y.Z — YYYY-MM-DD` and put the newest section first. `## Unreleased` is not
 an entry: it is staging for the next release. See `AGENTS.md` for the rules.
 
+## Unreleased
+- Fixed the footer's window bar never growing. It kept the pending window from `session_start` (or
+  from `/hy off` / `/hy on`) for the whole session, so the bar could sit at `0/10k` while a write ran
+  in the foreground — or at whatever number the previous write left at after a completion. The window
+  is now re-read every `turn_end`, after every write lands, and on the idle-drain tick and the
+  `/hy off` / `/hy on` toggles, so the bar tracks the unread backlog and drops when a write covers
+  it. A stale branch no longer zeroes the bar either: a failed re-read keeps the last known window.
+
 ## 0.3.0 — 2026-11-23
 - Fixed a malformed writer completion ending a session's memory writes. A fact that quotes code — a
   regex copied into a statement — reaches the parser as JSON it refuses, and 25 of those writes across
